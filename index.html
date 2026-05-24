@@ -1286,17 +1286,17 @@
           return;
         }
 
-        if (hasPasswordRecoveryParams() && !this.recoveryHandled) {
-          this.recoveryMode = true;
-          await this.handlePasswordRecovery();
-          return;
-        }
-
-        if (data?.session?.user && hasPasswordRecoveryPending() && hasLivePasswordRecoveryParams() && !this.recoveryHandled) {
+        if (data?.session?.user && hasPasswordRecoveryPending() && !this.recoveryHandled) {
           this.recoveryMode = true;
           this.recoveryHandled = true;
           this.recoverySessionReady = true;
           this.showPasswordResetForm();
+          return;
+        }
+
+        if (hasPasswordRecoveryParams() && !this.recoveryHandled) {
+          this.recoveryMode = true;
+          await this.handlePasswordRecovery();
           return;
         }
 
