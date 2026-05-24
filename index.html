@@ -1144,6 +1144,7 @@
 
     const PASSWORD_RECOVERY_PENDING_KEY = 'erp_password_recovery_pending';
     const PASSWORD_RECOVERY_DONE_KEY = 'erp_password_recovery_done';
+    const PASSWORD_RECOVERY_USED_LINKS_KEY = 'erp_password_recovery_used_links';
 
     function markPasswordRecoveryPending() {
       localStorage.setItem(PASSWORD_RECOVERY_PENDING_KEY, String(Date.now()));
@@ -1164,6 +1165,38 @@
     function hasRecentPasswordRecoveryDone() {
       const finishedAt = Number(localStorage.getItem(PASSWORD_RECOVERY_DONE_KEY) || 0);
       return Number.isFinite(finishedAt) && finishedAt > 0 && Date.now() - finishedAt < 1000 * 60 * 15;
+    }
+
+    function getPasswordRecoveryFingerprint() {
+      const { query, hash } = getAuthUrlParams();
+      const value = query.get('code') ||
+        query.get('token_hash') ||
+        query.get('token') ||
+        query.get('access_token') ||
+        hash.get('access_token') ||
+        '';
+      return value ? `recovery_${value.slice(0, 80)}` : '';
+    }
+
+    function getUsedPasswordRecoveryLinks() {
+      try {
+        return JSON.parse(localStorage.getItem(PASSWORD_RECOVERY_USED_LINKS_KEY) || '[]');
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function markPasswordRecoveryLinkUsed() {
+      const fingerprint = getPasswordRecoveryFingerprint();
+      if (!fingerprint) return;
+      const usedLinks = getUsedPasswordRecoveryLinks().filter(item => item && item !== fingerprint);
+      usedLinks.unshift(fingerprint);
+      localStorage.setItem(PASSWORD_RECOVERY_USED_LINKS_KEY, JSON.stringify(usedLinks.slice(0, 10)));
+    }
+
+    function isPasswordRecoveryLinkUsed() {
+      const fingerprint = getPasswordRecoveryFingerprint();
+      return Boolean(fingerprint && getUsedPasswordRecoveryLinks().includes(fingerprint));
     }
 
     function hasPasswordRecoveryPending() {
@@ -1489,6 +1522,17 @@
 
       async activateRecoverySession() {
         if (!SupabaseSync.client) return false;
+        if (isPasswordRecoveryLinkUsed()) {
+          clearPasswordRecoveryPending();
+          clearAuthUrlParams();
+          clearSupabaseAuthStorage();
+          try {
+            await SupabaseSync.client.auth.signOut({ scope: 'global' });
+          } catch (error) {
+            console.warn('No se pudo cerrar una sesion de recuperacion usada:', error.message || error);
+          }
+          return false;
+        }
         const { query, hash } = getAuthUrlParams();
         const code = query.get('code');
         const accessToken = hash.get('access_token') || query.get('access_token');
@@ -1541,6 +1585,7 @@
         if (hasRecentPasswordRecoveryDone()) {
           clearPasswordRecoveryPending();
           clearAuthUrlParams();
+          clearSupabaseAuthStorage();
           this.showLogin();
           return;
         }
@@ -1576,6 +1621,7 @@
           return { success: false, message: error.message || 'No se pudo actualizar la contrasena' };
         }
 
+        markPasswordRecoveryLinkUsed();
         clearAuthUrlParams();
         try {
           await SupabaseSync.client.auth.signOut({ scope: 'global' });
