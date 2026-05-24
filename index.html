@@ -1160,6 +1160,22 @@
     function hasPasswordRecoveryParams() {
       const { query, hash } = getAuthUrlParams();
       const fullUrl = `${window.location.search || INITIAL_AUTH_SEARCH}${window.location.hash || INITIAL_AUTH_HASH}`.toLowerCase();
+      const hasTokenParam = query.has('code') ||
+        query.has('token') ||
+        query.has('token_hash') ||
+        query.has('access_token') ||
+        hash.has('access_token');
+      return query.get('type') === 'recovery' ||
+        hash.get('type') === 'recovery' ||
+        hasTokenParam ||
+        fullUrl.includes('recovery') ||
+        fullUrl.includes('reset');
+    }
+
+    function hasLivePasswordRecoveryParams() {
+      const query = new URLSearchParams(window.location.search || '');
+      const hash = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+      const fullUrl = `${window.location.search || ''}${window.location.hash || ''}`.toLowerCase();
       return query.get('type') === 'recovery' ||
         hash.get('type') === 'recovery' ||
         query.has('code') ||
@@ -1174,6 +1190,12 @@
     function clearAuthUrlParams() {
       if (!window.history?.replaceState || window.location.protocol === 'file:') return;
       window.history.replaceState({}, document.title, getAuthRedirectUrl());
+    }
+
+    function redirectToCleanAuthUrl() {
+      const cleanUrl = getAuthRedirectUrl();
+      if (!cleanUrl || window.location.protocol === 'file:') return;
+      window.location.replace(cleanUrl);
     }
 
     function getPasswordResetNotice() {
@@ -1241,7 +1263,7 @@
           return;
         }
 
-        if (data?.session?.user && hasPasswordRecoveryPending() && !this.recoveryHandled) {
+        if (data?.session?.user && hasPasswordRecoveryPending() && hasLivePasswordRecoveryParams() && !this.recoveryHandled) {
           this.recoveryMode = true;
           this.recoveryHandled = true;
           this.recoverySessionReady = true;
@@ -1516,10 +1538,13 @@
         await SupabaseSync.client.auth.signOut();
         clearPasswordRecoveryPending();
         this.recoveryMode = false;
+        this.recoveryHandled = false;
         this.recoverySessionReady = false;
+        SupabaseSync.passwordRecoveryDetected = false;
         document.getElementById('resetPasswordForm')?.reset();
         document.getElementById('resetPasswordForm')?.classList.add('hidden');
         switchAuthTab('login');
+        setTimeout(redirectToCleanAuthUrl, 700);
         return { success: true, message: 'Contrasena actualizada. Ya puedes iniciar sesion.' };
       }
     };
