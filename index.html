@@ -877,6 +877,8 @@
       table: 'erp_documents'
     };
     const AUTH_REDIRECT_URL = 'https://ronny0823.github.io/ronny13/';
+    const INITIAL_AUTH_SEARCH = window.location.search || '';
+    const INITIAL_AUTH_HASH = window.location.hash || '';
 
     const safeText = (value) => String(value ?? '').trim();
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
@@ -924,7 +926,12 @@
         }
 
         try {
-          this.client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+          this.client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+            auth: {
+              detectSessionInUrl: false,
+              flowType: 'pkce'
+            }
+          });
           this.client.auth.onAuthStateChange((event) => {
             if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && hasPasswordRecoveryParams())) {
               this.passwordRecoveryDetected = true;
@@ -1130,8 +1137,8 @@
     }
 
     function getAuthUrlParams() {
-      const query = new URLSearchParams(window.location.search || '');
-      const hash = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+      const query = new URLSearchParams(window.location.search || INITIAL_AUTH_SEARCH);
+      const hash = new URLSearchParams(String(window.location.hash || INITIAL_AUTH_HASH).replace(/^#/, ''));
       return { query, hash };
     }
 
@@ -1152,7 +1159,7 @@
 
     function hasPasswordRecoveryParams() {
       const { query, hash } = getAuthUrlParams();
-      const fullUrl = `${window.location.search || ''}${window.location.hash || ''}`.toLowerCase();
+      const fullUrl = `${window.location.search || INITIAL_AUTH_SEARCH}${window.location.hash || INITIAL_AUTH_HASH}`.toLowerCase();
       return query.get('type') === 'recovery' ||
         hash.get('type') === 'recovery' ||
         query.has('code') ||
