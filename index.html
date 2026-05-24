@@ -1143,6 +1143,7 @@
     }
 
     const PASSWORD_RECOVERY_PENDING_KEY = 'erp_password_recovery_pending';
+    const PASSWORD_RECOVERY_DONE_KEY = 'erp_password_recovery_done';
 
     function markPasswordRecoveryPending() {
       localStorage.setItem(PASSWORD_RECOVERY_PENDING_KEY, String(Date.now()));
@@ -1150,6 +1151,19 @@
 
     function clearPasswordRecoveryPending() {
       localStorage.removeItem(PASSWORD_RECOVERY_PENDING_KEY);
+    }
+
+    function markPasswordRecoveryDone() {
+      localStorage.setItem(PASSWORD_RECOVERY_DONE_KEY, String(Date.now()));
+    }
+
+    function clearPasswordRecoveryDone() {
+      localStorage.removeItem(PASSWORD_RECOVERY_DONE_KEY);
+    }
+
+    function hasRecentPasswordRecoveryDone() {
+      const finishedAt = Number(localStorage.getItem(PASSWORD_RECOVERY_DONE_KEY) || 0);
+      return Number.isFinite(finishedAt) && finishedAt > 0 && Date.now() - finishedAt < 1000 * 60 * 15;
     }
 
     function hasPasswordRecoveryPending() {
@@ -1446,6 +1460,7 @@
         if (!SupabaseSync.client) return { success: false, message: 'Supabase no esta disponible' };
         if (!email) return { success: false, message: 'Escribe tu correo primero' };
 
+        clearPasswordRecoveryDone();
         markPasswordRecoveryPending();
         const { error } = await SupabaseSync.client.auth.resetPasswordForEmail(
           String(email).trim().toLowerCase(),
@@ -1466,6 +1481,7 @@
         const refreshToken = hash.get('refresh_token') || query.get('refresh_token');
         const tokenHash = query.get('token_hash') || hash.get('token_hash');
         const token = query.get('token') || hash.get('token');
+        const hasRecoveryToken = Boolean(code || (accessToken && refreshToken) || tokenHash || token);
 
         try {
           if (code) {
@@ -1492,6 +1508,12 @@
             console.warn('No se pudo activar recuperacion con token:', error.message || error);
           }
 
+          if (hasRecoveryToken) {
+            clearPasswordRecoveryPending();
+            clearAuthUrlParams();
+            return false;
+          }
+
           const { data } = await SupabaseSync.client.auth.getSession();
           return Boolean(data?.session?.user);
         } catch (error) {
@@ -1502,6 +1524,12 @@
 
       async handlePasswordRecovery() {
         if (this.recoveryHandled) return;
+        if (hasRecentPasswordRecoveryDone()) {
+          clearPasswordRecoveryPending();
+          clearAuthUrlParams();
+          this.showLogin();
+          return;
+        }
         this.recoveryHandled = true;
         this.recoveryMode = true;
         this.showLogin();
@@ -1537,6 +1565,7 @@
         clearAuthUrlParams();
         await SupabaseSync.client.auth.signOut();
         clearPasswordRecoveryPending();
+        markPasswordRecoveryDone();
         this.recoveryMode = false;
         this.recoveryHandled = false;
         this.recoverySessionReady = false;
