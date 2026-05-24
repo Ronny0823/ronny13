@@ -1330,11 +1330,19 @@
 
       ensureUserStorage(user) {
         if (!user?.username) return;
+        const setLocalOnly = (key, value) => {
+          if (SupabaseSync.originalSetItem) {
+            SupabaseSync.originalSetItem(key, value);
+          } else {
+            localStorage.setItem(key, value);
+          }
+        };
+
         if (!localStorage.getItem(`erp_data_${user.username}`)) {
-          localStorage.setItem(`erp_data_${user.username}`, JSON.stringify([]));
+          setLocalOnly(`erp_data_${user.username}`, JSON.stringify([]));
         }
         if (!localStorage.getItem(`erp_config_${user.username}`)) {
-          localStorage.setItem(`erp_config_${user.username}`, JSON.stringify({
+          setLocalOnly(`erp_config_${user.username}`, JSON.stringify({
             company_name: 'Materiales del Norte',
             company_slogan: 'Calidad en cada metro cubico',
             currency: 'MXN',
