@@ -928,7 +928,7 @@
         try {
           this.client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
             auth: {
-              detectSessionInUrl: false,
+              detectSessionInUrl: true,
               flowType: 'pkce'
             }
           });
@@ -1133,7 +1133,8 @@
 
     function getPasswordResetOptions() {
       const redirectTo = getAuthRedirectUrl();
-      return redirectTo ? { redirectTo } : {};
+      if (!redirectTo) return {};
+      return { redirectTo: `${redirectTo}${redirectTo.includes('?') ? '&' : '?'}reset=1` };
     }
 
     function getAuthUrlParams() {
@@ -1274,20 +1275,20 @@
           this.authListenerReady = true;
         }
 
-        if (hasPasswordRecoveryParams() && !this.recoveryHandled) {
-          this.recoveryMode = true;
-          await this.handlePasswordRecovery();
-          return;
-        }
-
         const { data, error } = await SupabaseSync.client.auth.getSession();
         if (error) console.warn('No se pudo leer la sesion de Supabase:', error.message || error);
 
-        if (data?.session?.user && SupabaseSync.passwordRecoveryDetected && !this.recoveryHandled) {
+        if (data?.session?.user && (SupabaseSync.passwordRecoveryDetected || hasPasswordRecoveryParams()) && !this.recoveryHandled) {
           this.recoveryMode = true;
           this.recoveryHandled = true;
           this.recoverySessionReady = true;
           this.showPasswordResetForm();
+          return;
+        }
+
+        if (hasPasswordRecoveryParams() && !this.recoveryHandled) {
+          this.recoveryMode = true;
+          await this.handlePasswordRecovery();
           return;
         }
 
