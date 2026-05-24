@@ -50,6 +50,16 @@
       Validando enlace de recuperacion...
     </div>
 
+    <form id="retryForm" class="mt-5 hidden space-y-3">
+      <label class="block text-sm font-semibold text-slate-300" for="retryEmail">Enviar otro enlace</label>
+      <input id="retryEmail" type="email" required autocomplete="email"
+        class="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-amber-400"
+        placeholder="tu correo">
+      <button type="submit" class="w-full rounded-xl bg-amber-500 px-4 py-3 font-bold text-slate-950 hover:bg-amber-400">
+        Enviar correo nuevo
+      </button>
+    </form>
+
     <a id="loginLink" href="https://ronny0823.github.io/ronny13/" class="mt-5 hidden w-full rounded-xl border border-slate-700 px-4 py-3 text-center font-semibold text-slate-200 hover:bg-slate-800">
       Volver al login
     </a>
@@ -68,6 +78,7 @@
     });
 
     const form = document.getElementById('resetForm');
+    const retryForm = document.getElementById('retryForm');
     const message = document.getElementById('message');
     const loginLink = document.getElementById('loginLink');
 
@@ -101,6 +112,17 @@
       const errorCode = params.get('error_code') || hash.get('error_code');
       if (!description && !errorCode) return '';
       return ` Detalle: ${description || errorCode}.`;
+    }
+
+    function getResetRedirectUrl() {
+      if (window.location.protocol === 'file:') return 'https://ronny0823.github.io/ronny13/reset.html';
+      return window.location.href.split('#')[0].split('?')[0];
+    }
+
+    function showInvalidLinkMessage() {
+      showMessage(`No se pudo validar el enlace. Pide un correo nuevo de recuperacion.${getRecoveryUrlError()}`, 'error');
+      retryForm.classList.remove('hidden');
+      loginLink.classList.remove('hidden');
     }
 
     async function ensureRecoverySession() {
@@ -138,15 +160,13 @@
         await new Promise(resolve => setTimeout(resolve, 500));
         const ready = await ensureRecoverySession();
         if (!ready) {
-          showMessage(`No se pudo validar el enlace. Pide un correo nuevo de recuperacion.${getRecoveryUrlError()}`, 'error');
-          loginLink.classList.remove('hidden');
+          showInvalidLinkMessage();
           return;
         }
         form.classList.remove('hidden');
         showMessage('Enlace validado. Escribe tu nueva contrasena.', 'success');
       } catch (error) {
-        showMessage(`No se pudo validar el enlace. Pide un correo nuevo de recuperacion.${getRecoveryUrlError()}`, 'error');
-        loginLink.classList.remove('hidden');
+        showInvalidLinkMessage();
       }
     }
 
@@ -180,6 +200,27 @@
       showMessage('Contrasena actualizada. Volviendo al login...', 'success');
       loginLink.classList.remove('hidden');
       setTimeout(() => window.location.replace(`${LOGIN_URL}?login=1&t=${Date.now()}`), 1200);
+    });
+
+    retryForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const email = document.getElementById('retryEmail').value.trim().toLowerCase();
+      if (!email) {
+        showMessage('Escribe tu correo para enviar otro enlace.', 'error');
+        return;
+      }
+
+      const { error } = await client.auth.resetPasswordForEmail(email, {
+        redirectTo: getResetRedirectUrl()
+      });
+
+      if (error) {
+        showMessage(error.message || 'No se pudo enviar el correo nuevo.', 'error');
+        return;
+      }
+
+      retryForm.reset();
+      showMessage('Correo nuevo enviado. Abre el ultimo enlace que recibas y evita usar enlaces anteriores.', 'success');
     });
 
     initReset();
