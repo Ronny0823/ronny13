@@ -905,6 +905,7 @@
       pending: new Map(),
       flushTimer: null,
       hooksInstalled: false,
+      passwordRecoveryDetected: false,
 
       async init() {
         if (this.hooksInstalled) return;
@@ -924,6 +925,11 @@
 
         try {
           this.client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+          this.client.auth.onAuthStateChange((event) => {
+            if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && hasPasswordRecoveryParams())) {
+              this.passwordRecoveryDetected = true;
+            }
+          });
           await this.pullAll();
           this.installLocalStorageSync();
           await this.pushLocalSnapshot();
@@ -1194,6 +1200,13 @@
               await this.handlePasswordRecovery();
               return;
             }
+            if (event === 'SIGNED_IN' && session?.user && SupabaseSync.passwordRecoveryDetected && !this.recoveryHandled) {
+              this.recoveryMode = true;
+              this.recoveryHandled = true;
+              this.recoverySessionReady = true;
+              this.showPasswordResetForm();
+              return;
+            }
             if (event === 'SIGNED_OUT') {
               this.currentUser = null;
               AppState.data = [];
@@ -1212,6 +1225,14 @@
 
         const { data, error } = await SupabaseSync.client.auth.getSession();
         if (error) console.warn('No se pudo leer la sesion de Supabase:', error.message || error);
+
+        if (data?.session?.user && SupabaseSync.passwordRecoveryDetected && !this.recoveryHandled) {
+          this.recoveryMode = true;
+          this.recoveryHandled = true;
+          this.recoverySessionReady = true;
+          this.showPasswordResetForm();
+          return;
+        }
 
         if (data?.session?.user && hasPasswordRecoveryPending() && !this.recoveryHandled) {
           this.recoveryMode = true;
