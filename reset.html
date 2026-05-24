@@ -63,7 +63,7 @@
     const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         detectSessionInUrl: true,
-        flowType: 'pkce'
+        flowType: 'implicit'
       }
     });
 
@@ -92,6 +92,15 @@
         }
         keys.forEach(key => storage.removeItem(key));
       });
+    }
+
+    function getRecoveryUrlError() {
+      const params = new URLSearchParams(window.location.search);
+      const hash = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+      const description = params.get('error_description') || hash.get('error_description');
+      const errorCode = params.get('error_code') || hash.get('error_code');
+      if (!description && !errorCode) return '';
+      return ` Detalle: ${description || errorCode}.`;
     }
 
     async function ensureRecoverySession() {
@@ -129,14 +138,14 @@
         await new Promise(resolve => setTimeout(resolve, 500));
         const ready = await ensureRecoverySession();
         if (!ready) {
-          showMessage('No se pudo validar el enlace. Pide un correo nuevo de recuperacion.', 'error');
+          showMessage(`No se pudo validar el enlace. Pide un correo nuevo de recuperacion.${getRecoveryUrlError()}`, 'error');
           loginLink.classList.remove('hidden');
           return;
         }
         form.classList.remove('hidden');
         showMessage('Enlace validado. Escribe tu nueva contrasena.', 'success');
       } catch (error) {
-        showMessage('No se pudo validar el enlace. Pide un correo nuevo de recuperacion.', 'error');
+        showMessage(`No se pudo validar el enlace. Pide un correo nuevo de recuperacion.${getRecoveryUrlError()}`, 'error');
         loginLink.classList.remove('hidden');
       }
     }

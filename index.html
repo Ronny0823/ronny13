@@ -930,7 +930,7 @@
           this.client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
             auth: {
               detectSessionInUrl: true,
-              flowType: 'pkce'
+              flowType: 'implicit'
             }
           });
           this.client.auth.onAuthStateChange((event) => {
