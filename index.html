@@ -1469,6 +1469,7 @@
         if (!currentPassword || !newPassword || !confirmPassword) return { success: false, message: 'Completa todos los campos de contrasena' };
         if (newPassword.length < 6) return { success: false, message: 'La nueva contrasena debe tener al menos 6 caracteres' };
         if (newPassword !== confirmPassword) return { success: false, message: 'La nueva contrasena no coincide' };
+        if (currentPassword === newPassword) return { success: false, message: 'La nueva contrasena debe ser diferente a la actual' };
 
         const verify = await SupabaseSync.client.auth.signInWithPassword({ email: this.currentUser.email, password: currentPassword });
         if (verify.error) return { success: false, message: 'La contrasena actual es incorrecta' };
