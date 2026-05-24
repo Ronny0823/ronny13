@@ -971,6 +971,14 @@
           !key.startsWith('erp_safety_');
       },
 
+      setLocalOnly(key, value) {
+        if (this.originalSetItem) {
+          this.originalSetItem(key, value);
+        } else {
+          localStorage.setItem(key, value);
+        }
+      },
+
       parseStoredValue(raw, fallback) {
         if (!raw) return fallback;
         try {
@@ -1330,19 +1338,11 @@
 
       ensureUserStorage(user) {
         if (!user?.username) return;
-        const setLocalOnly = (key, value) => {
-          if (SupabaseSync.originalSetItem) {
-            SupabaseSync.originalSetItem(key, value);
-          } else {
-            localStorage.setItem(key, value);
-          }
-        };
-
         if (!localStorage.getItem(`erp_data_${user.username}`)) {
-          setLocalOnly(`erp_data_${user.username}`, JSON.stringify([]));
+          SupabaseSync.setLocalOnly(`erp_data_${user.username}`, JSON.stringify([]));
         }
         if (!localStorage.getItem(`erp_config_${user.username}`)) {
-          setLocalOnly(`erp_config_${user.username}`, JSON.stringify({
+          SupabaseSync.setLocalOnly(`erp_config_${user.username}`, JSON.stringify({
             company_name: 'Materiales del Norte',
             company_slogan: 'Calidad en cada metro cubico',
             currency: 'MXN',
@@ -1359,9 +1359,18 @@
         if (Array.isArray(targetData) && targetData.length) return;
 
         const users = JSON.parse(localStorage.getItem('erp_users') || '[]');
-        const legacyUsers = users.filter(u => {
-          if (!u?.username || u.username === user.username) return false;
-          const raw = localStorage.getItem(`erp_data_${u.username}`);
+        const legacyUsers = users.filter(u => u?.username && u.username !== user.username);
+        const legacyDataKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('erp_data_') && key !== targetKey) legacyDataKeys.push(key);
+        }
+
+        const legacySources = [...new Set([
+          ...legacyUsers.map(u => `erp_data_${u.username}`),
+          ...legacyDataKeys
+        ])].filter(key => {
+          const raw = localStorage.getItem(key);
           if (!raw) return false;
           try {
             const records = JSON.parse(raw);
@@ -1371,14 +1380,27 @@
           }
         });
 
-        if (legacyUsers.length !== 1) return;
-        const legacyUser = legacyUsers[0];
-        const shouldCopy = confirm(`Encontramos datos guardados del usuario anterior "${legacyUser.username}". Quieres copiarlos a este correo?`);
+        if (!legacySources.length) return;
+        const shouldCopy = confirm('Encontramos datos guardados en este dispositivo antes de usar correo. Quieres copiarlos a esta cuenta para sincronizarlos?');
         if (!shouldCopy) return;
 
-        localStorage.setItem(targetKey, localStorage.getItem(`erp_data_${legacyUser.username}`) || '[]');
-        const legacyConfig = localStorage.getItem(`erp_config_${legacyUser.username}`);
+        const records = new Map();
+        legacySources.forEach(key => {
+          const sourceRecords = JSON.parse(localStorage.getItem(key) || '[]');
+          sourceRecords.forEach(record => {
+            if (!record) return;
+            const id = record.__backendId || record.id || JSON.stringify(record);
+            records.set(id, { ...(records.get(id) || {}), ...record });
+          });
+        });
+        localStorage.setItem(targetKey, JSON.stringify(Array.from(records.values())));
+
+        const legacyConfigKey = legacySources
+          .map(key => key.replace('erp_data_', 'erp_config_'))
+          .find(key => localStorage.getItem(key));
+        const legacyConfig = legacyConfigKey ? localStorage.getItem(legacyConfigKey) : null;
         if (legacyConfig) localStorage.setItem(`erp_config_${user.username}`, legacyConfig);
+        SupabaseSync.flush();
       },
 
       showLogin() {
@@ -1961,6 +1983,7 @@
         DataBackup.saveSafetyBackup(this.currentUser);
         localStorage.setItem(`erp_data_${this.currentUser}`, JSON.stringify(this.data));
         localStorage.setItem(`erp_config_${this.currentUser}`, JSON.stringify(this.config));
+        SupabaseSync.flush();
       }
     };
 
