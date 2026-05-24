@@ -12387,10 +12387,17 @@
       }
       const totals = getFuelTotals();
       const filtered = getFilteredFuelDispatches();
+      const filters = AppState.fuelFilters || { search: '', dateFrom: '', dateTo: '' };
       const isFullReport = mode === 'full';
       const dispatches = isFullReport ? totals.dispatches : filtered;
       const exportedDispatched = dispatches.reduce((a, r) => a + (Number(r.quantity) || 0), 0);
-      const sortedDeliveries = [...totals.deliveries].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const reportDeliveries = isFullReport
+        ? totals.deliveries
+        : totals.deliveries.filter(r => matchesDateFilter(r.date, filters.dateFrom, filters.dateTo));
+      const exportedReceived = reportDeliveries.reduce((a, r) => a + (Number(r.quantity) || 0), 0);
+      const reportRemaining = isFullReport ? totals.remaining : exportedReceived - exportedDispatched;
+      const sortedDeliveries = [...reportDeliveries].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const allSortedDeliveries = [...totals.deliveries].sort((a, b) => new Date(a.date) - new Date(b.date));
       const sortedDispatches = [...dispatches].sort((a, b) => new Date(a.date) - new Date(b.date));
       const companyNames = [...new Set(sortedDeliveries.map(r => (r.company || '').trim()).filter(Boolean))];
       const companyText = companyNames.length ? companyNames.join(' / ') : 'SIN REGISTRO';
@@ -12422,7 +12429,7 @@
         })),
         ...sortedDispatches.map(r => ({
           date: r.date,
-          deliveryDate: getFuelDeliveryDateForDispatch(r.date, sortedDeliveries),
+          deliveryDate: getFuelDeliveryDateForDispatch(r.date, allSortedDeliveries),
           type: 'Despacho',
           detail: r.name || '',
           plate: fuelPlate(r),
@@ -12452,7 +12459,7 @@
       const dispatchRows = sortedDispatches.map(r => {
         const qty = Number(r.quantity) || 0;
         const date = dateParts(r.date);
-        const deliveryDate = dateParts(getFuelDeliveryDateForDispatch(r.date, sortedDeliveries));
+        const deliveryDate = dateParts(getFuelDeliveryDateForDispatch(r.date, allSortedDeliveries));
         return [
           date.day,
           date.hour,
@@ -12468,13 +12475,13 @@
       const reportRows = [
         ['COMPANIA DEL GASOL', '', companyText, ''],
         ['FECHA QUE LLEGO EL GASOL', '', deliveryDatesText, ''],
-        ['CUANTO LLEGO?', '', Number(totals.received) || 0, ''],
+        ['CUANTO LLEGO?', '', Number(exportedReceived) || 0, ''],
         [],
         ['DESPACHOS DE GASOL'],
         ['DIA', 'HORA', 'FECHA QUE LLEGO EL GASOL', 'NOMBRE', 'HOROMETRO (KM)', 'PLACA', 'MODELO', 'DIRECCION', 'GASOL'],
         ...dispatchRows,
         ['TOTAL DESPACHADO', '', '', '', '', '', '', '', Number(exportedDispatched) || 0],
-        ['CUANTO QUEDO EN TANQUE?', '', '', '', '', '', '', '', Number(totals.remaining) || 0]
+        ['CUANTO QUEDO EN TANQUE?', '', '', '', '', '', '', '', Number(reportRemaining) || 0]
       ];
       const workbook = XLSX.utils.book_new();
       const reportSheet = XLSX.utils.aoa_to_sheet(reportRows);
