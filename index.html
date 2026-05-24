@@ -1242,7 +1242,7 @@
     function redirectToCleanAuthUrl() {
       const cleanUrl = getAuthRedirectUrl();
       if (!cleanUrl || window.location.protocol === 'file:') return;
-      window.location.replace(cleanUrl);
+      window.location.replace(`${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}login=1&t=${Date.now()}`);
     }
 
     function clearSupabaseAuthStorage() {
@@ -1582,13 +1582,6 @@
 
       async handlePasswordRecovery() {
         if (this.recoveryHandled) return;
-        if (hasRecentPasswordRecoveryDone()) {
-          clearPasswordRecoveryPending();
-          clearAuthUrlParams();
-          clearSupabaseAuthStorage();
-          this.showLogin();
-          return;
-        }
         this.recoveryHandled = true;
         this.recoveryMode = true;
         this.showLogin();
