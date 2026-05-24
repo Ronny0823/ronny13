@@ -4110,7 +4110,18 @@
                               <span class="text-slate-300 font-medium">${t.invoice_number}</span>
                               <span class="text-slate-500 text-xs">${fmt.date(t.date)}</span>
                             </div>
-                            <span class="font-mono text-slate-200">${fmt.currency(t.sale_total)}</span>
+                            <div class="flex items-center gap-2">
+                              <span class="font-mono text-slate-200">${fmt.currency(t.sale_total)}</span>
+                              ${AppState.deleteConfirmId === t.__backendId ? `
+                                <span class="text-xs text-rose-400">Eliminar?</span>
+                                <button onclick="confirmDeleteRecord('${t.__backendId}')" class="text-xs text-rose-400 hover:text-rose-300 font-semibold">Si</button>
+                                <button onclick="cancelDelete()" class="text-xs text-slate-400 hover:text-slate-300">No</button>
+                              ` : `
+                                <button onclick="askDelete('${t.__backendId}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors" title="Eliminar credito">
+                                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                              `}
+                            </div>
                           </div>
 
                           <div class="text-sm text-slate-400 mb-2">
@@ -4850,6 +4861,14 @@
                       <button onclick="downloadInvoicePDF('${inv.__backendId}')" class="flex-1 p-2 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors text-xs flex items-center justify-center gap-1" title="Descargar PDF">
                         <i data-lucide="download" class="w-3 h-3"></i> PDF
                       </button>
+                      ${AppState.deleteConfirmId === inv.__backendId ? `
+                        <button onclick="confirmDeleteRecord('${inv.__backendId}')" class="flex-1 p-2 rounded-lg text-rose-400 bg-rose-500/10 border border-rose-500/20 text-xs font-semibold">Si</button>
+                        <button onclick="cancelDelete()" class="flex-1 p-2 rounded-lg text-slate-400 bg-slate-800/70 text-xs">No</button>
+                      ` : `
+                        <button onclick="askDelete('${inv.__backendId}')" class="flex-1 p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors text-xs flex items-center justify-center gap-1" title="Eliminar factura">
+                          <i data-lucide="trash-2" class="w-3 h-3"></i> Borrar
+                        </button>
+                      `}
                     </div>
                   </div>
                 </div>
@@ -7883,11 +7902,19 @@
       if (!rec) return;
       
       try {
-        const idx = AppState.data.findIndex(d => d.__backendId === id);
-        if (idx !== -1) {
-          AppState.data.splice(idx, 1);
-          AppState.saveUserData();
-        }
+        const linkedInvoiceNumber = rec.invoice_number || '';
+        const linkedSaleId = rec.type === 'sale'
+          ? rec.__backendId
+          : AppState.data.find(r => r.type === 'sale' && linkedInvoiceNumber && r.invoice_number === linkedInvoiceNumber)?.__backendId;
+
+        AppState.data = AppState.data.filter(item => {
+          if (item.__backendId === id) return false;
+          if (linkedInvoiceNumber && item.type === 'invoice' && item.invoice_number === linkedInvoiceNumber) return false;
+          if (rec.type === 'invoice' && linkedInvoiceNumber && item.type === 'sale' && item.invoice_number === linkedInvoiceNumber) return false;
+          if (linkedSaleId && item.type === 'payment' && item.sale_id === linkedSaleId) return false;
+          return true;
+        });
+        AppState.saveUserData();
         showToast('Registro eliminado correctamente');
         AppState.deleteConfirmId = null;
         renderPage();
