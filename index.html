@@ -1212,6 +1212,20 @@
       window.location.replace(cleanUrl);
     }
 
+    function clearSupabaseAuthStorage() {
+      const clearFromStorage = (storage) => {
+        if (!storage) return;
+        const keys = [];
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i);
+          if (key && key.startsWith('sb-') && key.includes('auth-token')) keys.push(key);
+        }
+        keys.forEach(key => storage.removeItem(key));
+      };
+      clearFromStorage(localStorage);
+      clearFromStorage(sessionStorage);
+    }
+
     function getPasswordResetNotice() {
       if (window.location.protocol !== 'file:') return '';
       return ' Nota: como estas abriendo la app desde Descargas, algunos correos no pueden regresar a este archivo. Para que el enlace abra directo, publica la app en una URL https y pon esa URL en AUTH_REDIRECT_URL y en Redirect URLs de Supabase.';
@@ -1563,7 +1577,12 @@
         }
 
         clearAuthUrlParams();
-        await SupabaseSync.client.auth.signOut();
+        try {
+          await SupabaseSync.client.auth.signOut({ scope: 'global' });
+        } catch (error) {
+          console.warn('No se pudo cerrar la sesion de recuperacion:', error.message || error);
+        }
+        clearSupabaseAuthStorage();
         clearPasswordRecoveryPending();
         markPasswordRecoveryDone();
         this.recoveryMode = false;
