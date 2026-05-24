@@ -877,6 +877,7 @@
       table: 'erp_documents'
     };
     const AUTH_REDIRECT_URL = 'https://ronny0823.github.io/ronny13/';
+    const AUTH_RESET_URL = 'https://ronny0823.github.io/ronny13/reset.html';
     const INITIAL_AUTH_SEARCH = window.location.search || '';
     const INITIAL_AUTH_HASH = window.location.hash || '';
 
@@ -1132,9 +1133,8 @@
     }
 
     function getPasswordResetOptions() {
-      const redirectTo = getAuthRedirectUrl();
-      if (!redirectTo) return {};
-      return { redirectTo: `${redirectTo}${redirectTo.includes('?') ? '&' : '?'}reset=1` };
+      const redirectTo = safeText(AUTH_RESET_URL) || getAuthRedirectUrl();
+      return redirectTo ? { redirectTo } : {};
     }
 
     function getAuthUrlParams() {

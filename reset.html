@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cambiar contrasena</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              400: '#fbbf24',
+              500: '#f59e0b'
+            }
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+  <main class="w-full max-w-md rounded-2xl border border-amber-500/30 bg-slate-900/90 p-7 shadow-2xl">
+    <div class="text-center mb-7">
+      <h1 class="text-3xl font-bold">Nueva contrasena</h1>
+      <p class="text-slate-400 mt-2">Escribe tu nueva contrasena para recuperar el acceso.</p>
+    </div>
+
+    <form id="resetForm" class="space-y-4 hidden">
+      <div>
+        <label class="block text-sm font-semibold text-slate-300 mb-2">Nueva contrasena</label>
+        <input id="newPassword" type="password" minlength="6" required autocomplete="new-password"
+          class="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-amber-400"
+          placeholder="Minimo 6 caracteres">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-300 mb-2">Confirmar contrasena</label>
+        <input id="confirmPassword" type="password" minlength="6" required autocomplete="new-password"
+          class="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-amber-400"
+          placeholder="Repite tu contrasena">
+      </div>
+      <button type="submit" class="w-full rounded-xl bg-amber-500 px-4 py-3 font-bold text-slate-950 hover:bg-amber-400">
+        Guardar nueva contrasena
+      </button>
+    </form>
+
+    <div id="message" class="mt-5 rounded-xl border border-slate-700 bg-slate-800/70 p-4 text-sm text-slate-300">
+      Validando enlace de recuperacion...
+    </div>
+
+    <a id="loginLink" href="https://ronny0823.github.io/ronny13/" class="mt-5 hidden w-full rounded-xl border border-slate-700 px-4 py-3 text-center font-semibold text-slate-200 hover:bg-slate-800">
+      Volver al login
+    </a>
+  </main>
+
+  <script>
+    const SUPABASE_URL = 'https://qlxqnuzfagsdlynygjik.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_PA5VvwBcwUXnVaEM42r2pA_modeW_sa';
+    const LOGIN_URL = 'https://ronny0823.github.io/ronny13/';
+
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        detectSessionInUrl: true,
+        flowType: 'pkce'
+      }
+    });
+
+    const form = document.getElementById('resetForm');
+    const message = document.getElementById('message');
+    const loginLink = document.getElementById('loginLink');
+
+    function showMessage(text, type = 'info') {
+      message.textContent = text;
+      message.className = 'mt-5 rounded-xl border p-4 text-sm';
+      if (type === 'error') {
+        message.classList.add('border-rose-500/40', 'bg-rose-500/10', 'text-rose-200');
+      } else if (type === 'success') {
+        message.classList.add('border-emerald-500/40', 'bg-emerald-500/10', 'text-emerald-200');
+      } else {
+        message.classList.add('border-slate-700', 'bg-slate-800/70', 'text-slate-300');
+      }
+    }
+
+    function clearSupabaseAuthStorage() {
+      [localStorage, sessionStorage].forEach(storage => {
+        const keys = [];
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i);
+          if (key && key.startsWith('sb-') && key.includes('auth-token')) keys.push(key);
+        }
+        keys.forEach(key => storage.removeItem(key));
+      });
+    }
+
+    async function ensureRecoverySession() {
+      const params = new URLSearchParams(window.location.search);
+      const hash = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+      const code = params.get('code');
+      const accessToken = hash.get('access_token') || params.get('access_token');
+      const refreshToken = hash.get('refresh_token') || params.get('refresh_token');
+
+      if (code) {
+        const { error } = await client.auth.exchangeCodeForSession(code);
+        if (error) console.warn(error.message || error);
+      } else if (accessToken && refreshToken) {
+        const { error } = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        if (error) console.warn(error.message || error);
+      }
+
+      const { data } = await client.auth.getSession();
+      return Boolean(data?.session?.user);
+    }
+
+    async function initReset() {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const ready = await ensureRecoverySession();
+        if (!ready) {
+          showMessage('No se pudo validar el enlace. Pide un correo nuevo de recuperacion.', 'error');
+          loginLink.classList.remove('hidden');
+          return;
+        }
+        form.classList.remove('hidden');
+        showMessage('Enlace validado. Escribe tu nueva contrasena.', 'success');
+      } catch (error) {
+        showMessage('No se pudo validar el enlace. Pide un correo nuevo de recuperacion.', 'error');
+        loginLink.classList.remove('hidden');
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const newPassword = document.getElementById('newPassword').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+
+      if (!newPassword || newPassword.length < 6) {
+        showMessage('La nueva contrasena debe tener al menos 6 caracteres.', 'error');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        showMessage('Las contrasenas no coinciden.', 'error');
+        return;
+      }
+
+      const { error } = await client.auth.updateUser({ password: newPassword });
+      if (error) {
+        showMessage(error.message || 'No se pudo actualizar la contrasena.', 'error');
+        return;
+      }
+
+      try {
+        await client.auth.signOut({ scope: 'global' });
+      } catch (error) {
+        console.warn(error.message || error);
+      }
+      clearSupabaseAuthStorage();
+      form.classList.add('hidden');
+      showMessage('Contrasena actualizada. Volviendo al login...', 'success');
+      loginLink.classList.remove('hidden');
+      setTimeout(() => window.location.replace(`${LOGIN_URL}?login=1&t=${Date.now()}`), 1200);
+    });
+
+    initReset();
+  </script>
+</body>
+</html>
