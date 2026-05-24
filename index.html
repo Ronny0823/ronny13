@@ -1129,14 +1129,33 @@
       return { query, hash };
     }
 
+    const PASSWORD_RECOVERY_PENDING_KEY = 'erp_password_recovery_pending';
+
+    function markPasswordRecoveryPending() {
+      localStorage.setItem(PASSWORD_RECOVERY_PENDING_KEY, String(Date.now()));
+    }
+
+    function clearPasswordRecoveryPending() {
+      localStorage.removeItem(PASSWORD_RECOVERY_PENDING_KEY);
+    }
+
+    function hasPasswordRecoveryPending() {
+      const startedAt = Number(localStorage.getItem(PASSWORD_RECOVERY_PENDING_KEY) || 0);
+      return Number.isFinite(startedAt) && startedAt > 0 && Date.now() - startedAt < 1000 * 60 * 60;
+    }
+
     function hasPasswordRecoveryParams() {
       const { query, hash } = getAuthUrlParams();
+      const fullUrl = `${window.location.search || ''}${window.location.hash || ''}`.toLowerCase();
       return query.get('type') === 'recovery' ||
         hash.get('type') === 'recovery' ||
         query.has('code') ||
         query.has('token') ||
         query.has('token_hash') ||
-        hash.has('access_token');
+        query.has('access_token') ||
+        hash.has('access_token') ||
+        fullUrl.includes('recovery') ||
+        fullUrl.includes('reset');
     }
 
     function clearAuthUrlParams() {
@@ -1193,6 +1212,14 @@
 
         const { data, error } = await SupabaseSync.client.auth.getSession();
         if (error) console.warn('No se pudo leer la sesion de Supabase:', error.message || error);
+
+        if (data?.session?.user && hasPasswordRecoveryPending() && !this.recoveryHandled) {
+          this.recoveryMode = true;
+          this.recoveryHandled = true;
+          this.recoverySessionReady = true;
+          this.showPasswordResetForm();
+          return;
+        }
 
         if (data?.session?.user && !this.recoveryMode) {
           this.currentUser = this.userFromSupabase(data.session.user);
@@ -1369,11 +1396,15 @@
         if (!SupabaseSync.client) return { success: false, message: 'Supabase no esta disponible' };
         if (!email) return { success: false, message: 'Escribe tu correo primero' };
 
+        markPasswordRecoveryPending();
         const { error } = await SupabaseSync.client.auth.resetPasswordForEmail(
           String(email).trim().toLowerCase(),
           getPasswordResetOptions()
         );
-        if (error) return { success: false, message: error.message || 'No se pudo enviar el correo' };
+        if (error) {
+          clearPasswordRecoveryPending();
+          return { success: false, message: error.message || 'No se pudo enviar el correo' };
+        }
         return { success: true, message: `Te enviamos un enlace para recuperar la contrasena.${getPasswordResetNotice()}` };
       },
 
@@ -1455,6 +1486,7 @@
 
         clearAuthUrlParams();
         await SupabaseSync.client.auth.signOut();
+        clearPasswordRecoveryPending();
         this.recoveryMode = false;
         this.recoverySessionReady = false;
         document.getElementById('resetPasswordForm')?.reset();
