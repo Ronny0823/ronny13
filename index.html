@@ -1991,6 +1991,12 @@
       await AuthSystem.init();
     });
 
+    document.addEventListener('visibilitychange', async () => {
+      if (document.hidden || !AuthSystem.currentUser?.username) return;
+      const synced = await syncCurrentUserFromCloud({ silent: true });
+      if (synced) renderPage();
+    });
+
     function getEffectivePrinterType() {
       const printerType = AppState.config.printer_type || 'standard';
       if (printerType === 'bluetooth') {
@@ -2064,7 +2070,7 @@
       }, 300);
     }
 
-    function navigate(page) {
+    async function navigate(page) {
       AppState.currentPage = page;
       
       if (window.innerWidth <= 900) {
@@ -2092,6 +2098,7 @@
       };
       document.getElementById('page-title').textContent = titles[page] || page;
       
+      await syncCurrentUserFromCloud({ silent: true });
       renderPage();
       lucide.createIcons();
     }
@@ -2405,6 +2412,19 @@
       }
       
       lucide.createIcons();
+    }
+
+    async function syncCurrentUserFromCloud({ silent = false } = {}) {
+      if (!AuthSystem.currentUser?.username || !SupabaseSync.client) return false;
+      try {
+        await SupabaseSync.flush();
+        await AppState.loadUserData(AuthSystem.currentUser.username);
+        return true;
+      } catch (error) {
+        console.warn('No se pudo sincronizar desde Supabase:', error.message || error);
+        if (!silent) showToast('No se pudo leer la nube. Revisa la conexion o Supabase.', 'error');
+        return false;
+      }
     }
 
     function renderDashboard(container) {
@@ -12706,8 +12726,9 @@
       // SDK integration placeholder
     }
 
-    function refreshData() {
-      showToast('Datos actualizados', 'info');
+    async function refreshData() {
+      const synced = await syncCurrentUserFromCloud({ silent: false });
+      showToast(synced ? 'Datos sincronizados desde la nube' : 'Datos locales actualizados', synced ? 'success' : 'info');
       renderPage();
     }
   </script>
