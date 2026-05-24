@@ -832,6 +832,9 @@
           <button onclick="refreshData()" class="p-2 rounded-lg text-slate-400 hover:text-primary-400 hover:bg-primary-500/10 transition-all" title="Actualizar">
             <i data-lucide="refresh-cw" class="w-5 h-5"></i>
           </button>
+          <button onclick="forceUploadToCloud()" class="p-2 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all" title="Subir datos a la nube">
+            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+          </button>
           <img src="" data-rlrr-logo class="rlrr-header-logo" alt="Logo RLRR">
           <div class="h-8 w-px bg-slate-800 hidden sm:block"></div>
           <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/50">
@@ -2424,6 +2427,47 @@
         console.warn('No se pudo sincronizar desde Supabase:', error.message || error);
         if (!silent) showToast('No se pudo leer la nube. Revisa la conexion o Supabase.', 'error');
         return false;
+      }
+    }
+
+    async function forceUploadToCloud() {
+      if (!AuthSystem.currentUser?.username || !SupabaseSync.client) {
+        showToast('Inicia sesion para subir datos a la nube', 'error');
+        return;
+      }
+
+      const ok = confirm(`Subir a la nube los datos de este telefono para la cuenta ${AuthSystem.currentUser.email || AuthSystem.currentUser.username}?`);
+      if (!ok) return;
+
+      try {
+        const username = AuthSystem.currentUser.username;
+        const rows = [
+          {
+            key: `erp_data_${username}`,
+            value: Array.isArray(AppState.data) ? AppState.data : [],
+            updated_at: new Date().toISOString()
+          },
+          {
+            key: `erp_config_${username}`,
+            value: AppState.config || {},
+            updated_at: new Date().toISOString()
+          }
+        ];
+
+        const { error } = await SupabaseSync.client
+          .from(SUPABASE_CONFIG.table)
+          .upsert(rows, { onConflict: 'key' });
+
+        if (error) {
+          showToast(error.message || 'No se pudo subir a la nube', 'error');
+          console.warn('No se pudo subir a Supabase:', error.message || error);
+          return;
+        }
+
+        showToast(`Subido a la nube: ${AppState.data.length} registros`, 'success');
+      } catch (error) {
+        console.warn('No se pudo subir a Supabase:', error.message || error);
+        showToast('No se pudo subir a la nube. Revisa conexion o permisos de Supabase.', 'error');
       }
     }
 
