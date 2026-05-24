@@ -1202,6 +1202,13 @@
         fullUrl.includes('reset');
     }
 
+    function isRecentPasswordRecoverySession(session) {
+      const sentAt = session?.user?.recovery_sent_at || session?.user?.user_metadata?.recovery_sent_at || '';
+      if (!sentAt) return false;
+      const sentTime = new Date(sentAt).getTime();
+      return Number.isFinite(sentTime) && Date.now() - sentTime < 1000 * 60 * 60;
+    }
+
     function clearAuthUrlParams() {
       if (!window.history?.replaceState || window.location.protocol === 'file:') return;
       window.history.replaceState({}, document.title, getAuthRedirectUrl());
@@ -1258,7 +1265,7 @@
               await this.handlePasswordRecovery();
               return;
             }
-            if (event === 'SIGNED_IN' && session?.user && SupabaseSync.passwordRecoveryDetected && !this.recoveryHandled) {
+            if (event === 'SIGNED_IN' && session?.user && (SupabaseSync.passwordRecoveryDetected || isRecentPasswordRecoverySession(session)) && !this.recoveryHandled) {
               this.recoveryMode = true;
               this.recoveryHandled = true;
               this.recoverySessionReady = true;
@@ -1278,7 +1285,7 @@
         const { data, error } = await SupabaseSync.client.auth.getSession();
         if (error) console.warn('No se pudo leer la sesion de Supabase:', error.message || error);
 
-        if (data?.session?.user && (SupabaseSync.passwordRecoveryDetected || hasPasswordRecoveryParams()) && !this.recoveryHandled) {
+        if (data?.session?.user && (SupabaseSync.passwordRecoveryDetected || hasPasswordRecoveryParams() || isRecentPasswordRecoverySession(data.session)) && !this.recoveryHandled) {
           this.recoveryMode = true;
           this.recoveryHandled = true;
           this.recoverySessionReady = true;
