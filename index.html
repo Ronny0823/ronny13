@@ -2441,15 +2441,26 @@
 
       try {
         const username = AuthSystem.currentUser.username;
+        let dataToUpload = Array.isArray(AppState.data) ? AppState.data : [];
+        let configToUpload = AppState.config || {};
+        try {
+          const storedData = JSON.parse(localStorage.getItem(`erp_data_${username}`) || '[]');
+          if (Array.isArray(storedData) && storedData.length >= dataToUpload.length) dataToUpload = storedData;
+          const storedConfig = JSON.parse(localStorage.getItem(`erp_config_${username}`) || '{}');
+          if (storedConfig && typeof storedConfig === 'object') configToUpload = { ...configToUpload, ...storedConfig };
+        } catch (readError) {
+          console.warn('No se pudo leer la copia local para subir:', readError.message || readError);
+        }
+
         const rows = [
           {
             key: `erp_data_${username}`,
-            value: Array.isArray(AppState.data) ? AppState.data : [],
+            value: dataToUpload,
             updated_at: new Date().toISOString()
           },
           {
             key: `erp_config_${username}`,
-            value: AppState.config || {},
+            value: configToUpload,
             updated_at: new Date().toISOString()
           }
         ];
@@ -2464,7 +2475,7 @@
           return;
         }
 
-        showToast(`Subido a la nube: ${AppState.data.length} registros`, 'success');
+        showToast(`Subido a la nube: ${dataToUpload.length} registros`, 'success');
       } catch (error) {
         console.warn('No se pudo subir a Supabase:', error.message || error);
         showToast('No se pudo subir a la nube. Revisa conexion o permisos de Supabase.', 'error');
@@ -11889,6 +11900,12 @@
                 </button>
                 <button onclick="exportFuelExcel('full')" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold rounded-lg transition-all">
                   <i data-lucide="download" class="w-4 h-4"></i> Excel
+                </button>
+                <button onclick="forceUploadToCloud()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg transition-all shadow-lg shadow-emerald-500/10">
+                  <i data-lucide="upload-cloud" class="w-4 h-4"></i> Subir este telefono
+                </button>
+                <button onclick="refreshData()" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800/70 border border-slate-700 text-slate-200 hover:bg-slate-700 font-semibold rounded-lg transition-all">
+                  <i data-lucide="cloud-download" class="w-4 h-4"></i> Bajar de la nube
                 </button>
             </div>
           </div>
