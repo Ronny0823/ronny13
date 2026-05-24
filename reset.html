@@ -50,21 +50,8 @@
       Validando enlace de recuperacion...
     </div>
 
-    <form id="codeForm" class="mt-5 hidden space-y-3">
-      <label class="block text-sm font-semibold text-slate-300" for="codeEmail">Validar con codigo</label>
-      <input id="codeEmail" type="email" required autocomplete="email"
-        class="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-amber-400"
-        placeholder="tu correo">
-      <input id="recoveryCode" type="text" required inputmode="numeric" autocomplete="one-time-code"
-        class="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-amber-400"
-        placeholder="codigo del correo">
-      <button type="submit" class="w-full rounded-xl bg-emerald-500 px-4 py-3 font-bold text-slate-950 hover:bg-emerald-400">
-        Validar codigo
-      </button>
-    </form>
-
     <form id="retryForm" class="mt-5 hidden space-y-3">
-      <label class="block text-sm font-semibold text-slate-300" for="retryEmail">No tienes codigo?</label>
+      <label class="block text-sm font-semibold text-slate-300" for="retryEmail">Enviar otro enlace</label>
       <input id="retryEmail" type="email" required autocomplete="email"
         class="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-amber-400"
         placeholder="tu correo">
@@ -91,7 +78,6 @@
     });
 
     const form = document.getElementById('resetForm');
-    const codeForm = document.getElementById('codeForm');
     const retryForm = document.getElementById('retryForm');
     const message = document.getElementById('message');
     const loginLink = document.getElementById('loginLink');
@@ -134,8 +120,7 @@
     }
 
     function showInvalidLinkMessage() {
-      showMessage(`No se pudo validar el enlace. Si tu correo trae un codigo, escribelo abajo. Si no, pide un correo nuevo.${getRecoveryUrlError()}`, 'error');
-      codeForm.classList.remove('hidden');
+      showMessage(`No se pudo validar el enlace. Pide un correo nuevo y abre el ultimo enlace antes de 2 minutos.${getRecoveryUrlError()}`, 'error');
       retryForm.classList.remove('hidden');
       loginLink.classList.remove('hidden');
     }
@@ -179,7 +164,6 @@
           return;
         }
         form.classList.remove('hidden');
-        codeForm.classList.add('hidden');
         retryForm.classList.add('hidden');
         showMessage('Enlace validado. Escribe tu nueva contrasena.', 'success');
       } catch (error) {
@@ -219,33 +203,6 @@
       setTimeout(() => window.location.replace(`${LOGIN_URL}?login=1&t=${Date.now()}`), 1200);
     });
 
-    codeForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const email = document.getElementById('codeEmail').value.trim().toLowerCase();
-      const token = document.getElementById('recoveryCode').value.trim().replace(/\s+/g, '');
-
-      if (!email || !token) {
-        showMessage('Escribe tu correo y el codigo de recuperacion.', 'error');
-        return;
-      }
-
-      const { error } = await client.auth.verifyOtp({
-        email,
-        token,
-        type: 'recovery'
-      });
-
-      if (error) {
-        showMessage(error.message || 'No se pudo validar el codigo. Pide un correo nuevo.', 'error');
-        return;
-      }
-
-      codeForm.classList.add('hidden');
-      retryForm.classList.add('hidden');
-      form.classList.remove('hidden');
-      showMessage('Codigo validado. Escribe tu nueva contrasena.', 'success');
-    });
-
     retryForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const email = document.getElementById('retryEmail').value.trim().toLowerCase();
@@ -264,7 +221,7 @@
       }
 
       retryForm.reset();
-      showMessage('Correo nuevo enviado. Abre el ultimo enlace que recibas y evita usar enlaces anteriores.', 'success');
+      showMessage('Correo nuevo enviado. Abre el ultimo enlace antes de 2 minutos.', 'success');
     });
 
     initReset();

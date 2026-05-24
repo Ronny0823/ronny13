@@ -1493,7 +1493,7 @@
           clearPasswordRecoveryPending();
           return { success: false, message: error.message || 'No se pudo enviar el correo' };
         }
-        return { success: true, message: `Te enviamos un enlace para recuperar la contrasena.${getPasswordResetNotice()}` };
+        return { success: true, message: `Te enviamos un enlace para recuperar la contrasena. Abre el ultimo correo recibido antes de 2 minutos.${getPasswordResetNotice()}` };
       },
 
       async activateRecoverySession() {
