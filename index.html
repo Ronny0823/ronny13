@@ -6009,15 +6009,14 @@
             </div>
 
             <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <button onclick="DataBackup.download()" class="px-4 py-3 bg-blue-500/10 border border-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/20 transition-colors text-sm font-medium flex items-center justify-center gap-2">
-                <i data-lucide="download-cloud" class="w-4 h-4"></i> Descargar Respaldo
+              <button onclick="forceUploadToCloud()" class="px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 rounded-lg hover:bg-emerald-500/20 transition-colors text-sm font-medium flex items-center justify-center gap-2">
+                <i data-lucide="upload-cloud" class="w-4 h-4"></i> Subir este telefono
               </button>
-              <button onclick="document.getElementById('backupImportInput').click()" class="px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 rounded-lg hover:bg-emerald-500/20 transition-colors text-sm font-medium flex items-center justify-center gap-2">
-                <i data-lucide="upload-cloud" class="w-4 h-4"></i> Importar Respaldo
+              <button onclick="refreshData()" class="px-4 py-3 bg-slate-800/70 border border-slate-700 text-slate-200 rounded-lg hover:bg-slate-700 transition-colors text-sm font-medium flex items-center justify-center gap-2">
+                <i data-lucide="cloud-download" class="w-4 h-4"></i> Bajar de la nube
               </button>
-              <input type="file" id="backupImportInput" accept=".json,application/json" class="hidden" onchange="DataBackup.importFile(event)">
             </div>
-            <p class="text-xs text-slate-500 mt-3">Para usarlo en otro dispositivo, descarga el respaldo aqui y luego importalo en el otro equipo. La importacion mezcla datos y no borra los actuales.</p>
+            <p class="text-xs text-slate-500 mt-3">Sube los datos de este dispositivo o baja la version guardada en la nube para esta cuenta.</p>
           </div>
 
           <div class="flex justify-end">
@@ -11893,12 +11892,13 @@
                 <button onclick="exportFuelExcel('full')" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold rounded-lg transition-all">
                   <i data-lucide="download" class="w-4 h-4"></i> Excel
                 </button>
-                <button onclick="forceUploadToCloud()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg transition-all shadow-lg shadow-emerald-500/10">
-                  <i data-lucide="upload-cloud" class="w-4 h-4"></i> Subir este telefono
+                <button onclick="DataBackup.download()" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 font-semibold rounded-lg transition-all">
+                  <i data-lucide="download-cloud" class="w-4 h-4"></i> Descargar Respaldo
                 </button>
-                <button onclick="refreshData()" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800/70 border border-slate-700 text-slate-200 hover:bg-slate-700 font-semibold rounded-lg transition-all">
-                  <i data-lucide="cloud-download" class="w-4 h-4"></i> Bajar de la nube
+                <button onclick="document.getElementById('backupImportInput').click()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold rounded-lg transition-all">
+                  <i data-lucide="upload-cloud" class="w-4 h-4"></i> Importar Respaldo
                 </button>
+                <input type="file" id="backupImportInput" accept=".json,application/json" class="hidden" onchange="DataBackup.importFile(event)">
             </div>
           </div>
 
