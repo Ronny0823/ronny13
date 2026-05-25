@@ -1007,13 +1007,8 @@
         }
 
         if (key.startsWith('erp_data_')) {
-          const records = new Map();
-          [...(Array.isArray(remoteParsed) ? remoteParsed : []), ...(Array.isArray(localValue) ? localValue : [])].forEach(record => {
-            if (!record) return;
-            const id = record.__backendId || record.id || JSON.stringify(record);
-            records.set(id, { ...(records.get(id) || {}), ...record });
-          });
-          return Array.from(records.values());
+          if (Array.isArray(remoteParsed)) return remoteParsed;
+          return Array.isArray(localValue) ? localValue : [];
         }
 
         if (key.startsWith('erp_config_')) {
@@ -1467,7 +1462,19 @@
 
         const { error } = await SupabaseSync.client.auth.updateUser({ password: newPassword });
         if (error) return { success: false, message: error.message || 'No se pudo actualizar la contrasena' };
-        return { success: true, message: 'Contrasena actualizada correctamente' };
+
+        try {
+          await SupabaseSync.client.auth.signOut({ scope: 'global' });
+        } catch (signOutError) {
+          console.warn('No se pudo cerrar la sesion en todos los dispositivos:', signOutError.message || signOutError);
+        }
+
+        clearSupabaseAuthStorage();
+        this.currentUser = null;
+        AppState.data = [];
+        this.mainAppStarted = false;
+        this.showLogin();
+        return { success: true, message: 'Contrasena actualizada. Se cerro la sesion en todos los dispositivos.' };
       },
 
       async sendPasswordReset(email) {
