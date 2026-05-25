@@ -941,9 +941,7 @@
               this.passwordRecoveryDetected = true;
             }
           });
-          await this.pullAll();
           this.installLocalStorageSync();
-          await this.pushLocalSnapshot();
           console.info('Supabase conectado y sincronizado.');
         } catch (error) {
           this.client = null;
@@ -970,6 +968,7 @@
       shouldSyncKey(key) {
         return typeof key === 'string' &&
           key.startsWith('erp_') &&
+          key !== 'erp_users' &&
           key !== 'erp_session' &&
           !key.startsWith('erp_safety_');
       },
@@ -1134,6 +1133,12 @@
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_+|_+$/g, '') || 'usuario';
+    }
+
+    function getSupabaseUserDataKey(user) {
+      const id = String(user?.id || '').trim().toLowerCase();
+      if (id) return `user_${id.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+      return getAuthEmailKey(user?.email || '');
     }
 
     function getAuthRedirectUrl() {
@@ -1330,7 +1335,7 @@
       userFromSupabase(user) {
         const email = String(user?.email || '').trim().toLowerCase();
         const metadata = user?.user_metadata || {};
-        const username = metadata.dataKey || getAuthEmailKey(email);
+        const username = getSupabaseUserDataKey(user);
         return {
           id: user?.id || '',
           email,
@@ -1356,54 +1361,7 @@
       },
 
       migrateLegacyDataIfNeeded(user) {
-        if (!user?.username) return;
-        const targetKey = `erp_data_${user.username}`;
-        const targetData = JSON.parse(localStorage.getItem(targetKey) || '[]');
-        if (Array.isArray(targetData) && targetData.length) return;
-
-        const users = JSON.parse(localStorage.getItem('erp_users') || '[]');
-        const legacyUsers = users.filter(u => u?.username && u.username !== user.username);
-        const legacyDataKeys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith('erp_data_') && key !== targetKey) legacyDataKeys.push(key);
-        }
-
-        const legacySources = [...new Set([
-          ...legacyUsers.map(u => `erp_data_${u.username}`),
-          ...legacyDataKeys
-        ])].filter(key => {
-          const raw = localStorage.getItem(key);
-          if (!raw) return false;
-          try {
-            const records = JSON.parse(raw);
-            return Array.isArray(records) && records.length > 0;
-          } catch (error) {
-            return false;
-          }
-        });
-
-        if (!legacySources.length) return;
-        const shouldCopy = confirm('Encontramos datos guardados en este dispositivo antes de usar correo. Quieres copiarlos a esta cuenta para sincronizarlos?');
-        if (!shouldCopy) return;
-
-        const records = new Map();
-        legacySources.forEach(key => {
-          const sourceRecords = JSON.parse(localStorage.getItem(key) || '[]');
-          sourceRecords.forEach(record => {
-            if (!record) return;
-            const id = record.__backendId || record.id || JSON.stringify(record);
-            records.set(id, { ...(records.get(id) || {}), ...record });
-          });
-        });
-        localStorage.setItem(targetKey, JSON.stringify(Array.from(records.values())));
-
-        const legacyConfigKey = legacySources
-          .map(key => key.replace('erp_data_', 'erp_config_'))
-          .find(key => localStorage.getItem(key));
-        const legacyConfig = legacyConfigKey ? localStorage.getItem(legacyConfigKey) : null;
-        if (legacyConfig) localStorage.setItem(`erp_config_${user.username}`, legacyConfig);
-        SupabaseSync.flush();
+        return;
       },
 
       showLogin() {
