@@ -1012,7 +1012,10 @@
         }
 
         if (key.startsWith('erp_config_')) {
-          return { ...(remoteParsed || {}), ...(localValue || {}) };
+          if (remoteParsed && typeof remoteParsed === 'object') {
+            return { ...(localValue || {}), ...remoteParsed };
+          }
+          return localValue || {};
         }
 
         return localValue || remoteParsed;
@@ -1264,6 +1267,7 @@
       clockTimer: null,
       sessionStartedAt: 0,
       sessionWatchTimer: null,
+      cloudSyncTimer: null,
       
       async init() {
         await SupabaseSync.init();
@@ -1292,6 +1296,7 @@
             if (event === 'SIGNED_OUT') {
               this.currentUser = null;
               this.stopSessionWatcher();
+              this.stopCloudSync();
               AppState.data = [];
               this.mainAppStarted = false;
               this.showLogin();
@@ -1396,6 +1401,7 @@
         await AppState.loadUserData(this.currentUser.username);
         this.sessionStartedAt = this.sessionStartedAt || Date.now();
         this.startSessionWatcher();
+        this.startCloudSync();
         
         updateDate();
         if (!this.clockTimer) this.clockTimer = setInterval(updateDate, 60000);
@@ -1455,6 +1461,7 @@
         if (SupabaseSync.client) await SupabaseSync.client.auth.signOut();
         this.currentUser = null;
         this.stopSessionWatcher();
+        this.stopCloudSync();
         localStorage.removeItem('erp_session');
         AppState.data = [];
         this.mainAppStarted = false;
@@ -1523,6 +1530,21 @@
         this.sessionStartedAt = 0;
       },
 
+      startCloudSync() {
+        if (this.cloudSyncTimer) return;
+        this.cloudSyncTimer = setInterval(async () => {
+          if (!this.currentUser?.username || this.recoveryMode) return;
+          const changed = await syncCurrentUserFromCloud({ silent: true });
+          if (changed) renderPage();
+        }, 15000);
+      },
+
+      stopCloudSync() {
+        if (!this.cloudSyncTimer) return;
+        clearInterval(this.cloudSyncTimer);
+        this.cloudSyncTimer = null;
+      },
+
       async forceLocalLogoutAfterPasswordChange() {
         this.stopSessionWatcher();
         try {
@@ -1532,6 +1554,7 @@
         }
         clearSupabaseAuthStorage();
         this.currentUser = null;
+        this.stopCloudSync();
         AppState.data = [];
         this.mainAppStarted = false;
         this.showLogin();
@@ -1561,6 +1584,7 @@
         clearSupabaseAuthStorage();
         this.currentUser = null;
         this.stopSessionWatcher();
+        this.stopCloudSync();
         AppState.data = [];
         this.mainAppStarted = false;
         this.showLogin();
@@ -2484,9 +2508,16 @@
     async function syncCurrentUserFromCloud({ silent = false } = {}) {
       if (!AuthSystem.currentUser?.username || !SupabaseSync.client) return false;
       try {
+        const username = AuthSystem.currentUser.username;
+        const beforeData = localStorage.getItem(`erp_data_${username}`) || '';
+        const beforeConfig = localStorage.getItem(`erp_config_${username}`) || '';
         await SupabaseSync.flush();
-        await AppState.loadUserData(AuthSystem.currentUser.username);
-        return true;
+        await AppState.loadUserData(username);
+        const afterData = localStorage.getItem(`erp_data_${username}`) || '';
+        const afterConfig = localStorage.getItem(`erp_config_${username}`) || '';
+        const changed = beforeData !== afterData || beforeConfig !== afterConfig;
+        if (changed && !silent) showToast('Datos y configuracion actualizados desde la nube', 'success');
+        return changed;
       } catch (error) {
         console.warn('No se pudo sincronizar desde Supabase:', error.message || error);
         if (!silent) showToast('No se pudo leer la nube. Revisa la conexion o Supabase.', 'error');
