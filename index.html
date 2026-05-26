@@ -12667,7 +12667,7 @@
         ? totals.deliveries
         : totals.deliveries.filter(r => matchesDateFilter(r.date, filters.dateFrom, filters.dateTo));
       const exportedReceived = reportDeliveries.reduce((a, r) => a + (Number(r.quantity) || 0), 0);
-      const reportRemaining = isFullReport ? totals.remaining : exportedReceived - exportedDispatched;
+      const reportRemaining = totals.remaining;
       const sortedDeliveries = [...reportDeliveries].sort((a, b) => new Date(a.date) - new Date(b.date));
       const allSortedDeliveries = [...totals.deliveries].sort((a, b) => new Date(a.date) - new Date(b.date));
       const sortedDispatches = [...dispatches].sort((a, b) => new Date(a.date) - new Date(b.date));
