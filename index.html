@@ -1136,6 +1136,10 @@
       return getAuthEmailKey(user?.email || '');
     }
 
+    function getAuthKickKey(username) {
+      return `erp_auth_kick_${String(username || '').trim()}`;
+    }
+
     function getAuthRedirectUrl() {
       const configuredUrl = safeText(AUTH_REDIRECT_URL);
       if (configuredUrl) return configuredUrl;
@@ -1258,6 +1262,8 @@
       authListenerReady: false,
       mainAppStarted: false,
       clockTimer: null,
+      sessionStartedAt: 0,
+      sessionWatchTimer: null,
       
       async init() {
         await SupabaseSync.init();
@@ -1285,6 +1291,7 @@
             }
             if (event === 'SIGNED_OUT') {
               this.currentUser = null;
+              this.stopSessionWatcher();
               AppState.data = [];
               this.mainAppStarted = false;
               this.showLogin();
@@ -1387,6 +1394,8 @@
         this.ensureUserStorage(this.currentUser);
         this.migrateLegacyDataIfNeeded(this.currentUser);
         await AppState.loadUserData(this.currentUser.username);
+        this.sessionStartedAt = this.sessionStartedAt || Date.now();
+        this.startSessionWatcher();
         
         updateDate();
         if (!this.clockTimer) this.clockTimer = setInterval(updateDate, 60000);
@@ -1437,6 +1446,7 @@
         if (error || !data?.user) return { success: false, message: error?.message || 'Correo o contrasena incorrectos' };
 
         this.currentUser = this.userFromSupabase(data.user);
+        this.sessionStartedAt = Date.now();
         this.ensureUserStorage(this.currentUser);
         return { success: true, message: 'Bienvenido al sistema' };
       },
@@ -1444,10 +1454,88 @@
       async logout() {
         if (SupabaseSync.client) await SupabaseSync.client.auth.signOut();
         this.currentUser = null;
+        this.stopSessionWatcher();
         localStorage.removeItem('erp_session');
         AppState.data = [];
         this.mainAppStarted = false;
         this.showLogin();
+      },
+
+      async markPasswordChanged(username) {
+        if (!SupabaseSync.client || !username) return;
+        const changedAt = Date.now();
+        try {
+          await SupabaseSync.client.from(SUPABASE_CONFIG.table).upsert([{
+            key: getAuthKickKey(username),
+            value: { changed_at: changedAt },
+            updated_at: new Date(changedAt).toISOString()
+          }], { onConflict: 'key' });
+        } catch (error) {
+          console.warn('No se pudo avisar el cambio de contrasena a otros dispositivos:', error.message || error);
+        }
+      },
+
+      parsePasswordChangedAt(value) {
+        if (!value) return 0;
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') {
+          try {
+            return this.parsePasswordChangedAt(JSON.parse(value));
+          } catch (error) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+          }
+        }
+        const changedAt = Number(value.changed_at || value.changedAt || 0);
+        return Number.isFinite(changedAt) ? changedAt : 0;
+      },
+
+      async checkPasswordChangedElsewhere() {
+        if (!SupabaseSync.client || !this.currentUser?.username || !this.sessionStartedAt) return false;
+        try {
+          const { data, error } = await SupabaseSync.client
+            .from(SUPABASE_CONFIG.table)
+            .select('value')
+            .eq('key', getAuthKickKey(this.currentUser.username))
+            .maybeSingle();
+
+          if (error) return false;
+          const changedAt = this.parsePasswordChangedAt(data?.value);
+          if (changedAt && changedAt > this.sessionStartedAt) {
+            await this.forceLocalLogoutAfterPasswordChange();
+            return true;
+          }
+        } catch (error) {
+          console.warn('No se pudo revisar si la contrasena cambio:', error.message || error);
+        }
+        return false;
+      },
+
+      startSessionWatcher() {
+        if (this.sessionWatchTimer) return;
+        this.sessionWatchTimer = setInterval(() => this.checkPasswordChangedElsewhere(), 15000);
+      },
+
+      stopSessionWatcher() {
+        if (!this.sessionWatchTimer) return;
+        clearInterval(this.sessionWatchTimer);
+        this.sessionWatchTimer = null;
+        this.sessionStartedAt = 0;
+      },
+
+      async forceLocalLogoutAfterPasswordChange() {
+        this.stopSessionWatcher();
+        try {
+          if (SupabaseSync.client) await SupabaseSync.client.auth.signOut();
+        } catch (error) {
+          console.warn('No se pudo cerrar la sesion local:', error.message || error);
+        }
+        clearSupabaseAuthStorage();
+        this.currentUser = null;
+        AppState.data = [];
+        this.mainAppStarted = false;
+        this.showLogin();
+        showAuthMessage('Tu sesion fue cerrada porque la contrasena de esta cuenta cambio en otro dispositivo.', 'error');
       },
 
       async changePassword(currentPassword, newPassword, confirmPassword) {
@@ -1463,6 +1551,7 @@
         const { error } = await SupabaseSync.client.auth.updateUser({ password: newPassword });
         if (error) return { success: false, message: error.message || 'No se pudo actualizar la contrasena' };
 
+        await this.markPasswordChanged(this.currentUser.username);
         try {
           await SupabaseSync.client.auth.signOut({ scope: 'global' });
         } catch (signOutError) {
@@ -1471,6 +1560,7 @@
 
         clearSupabaseAuthStorage();
         this.currentUser = null;
+        this.stopSessionWatcher();
         AppState.data = [];
         this.mainAppStarted = false;
         this.showLogin();
@@ -1577,6 +1667,14 @@
           return { success: false, message: error.message || 'No se pudo actualizar la contrasena' };
         }
 
+        try {
+          const { data } = await SupabaseSync.client.auth.getUser();
+          const recoveryUsername = data?.user ? getSupabaseUserDataKey(data.user) : '';
+          await this.markPasswordChanged(recoveryUsername);
+        } catch (markError) {
+          console.warn('No se pudo avisar el cambio de contrasena por recuperacion:', markError.message || markError);
+        }
+
         clearAuthUrlParams();
         try {
           await SupabaseSync.client.auth.signOut({ scope: 'global' });
@@ -1589,6 +1687,7 @@
         this.recoveryMode = false;
         this.recoveryHandled = false;
         this.recoverySessionReady = false;
+        this.stopSessionWatcher();
         SupabaseSync.passwordRecoveryDetected = false;
         document.getElementById('resetPasswordForm')?.reset();
         document.getElementById('resetPasswordForm')?.classList.add('hidden');
