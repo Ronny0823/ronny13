@@ -5823,6 +5823,7 @@
       };
 
       const hasLogo = !!AppState.config.company_logo;
+      const displayUser = AuthSystem.currentUser?.fullName || AuthSystem.currentUser?.email || 'Cuenta activa';
 
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in max-w-4xl">
@@ -6135,7 +6136,7 @@
               <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
                 <div class="h-full bg-gradient-to-r from-primary-500 to-primary-400 rounded-full transition-all duration-500" style="width: ${(AppState.data.length / 999) * 100}%"></div>
               </div>
-              <p class="text-xs text-slate-500 mt-2">${AppState.data.length} de 10,000,000 registros maximos - Usuario: ${AppState.currentUser}</p>
+              <p class="text-xs text-slate-500 mt-2">${AppState.data.length} de 10,000,000 registros maximos - Usuario: ${escapeHtml(displayUser)}</p>
             </div>
 
             <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
