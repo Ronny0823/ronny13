@@ -3217,22 +3217,23 @@
       const columnLimits = [
         { min: 12, max: 18 },
         { min: 12, max: 18 },
-        { min: 18, max: 42 },
+        { min: 14, max: 24 },
         { min: 14, max: 20 },
-        { min: 18, max: 42 }
+        { min: 14, max: 24 },
+        { min: 10, max: 10 },
+        { min: 10, max: 10 }
       ];
       sheet['!cols'] = columnLimits.map((limit, columnIndex) => {
         const longest = rows.reduce((max, row) => Math.max(max, textWidth(row[columnIndex])), 0);
         return { wch: clamp(longest + 3, limit.min, limit.max) };
       });
-      sheet['!ref'] = `A1:E${summaryTotalRow}`;
+      sheet['!ref'] = `A1:G${summaryTotalRow}`;
 
       const blue = '1F5FD5';
-      const titleBg = 'EAF2FF';
-      const bodyBg = 'FFFFFF';
-      const alternateBg = 'F8FAFC';
-      const totalBg = 'EAF2FF';
-      const border = { style: 'thin', color: { rgb: 'CBD5E1' } };
+      const dark = '000000';
+      const alternateBg = '050505';
+      const totalBg = '020817';
+      const border = { style: 'thin', color: { rgb: '1F2937' } };
       const baseBorder = { top: border, bottom: border, left: border, right: border };
       const center = { horizontal: 'center', vertical: 'center', wrapText: true };
       const applyStyle = (addr, style) => {
@@ -3248,25 +3249,25 @@
         }
       };
       const titleStyle = {
-        font: { bold: true, sz: 20, color: { rgb: '0F172A' } },
-        fill: { fgColor: { rgb: titleBg } },
+        font: { bold: true, sz: 20, color: { rgb: 'E5E7EB' } },
+        fill: { fgColor: { rgb: dark } },
         alignment: { horizontal: 'left', vertical: 'center' },
         border: baseBorder
       };
       const headerStyle = {
-        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        font: { bold: true, color: { rgb: '111827' } },
         fill: { fgColor: { rgb: blue } },
         alignment: center,
         border: baseBorder
       };
       const bodyStyle = {
-        font: { color: { rgb: '0F172A' } },
-        fill: { fgColor: { rgb: bodyBg } },
+        font: { color: { rgb: 'E5E7EB' } },
+        fill: { fgColor: { rgb: dark } },
         alignment: center,
         border: baseBorder
       };
       const alternateStyle = {
-        font: { color: { rgb: '0F172A' } },
+        font: { color: { rgb: 'E5E7EB' } },
         fill: { fgColor: { rgb: alternateBg } },
         alignment: center,
         border: baseBorder
@@ -3279,14 +3280,14 @@
         numFmt: '#,##0.00'
       };
       const noteStyle = {
-        font: { color: { rgb: '334155' } },
-        fill: { fgColor: { rgb: bodyBg } },
+        font: { color: { rgb: 'CBD5E1' } },
+        fill: { fgColor: { rgb: dark } },
         alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
         border: baseBorder
       };
 
-      rangeStyle(`A1:E${summaryTotalRow}`, { fill: { fgColor: { rgb: bodyBg } }, border: baseBorder });
-      rangeStyle('A1:E1', titleStyle);
+      rangeStyle(`A1:G${summaryTotalRow}`, { fill: { fgColor: { rgb: dark } }, border: baseBorder });
+      rangeStyle('A1:G1', titleStyle);
       rangeStyle('A3:E3', headerStyle);
       if (entries.length) {
         for (let row = 4; row < detailTotalRow; row++) {
@@ -3307,7 +3308,7 @@
       rangeStyle(`D${summaryHeaderRow}:E${summaryTotalRow}`, noteStyle);
       applyStyle(`D${summaryHeaderRow}`, {
         ...noteStyle,
-        font: { color: { rgb: '334155' }, sz: 12 },
+        font: { color: { rgb: 'CBD5E1' }, sz: 12 },
         alignment: { horizontal: 'left', vertical: 'center', wrapText: true }
       });
       sheet[`D${summaryHeaderRow}`] = { t: 's', v: 'Los totales se calculan automaticamente por tipo de material.', s: sheet[`D${summaryHeaderRow}`]?.s };
