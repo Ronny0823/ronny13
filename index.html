@@ -3199,6 +3199,7 @@
         }),
         ['TOTAL GENERAL', '', '', totalQuantity, ''],
         [],
+        [],
         ['RESUMEN POR TIPO DE MATERIAL', '', '', '', ''],
         ['Material', 'Total (m3)', '', '', ''],
         ...materialRows,
@@ -3208,18 +3209,18 @@
       const workbook = XLSX.utils.book_new();
       const sheet = XLSX.utils.aoa_to_sheet(rows);
       const detailTotalRow = entries.length + 4;
-      const summaryTitleRow = detailTotalRow + 2;
+      const summaryTitleRow = detailTotalRow + 3;
       const summaryHeaderRow = summaryTitleRow + 1;
       const summaryStartRow = summaryHeaderRow + 1;
       const summaryTotalRow = rows.length;
       const textWidth = (value) => String(value ?? '').length;
       const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
       const columnLimits = [
-        { min: 12, max: 18 },
-        { min: 12, max: 18 },
-        { min: 14, max: 24 },
-        { min: 14, max: 20 },
-        { min: 14, max: 24 },
+        { min: 16, max: 18 },
+        { min: 16, max: 18 },
+        { min: 24, max: 28 },
+        { min: 20, max: 22 },
+        { min: 22, max: 24 },
         { min: 10, max: 10 },
         { min: 10, max: 10 }
       ];
@@ -3228,6 +3229,12 @@
         return { wch: clamp(longest + 3, limit.min, limit.max) };
       });
       sheet['!ref'] = `A1:G${summaryTotalRow}`;
+      sheet['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+        { s: { r: detailTotalRow - 1, c: 0 }, e: { r: detailTotalRow - 1, c: 2 } },
+        { s: { r: summaryTitleRow - 1, c: 0 }, e: { r: summaryTitleRow - 1, c: 1 } },
+        { s: { r: summaryHeaderRow - 1, c: 3 }, e: { r: summaryTotalRow - 1, c: 4 } }
+      ];
 
       const blue = '1F5FD5';
       const dark = '000000';
@@ -3250,38 +3257,38 @@
         }
       };
       const titleStyle = {
-        font: { bold: true, sz: 20, color: { rgb: 'E5E7EB' } },
+        font: { bold: true, sz: 30, color: { rgb: 'FFFFFF' } },
         fill: solidFill(dark),
         alignment: { horizontal: 'left', vertical: 'center' },
         border: baseBorder
       };
       const headerStyle = {
-        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
         fill: solidFill(blue),
         alignment: center,
         border: baseBorder
       };
       const bodyStyle = {
-        font: { color: { rgb: 'E5E7EB' } },
+        font: { sz: 13, color: { rgb: 'FFFFFF' } },
         fill: solidFill(dark),
         alignment: center,
         border: baseBorder
       };
       const alternateStyle = {
-        font: { color: { rgb: 'E5E7EB' } },
+        font: { sz: 13, color: { rgb: 'FFFFFF' } },
         fill: solidFill(alternateBg),
         alignment: center,
         border: baseBorder
       };
       const totalStyle = {
-        font: { bold: true, sz: 16, color: { rgb: blue } },
+        font: { bold: true, sz: 18, color: { rgb: blue } },
         fill: solidFill(totalBg),
         alignment: center,
         border: baseBorder,
         numFmt: '#,##0.00'
       };
       const noteStyle = {
-        font: { color: { rgb: 'CBD5E1' } },
+        font: { sz: 13, color: { rgb: 'FFFFFF' } },
         fill: solidFill(dark),
         alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
         border: baseBorder
@@ -3309,16 +3316,19 @@
       rangeStyle(`D${summaryHeaderRow}:E${summaryTotalRow}`, noteStyle);
       applyStyle(`D${summaryHeaderRow}`, {
         ...noteStyle,
-        font: { color: { rgb: 'CBD5E1' }, sz: 12 },
+        font: { color: { rgb: 'FFFFFF' }, sz: 13 },
         alignment: { horizontal: 'left', vertical: 'center', wrapText: true }
       });
       sheet[`D${summaryHeaderRow}`] = { t: 's', v: 'Los totales se calculan automaticamente por tipo de material.', s: sheet[`D${summaryHeaderRow}`]?.s };
+      sheet['!autofilter'] = { ref: `A3:E${Math.max(detailTotalRow - 1, 3)}` };
       sheet['!rows'] = rows.map((row, index) => {
-        if (index === 0) return { hpt: 38 };
-        if (index === 1 || index === detailTotalRow) return { hpt: 10 };
-        if (index === 2 || index === summaryHeaderRow - 1) return { hpt: 30 };
+        if (index === 0) return { hpt: 56 };
+        if (index === 1 || index === detailTotalRow || index === detailTotalRow + 1) return { hpt: 22 };
+        if (index === 2 || index === summaryHeaderRow - 1) return { hpt: 42 };
+        if (index === summaryTitleRow - 1) return { hpt: 34 };
+        if (index === summaryTotalRow - 1) return { hpt: 36 };
         const longest = Math.max(...row.map(textWidth));
-        return { hpt: longest > 35 ? 34 : 24 };
+        return { hpt: longest > 35 ? 34 : 28 };
       });
 
       const filters = AppState.supplierFilters || {};
