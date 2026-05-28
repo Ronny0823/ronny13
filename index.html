@@ -3212,7 +3212,19 @@
       const summaryHeaderRow = summaryTitleRow + 1;
       const summaryStartRow = summaryHeaderRow + 1;
       const summaryTotalRow = rows.length;
-      sheet['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 24 }];
+      const textWidth = (value) => String(value ?? '').length;
+      const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+      const columnLimits = [
+        { min: 12, max: 18 },
+        { min: 12, max: 18 },
+        { min: 18, max: 42 },
+        { min: 14, max: 20 },
+        { min: 18, max: 42 }
+      ];
+      sheet['!cols'] = columnLimits.map((limit, columnIndex) => {
+        const longest = rows.reduce((max, row) => Math.max(max, textWidth(row[columnIndex])), 0);
+        return { wch: clamp(longest + 3, limit.min, limit.max) };
+      });
       sheet['!merges'] = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
         { s: { r: detailTotalRow - 1, c: 0 }, e: { r: detailTotalRow - 1, c: 2 } },
@@ -3302,7 +3314,13 @@
       });
       sheet[`D${summaryHeaderRow}`] = { t: 's', v: 'Los totales se calculan automaticamente por tipo de material.', s: sheet[`D${summaryHeaderRow}`]?.s };
       sheet['!autofilter'] = { ref: `A3:E${Math.max(detailTotalRow - 1, 3)}` };
-      sheet['!rows'] = [{ hpt: 36 }, { hpt: 8 }, { hpt: 30 }];
+      sheet['!rows'] = rows.map((row, index) => {
+        if (index === 0) return { hpt: 38 };
+        if (index === 1 || index === detailTotalRow) return { hpt: 10 };
+        if (index === 2 || index === summaryHeaderRow - 1) return { hpt: 30 };
+        const longest = Math.max(...row.map(textWidth));
+        return { hpt: longest > 35 ? 34 : 24 };
+      });
 
       const filters = AppState.supplierFilters || {};
       const suffix = (filters.search || 'todos').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'todos';
