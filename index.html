@@ -3180,7 +3180,7 @@
       });
       const materialRows = Array.from(materialTotals.entries())
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([material, total]) => [material, total, '', '', '']);
+        .map(([material, total]) => [material, '', '', total, '']);
       const totalQuantity = entries.reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
 
       const rows = [
@@ -3201,9 +3201,9 @@
         [],
         [],
         ['RESUMEN POR TIPO DE MATERIAL', '', '', '', ''],
-        ['Material', 'Total (m3)', '', '', ''],
+        ['Material', '', '', 'Total (m3)', ''],
         ...materialRows,
-        ['TOTAL GENERAL', totalQuantity, '', '', '']
+        ['TOTAL GENERAL', '', '', totalQuantity, '']
       ];
 
       const workbook = XLSX.utils.book_new();
@@ -3229,11 +3229,19 @@
         return { wch: clamp(longest + 3, limit.min, limit.max) };
       });
       sheet['!ref'] = `A1:G${summaryTotalRow}`;
+      const summaryMergeRows = Array.from(
+        { length: materialRows.length + 2 },
+        (_, index) => summaryHeaderRow - 1 + index
+      );
       sheet['!merges'] = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
         { s: { r: detailTotalRow - 1, c: 0 }, e: { r: detailTotalRow - 1, c: 2 } },
-        { s: { r: summaryTitleRow - 1, c: 0 }, e: { r: summaryTitleRow - 1, c: 1 } },
-        { s: { r: summaryHeaderRow - 1, c: 3 }, e: { r: summaryTotalRow - 1, c: 4 } }
+        { s: { r: summaryTitleRow - 1, c: 0 }, e: { r: summaryTitleRow - 1, c: 4 } },
+        ...summaryMergeRows.flatMap(r => [
+          { s: { r, c: 0 }, e: { r, c: 2 } },
+          { s: { r, c: 3 }, e: { r, c: 4 } }
+        ]),
+        { s: { r: summaryHeaderRow - 1, c: 5 }, e: { r: summaryTotalRow - 1, c: 6 } }
       ];
 
       const blue = '1F5FD5';
@@ -3304,22 +3312,22 @@
         rangeStyle(`D4:D${detailTotalRow}`, { ...bodyStyle, numFmt: '#,##0.00' });
       }
       rangeStyle(`A${detailTotalRow}:E${detailTotalRow}`, totalStyle);
-      rangeStyle(`A${summaryTitleRow}:B${summaryTitleRow}`, titleStyle);
-      rangeStyle(`A${summaryHeaderRow}:B${summaryHeaderRow}`, headerStyle);
+      rangeStyle(`A${summaryTitleRow}:E${summaryTitleRow}`, titleStyle);
+      rangeStyle(`A${summaryHeaderRow}:E${summaryHeaderRow}`, headerStyle);
       if (materialRows.length) {
         for (let row = summaryStartRow; row < summaryTotalRow; row++) {
-          rangeStyle(`A${row}:B${row}`, row % 2 === 0 ? bodyStyle : alternateStyle);
+          rangeStyle(`A${row}:E${row}`, row % 2 === 0 ? bodyStyle : alternateStyle);
         }
-        rangeStyle(`B${summaryStartRow}:B${summaryTotalRow}`, { ...bodyStyle, numFmt: '#,##0.00' });
+        rangeStyle(`D${summaryStartRow}:D${summaryTotalRow}`, { ...bodyStyle, numFmt: '#,##0.00' });
       }
-      rangeStyle(`A${summaryTotalRow}:B${summaryTotalRow}`, totalStyle);
-      rangeStyle(`D${summaryHeaderRow}:E${summaryTotalRow}`, noteStyle);
-      applyStyle(`D${summaryHeaderRow}`, {
+      rangeStyle(`A${summaryTotalRow}:E${summaryTotalRow}`, totalStyle);
+      rangeStyle(`F${summaryHeaderRow}:G${summaryTotalRow}`, noteStyle);
+      applyStyle(`F${summaryHeaderRow}`, {
         ...noteStyle,
         font: { color: { rgb: 'FFFFFF' }, sz: 13 },
         alignment: { horizontal: 'left', vertical: 'center', wrapText: true }
       });
-      sheet[`D${summaryHeaderRow}`] = { t: 's', v: 'Los totales se calculan automaticamente por tipo de material.', s: sheet[`D${summaryHeaderRow}`]?.s };
+      sheet[`F${summaryHeaderRow}`] = { t: 's', v: 'Los totales se calculan automaticamente por tipo de material.', s: sheet[`F${summaryHeaderRow}`]?.s };
       sheet['!autofilter'] = { ref: `A3:E${Math.max(detailTotalRow - 1, 3)}` };
       sheet['!rows'] = rows.map((row, index) => {
         if (index === 0) return { hpt: 56 };
