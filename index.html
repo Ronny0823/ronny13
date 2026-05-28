@@ -3236,6 +3236,7 @@
       const border = { style: 'thin', color: { rgb: '1F2937' } };
       const baseBorder = { top: border, bottom: border, left: border, right: border };
       const center = { horizontal: 'center', vertical: 'center', wrapText: true };
+      const solidFill = (rgb) => ({ patternType: 'solid', fgColor: { rgb } });
       const applyStyle = (addr, style) => {
         if (!sheet[addr]) sheet[addr] = { t: 's', v: '' };
         sheet[addr].s = style;
@@ -3250,43 +3251,43 @@
       };
       const titleStyle = {
         font: { bold: true, sz: 20, color: { rgb: 'E5E7EB' } },
-        fill: { fgColor: { rgb: dark } },
+        fill: solidFill(dark),
         alignment: { horizontal: 'left', vertical: 'center' },
         border: baseBorder
       };
       const headerStyle = {
-        font: { bold: true, color: { rgb: '111827' } },
-        fill: { fgColor: { rgb: blue } },
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: solidFill(blue),
         alignment: center,
         border: baseBorder
       };
       const bodyStyle = {
         font: { color: { rgb: 'E5E7EB' } },
-        fill: { fgColor: { rgb: dark } },
+        fill: solidFill(dark),
         alignment: center,
         border: baseBorder
       };
       const alternateStyle = {
         font: { color: { rgb: 'E5E7EB' } },
-        fill: { fgColor: { rgb: alternateBg } },
+        fill: solidFill(alternateBg),
         alignment: center,
         border: baseBorder
       };
       const totalStyle = {
         font: { bold: true, sz: 16, color: { rgb: blue } },
-        fill: { fgColor: { rgb: totalBg } },
+        fill: solidFill(totalBg),
         alignment: center,
         border: baseBorder,
         numFmt: '#,##0.00'
       };
       const noteStyle = {
         font: { color: { rgb: 'CBD5E1' } },
-        fill: { fgColor: { rgb: dark } },
+        fill: solidFill(dark),
         alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
         border: baseBorder
       };
 
-      rangeStyle(`A1:G${summaryTotalRow}`, { fill: { fgColor: { rgb: dark } }, border: baseBorder });
+      rangeStyle(`A1:G${summaryTotalRow}`, { fill: solidFill(dark), border: baseBorder });
       rangeStyle('A1:G1', titleStyle);
       rangeStyle('A3:E3', headerStyle);
       if (entries.length) {
