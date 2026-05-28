@@ -3024,24 +3024,30 @@
       renderPage();
     }
 
-    function renderSuppliers(container) {
+    function getFilteredSupplierEntries() {
       const entries = getRecords('entry');
+      const filters = AppState.supplierFilters || { search: '', dateFrom: '', dateTo: '' };
+      const supplierSearch = (filters.search || '').toLowerCase().trim();
+
+      return entries.filter(entry => {
+        if (!entry.supplier_name) return false;
+        const matchesName = !supplierSearch || entry.supplier_name.toLowerCase().includes(supplierSearch);
+        const matchesDates = !(filters.dateFrom || filters.dateTo) || matchesDateFilter(entry.date, filters.dateFrom, filters.dateTo);
+        return matchesName && matchesDates;
+      });
+    }
+
+    function renderSuppliers(container) {
+      const filteredEntries = getFilteredSupplierEntries();
+      const filters = AppState.supplierFilters || { search: '', dateFrom: '', dateTo: '' };
       const suppMap = {};
       
-      entries.forEach(e => {
+      filteredEntries.forEach(e => {
         if (!e.supplier_name) return;
         if (!suppMap[e.supplier_name]) suppMap[e.supplier_name] = [];
         suppMap[e.supplier_name].push(e);
       });
-
-      const filters = AppState.supplierFilters || { search: '', dateFrom: '', dateTo: '' };
-      const supplierSearch = (filters.search || '').toLowerCase().trim();
-      const suppliers = Object.keys(suppMap).sort().filter(name => {
-        const matchesName = !supplierSearch || name.toLowerCase().includes(supplierSearch);
-        const matchesDates = !(filters.dateFrom || filters.dateTo) ||
-          suppMap[name].some(entry => matchesDateFilter(entry.date, filters.dateFrom, filters.dateTo));
-        return matchesName && matchesDates;
-      });
+      const suppliers = Object.keys(suppMap).sort();
 
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
@@ -3068,14 +3074,19 @@
                   class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
               </div>
             </div>
-            ${filters.search || filters.dateFrom || filters.dateTo ? `
-              <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
-                <span>${suppliers.length} proveedor(es) encontrados</span>
+              <div class="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
+                <span>${suppliers.length} proveedor(es), ${filteredEntries.length} entrega(s) encontradas</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button onclick="exportSuppliersExcel()" class="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1">
+                    <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Excel
+                  </button>
+                  ${filters.search || filters.dateFrom || filters.dateTo ? `
                 <button onclick="clearSupplierFilters()" class="text-rose-400 hover:text-rose-300 flex items-center gap-1">
                   <i data-lucide="x" class="w-3 h-3"></i> Limpiar filtros
                 </button>
+                  ` : ''}
+                </div>
               </div>
-            ` : ''}
           </div>
 
           ${suppliers.length === 0 ? `
@@ -3139,6 +3150,116 @@
     function clearSupplierFilters() {
       AppState.supplierFilters = { search: '', dateFrom: '', dateTo: '' };
       renderPage();
+    }
+
+    function exportSuppliersExcel() {
+      if (!window.XLSX) {
+        showExcelLibraryError();
+        return;
+      }
+
+      const entries = getFilteredSupplierEntries().sort((a, b) => new Date(a.date) - new Date(b.date));
+      if (!entries.length) {
+        showToast('No hay proveedores para exportar con esos filtros', 'error');
+        return;
+      }
+
+      const dateParts = (value) => {
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return { day: value || '', hour: '' };
+        return {
+          day: d.toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+          hour: d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true })
+        };
+      };
+
+      const rows = [
+        ['CONTROL DE MATERIALES', '', '', '', ''],
+        [],
+        ['Fecha', 'Hora', 'Nombre', 'Cantidad (m3)', 'Material'],
+        ...entries.map(entry => {
+          const date = dateParts(entry.date);
+          return [
+            date.day,
+            date.hour,
+            entry.supplier_name || '',
+            Number(entry.quantity) || 0,
+            entry.material_name || ''
+          ];
+        }),
+        ['', 'TOTAL', '', entries.reduce((total, entry) => total + (Number(entry.quantity) || 0), 0), '']
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      const totalRow = rows.length;
+      sheet['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 24 }];
+      sheet['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+        { s: { r: totalRow - 1, c: 1 }, e: { r: totalRow - 1, c: 2 } }
+      ];
+
+      const blue = '1155CC';
+      const lightBlue = 'EAF2FF';
+      const border = { style: 'thin', color: { rgb: 'BFD3F7' } };
+      const baseBorder = { top: border, bottom: border, left: border, right: border };
+      const center = { horizontal: 'center', vertical: 'center', wrapText: true };
+      const applyStyle = (addr, style) => {
+        if (!sheet[addr]) sheet[addr] = { t: 's', v: '' };
+        sheet[addr].s = style;
+      };
+      const rangeStyle = (range, style) => {
+        const decoded = XLSX.utils.decode_range(range);
+        for (let r = decoded.s.r; r <= decoded.e.r; r++) {
+          for (let c = decoded.s.c; c <= decoded.e.c; c++) {
+            applyStyle(XLSX.utils.encode_cell({ r, c }), style);
+          }
+        }
+      };
+      const titleStyle = {
+        font: { bold: true, sz: 22, color: { rgb: '16213A' } },
+        alignment: { horizontal: 'left', vertical: 'center' }
+      };
+      const headerStyle = {
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: blue } },
+        alignment: center,
+        border: baseBorder
+      };
+      const bodyStyle = {
+        alignment: center,
+        border: baseBorder
+      };
+      const alternateStyle = {
+        fill: { fgColor: { rgb: 'F1F6FF' } },
+        alignment: center,
+        border: baseBorder
+      };
+      const totalStyle = {
+        font: { bold: true, sz: 16, color: { rgb: blue } },
+        fill: { fgColor: { rgb: lightBlue } },
+        alignment: center,
+        border: baseBorder,
+        numFmt: '#,##0.00'
+      };
+
+      rangeStyle('A1:E1', titleStyle);
+      rangeStyle('A3:E3', headerStyle);
+      if (entries.length) {
+        for (let row = 4; row < totalRow; row++) {
+          rangeStyle(`A${row}:E${row}`, row % 2 === 0 ? bodyStyle : alternateStyle);
+        }
+        rangeStyle(`D4:D${totalRow}`, { ...bodyStyle, numFmt: '#,##0.00' });
+      }
+      rangeStyle(`A${totalRow}:E${totalRow}`, totalStyle);
+      sheet['!autofilter'] = { ref: `A3:E${Math.max(totalRow - 1, 3)}` };
+      sheet['!rows'] = [{ hpt: 32 }, { hpt: 8 }, { hpt: 28 }];
+
+      const filters = AppState.supplierFilters || {};
+      const suffix = (filters.search || 'todos').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'todos';
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Control materiales');
+      XLSX.writeFile(workbook, `control_materiales_${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showToast(`Excel de proveedores exportado: ${entries.length} entrega(s)`);
     }
 
     function renderClients(container) {
