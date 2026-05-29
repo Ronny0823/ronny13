@@ -2311,17 +2311,48 @@
     }
 
     let filterRenderTimer = null;
-    function renderPageDebounced(delay = 800) {
+    let isFilterRendering = false;
+
+    function renderPageForFilter(searchInputId) {
+      const active = document.getElementById(searchInputId);
+      const focusState = active ? {
+        id: searchInputId,
+        start: active.selectionStart,
+        end: active.selectionEnd
+      } : null;
+      const scrollState = { x: window.scrollX, y: window.scrollY };
+
+      isFilterRendering = true;
+      renderPage();
+      isFilterRendering = false;
+
+      if (focusState) {
+        const nextInput = document.getElementById(focusState.id);
+        if (nextInput) {
+          nextInput.focus({ preventScroll: true });
+          if (typeof nextInput.setSelectionRange === 'function') {
+            nextInput.setSelectionRange(focusState.start, focusState.end);
+          }
+        }
+      }
+      window.scrollTo(scrollState.x, scrollState.y);
+    }
+
+    function renderPageDebounced(delay = 250, searchInputId = null) {
       clearTimeout(filterRenderTimer);
       filterRenderTimer = setTimeout(() => {
         filterRenderTimer = null;
-        renderPage();
+        if (searchInputId) {
+          renderPageForFilter(searchInputId);
+        } else {
+          renderPage();
+        }
       }, delay);
     }
 
     function renderFilterPage(searchInputId) {
       if (document.activeElement?.id === searchInputId) {
-        renderPageDebounced();
+        renderPageDebounced(250, searchInputId);
         return;
       }
       clearTimeout(filterRenderTimer);
@@ -2501,6 +2532,10 @@
         case 'directTrips': renderDirectTrips(container); break;
         case 'fuelDispatch': renderFuelDispatch(container); break;
         case 'settings': renderSettings(container); break;
+      }
+
+      if (isFilterRendering) {
+        container.querySelectorAll('.animate-fade-in').forEach(el => el.classList.remove('animate-fade-in'));
       }
       
       lucide.createIcons();
