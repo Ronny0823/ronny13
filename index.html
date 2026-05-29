@@ -284,6 +284,19 @@
       border-color: rgba(245, 158, 11, 0.85) !important;
       box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14), 0 12px 28px -20px rgba(245, 158, 11, 0.45) !important;
     }
+    input[id$="FilterSearch"],
+    #fuelSearch,
+    #configPrinterSearch,
+    #currencySearch {
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    input[id$="FilterSearch"]:focus,
+    #fuelSearch:focus,
+    #configPrinterSearch:focus,
+    #currencySearch:focus {
+      border-color: #475569 !important;
+      box-shadow: none !important;
+    }
     button {
       transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
     }
@@ -2352,7 +2365,7 @@
 
     function renderFilterPage(searchInputId) {
       if (document.activeElement?.id === searchInputId) {
-        renderPageDebounced(250, searchInputId);
+        renderPageDebounced(0, searchInputId);
         return;
       }
       clearTimeout(filterRenderTimer);
