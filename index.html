@@ -4237,7 +4237,7 @@
 
     // ==================== GESTION DE CREDITO CON ABONOS Y PAGO TOTAL ====================
     function renderCredit(container) {
-      const sales = getRecords('sale').filter(s => s.payment_type === 'credito');
+      const sales = getRecords('sale').filter(s => s.payment_type === 'credito' || s.payment_status === 'pagada');
       const payments = getRecords('payment');
       const clients = getRecords('client');
 
@@ -4253,11 +4253,15 @@
           };
         }
 
+        const saleTotal = s.sale_total || 0;
         const salePayments = payments.filter(p => p.sale_id === s.__backendId);
-        const paidAmount = salePayments.reduce((sum, p) => sum + p.amount, 0);
-        const remaining = (s.sale_total || 0) - paidAmount;
+        const paymentTotal = salePayments.reduce((sum, p) => sum + p.amount, 0);
+        const paidAmount = s.payment_status === 'pagada'
+          ? Math.max(paymentTotal, s.amount_paid || 0, saleTotal)
+          : paymentTotal;
+        const remaining = Math.max(0, saleTotal - paidAmount);
 
-        clientDebts[s.client_name].totalDebt += (s.sale_total || 0);
+        clientDebts[s.client_name].totalDebt += saleTotal;
         clientDebts[s.client_name].totalPaid += paidAmount;
         clientDebts[s.client_name].transactions.push({
           ...s,
@@ -4561,7 +4565,7 @@
                       </div>
                       <div>
                         <h3 class="font-semibold text-slate-200">${cn}</h3>
-                        <p class="text-sm text-slate-500">${visibleTransactions.length} ventas a credito</p>
+                        <p class="text-sm text-slate-500">${visibleTransactions.length} venta${visibleTransactions.length === 1 ? '' : 's'}</p>
                       </div>
                     </div>
                     <div class="text-right">
