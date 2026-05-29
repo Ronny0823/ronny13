@@ -99,8 +99,9 @@
     .data-table tr:hover td { background: rgba(248, 250, 252, 0.02); }
     
     .input-focus:focus {
-      outline: none; border-color: #f59e0b;
-      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+      outline: none;
+      border-color: #475569;
+      box-shadow: none;
     }
     
     .status-badge {
@@ -281,8 +282,28 @@
       transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
     }
     input:focus, select:focus, textarea:focus {
-      border-color: rgba(245, 158, 11, 0.85) !important;
-      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14), 0 12px 28px -20px rgba(245, 158, 11, 0.45) !important;
+      border-color: #475569 !important;
+      box-shadow: none !important;
+    }
+    button:focus,
+    button:focus-visible,
+    input:focus,
+    input:focus-visible,
+    select:focus,
+    select:focus-visible,
+    textarea:focus,
+    textarea:focus-visible,
+    [type="checkbox"]:focus,
+    [type="radio"]:focus {
+      outline: none !important;
+      box-shadow: none !important;
+      --tw-ring-color: transparent !important;
+      --tw-ring-offset-shadow: 0 0 #0000 !important;
+      --tw-ring-shadow: 0 0 #0000 !important;
+    }
+    ::selection {
+      background: rgba(71, 85, 105, 0.55);
+      color: #e2e8f0;
     }
     input[id$="FilterSearch"],
     #fuelSearch,
