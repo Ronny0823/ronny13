@@ -2055,7 +2055,7 @@
       deleteConfirmId: null,
       chartInstance: null,
       sidebarOpen: false,
-      entryFilters: { supplier: '', dateFrom: '', dateTo: '' },
+      entryFilters: { search: '', supplier: '', dateFrom: '', dateTo: '', quickPeriod: '' },
       supplierFilters: { search: '', material: '', status: '', dateFrom: '', dateTo: '' },
       creditFilters: { client: '', dateFrom: '', dateTo: '', status: 'all' },
       invoiceFilters: { client: '', dateFrom: '', dateTo: '' },
@@ -2959,18 +2959,20 @@
             </div>
             
             <div class="flex flex-wrap gap-2 mt-3">
-              <button onclick="setQuickDateFilter('today')" class="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-slate-400 hover:text-primary-400 hover:border-primary-500/30 transition-colors">
-                Hoy
-              </button>
-              <button onclick="setQuickDateFilter('week')" class="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-slate-400 hover:text-primary-400 hover:border-primary-500/30 transition-colors">
-                Esta semana
-              </button>
-              <button onclick="setQuickDateFilter('month')" class="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-slate-400 hover:text-primary-400 hover:border-primary-500/30 transition-colors">
-                Este mes
-              </button>
-              <button onclick="setQuickDateFilter('year')" class="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-slate-400 hover:text-primary-400 hover:border-primary-500/30 transition-colors">
-                Este ano
-              </button>
+              <div class="w-full sm:w-48">
+                <label class="block text-xs text-slate-500 mb-1">Periodo rapido</label>
+                <select id="entryQuickDateFilter" onchange="setQuickDateFilter(this.value)"
+                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
+                  <option value="" ${!AppState.entryFilters.quickPeriod ? 'selected' : ''}>Seleccionar</option>
+                  <option value="today" ${AppState.entryFilters.quickPeriod === 'today' ? 'selected' : ''}>Hoy</option>
+                  <option value="thisWeek" ${AppState.entryFilters.quickPeriod === 'thisWeek' ? 'selected' : ''}>Esta semana</option>
+                  <option value="week" ${AppState.entryFilters.quickPeriod === 'week' ? 'selected' : ''}>Semana</option>
+                  <option value="thisMonth" ${AppState.entryFilters.quickPeriod === 'thisMonth' ? 'selected' : ''}>Este mes</option>
+                  <option value="month" ${AppState.entryFilters.quickPeriod === 'month' ? 'selected' : ''}>Mes</option>
+                  <option value="thisYear" ${AppState.entryFilters.quickPeriod === 'thisYear' ? 'selected' : ''}>Este ano</option>
+                  <option value="year" ${AppState.entryFilters.quickPeriod === 'year' ? 'selected' : ''}>Ano</option>
+                </select>
+              </div>
             </div>
 
             ${AppState.entryFilters.supplier || AppState.entryFilters.dateFrom || AppState.entryFilters.dateTo ? `
@@ -3050,31 +3052,57 @@
     function setQuickDateFilter(period) {
       const today = new Date();
       const formatDate = (d) => d.toISOString().split('T')[0];
+      const daysAgo = (days) => {
+        const date = new Date(today);
+        date.setDate(today.getDate() - days);
+        return date;
+      };
       
       let fromDate, toDate;
       
       switch(period) {
+        case '':
+          AppState.entryFilters.quickPeriod = '';
+          AppState.entryFilters.dateFrom = '';
+          AppState.entryFilters.dateTo = '';
+          renderPage();
+          return;
         case 'today':
           fromDate = toDate = formatDate(today);
           break;
-        case 'week':
+        case 'thisWeek':
           const weekStart = new Date(today);
           weekStart.setDate(today.getDate() - today.getDay());
           fromDate = formatDate(weekStart);
           toDate = formatDate(today);
           break;
-        case 'month':
+        case 'week':
+          fromDate = formatDate(daysAgo(6));
+          toDate = formatDate(today);
+          break;
+        case 'thisMonth':
           const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
           fromDate = formatDate(monthStart);
           toDate = formatDate(today);
           break;
-        case 'year':
+        case 'month':
+          fromDate = formatDate(daysAgo(29));
+          toDate = formatDate(today);
+          break;
+        case 'thisYear':
           const yearStart = new Date(today.getFullYear(), 0, 1);
           fromDate = formatDate(yearStart);
           toDate = formatDate(today);
           break;
+        case 'year':
+          fromDate = formatDate(daysAgo(364));
+          toDate = formatDate(today);
+          break;
+        default:
+          return;
       }
       
+      AppState.entryFilters.quickPeriod = period;
       AppState.entryFilters.dateFrom = fromDate;
       AppState.entryFilters.dateTo = toDate;
       renderPage();
@@ -3085,11 +3113,12 @@
       AppState.entryFilters.supplier = document.getElementById('entryFilterSupplier').value;
       AppState.entryFilters.dateFrom = document.getElementById('entryFilterDateFrom').value;
       AppState.entryFilters.dateTo = document.getElementById('entryFilterDateTo').value;
+      AppState.entryFilters.quickPeriod = '';
       renderFilterPage('entryFilterSearch');
     }
 
     function clearEntryFilters() {
-      AppState.entryFilters = { search: '', supplier: '', dateFrom: '', dateTo: '' };
+      AppState.entryFilters = { search: '', supplier: '', dateFrom: '', dateTo: '', quickPeriod: '' };
       renderPage();
     }
 
