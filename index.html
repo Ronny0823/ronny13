@@ -2061,7 +2061,7 @@
       invoiceFilters: { client: '', dateFrom: '', dateTo: '' },
       reportFilters: { period: 'week', dateFrom: '', dateTo: '' },
       dailyMetersFilters: { search: '', dateFrom: '', dateTo: '', quickPeriod: '' },
-      directTripFilters: { company: '', dateFrom: '', dateTo: '', status: 'all' },
+      directTripFilters: { search: '', company: '', dateFrom: '', dateTo: '', status: 'all', quickPeriod: '' },
       fuelFilters: { search: '', dateFrom: '', dateTo: '' },
       currentUser: null,
 
@@ -5648,22 +5648,16 @@
                     class="w-full pl-9 pr-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
                 </div>
               </div>
-              <div class="md:col-span-2 flex gap-2 report-period-controls">
-                <button onclick="setReportPeriod('today')" class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.reportFilters.period === 'today' ? 'bg-primary-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
-                  Hoy
-                </button>
-                <button onclick="setReportPeriod('week')" class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.reportFilters.period === 'week' ? 'bg-primary-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
-                  Semana
-                </button>
-                <button onclick="setReportPeriod('month')" class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.reportFilters.period === 'month' ? 'bg-primary-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
-                  Mes
-                </button>
-                <button onclick="setReportPeriod('year')" class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.reportFilters.period === 'year' ? 'bg-primary-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
-                  Ano
-                </button>
-                <button onclick="setReportPeriod('custom')" class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.reportFilters.period === 'custom' ? 'bg-primary-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
-                  Custom
-                </button>
+              <div class="md:col-span-2">
+                <label class="block text-xs text-slate-500 mb-1">Periodo</label>
+                <select id="reportPeriodSelect" onchange="setReportPeriod(this.value)"
+                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
+                  <option value="today" ${AppState.reportFilters.period === 'today' ? 'selected' : ''}>Hoy</option>
+                  <option value="week" ${AppState.reportFilters.period === 'week' ? 'selected' : ''}>Semana</option>
+                  <option value="month" ${AppState.reportFilters.period === 'month' ? 'selected' : ''}>Mes</option>
+                  <option value="year" ${AppState.reportFilters.period === 'year' ? 'selected' : ''}>Año</option>
+                  <option value="custom" ${AppState.reportFilters.period === 'custom' ? 'selected' : ''}>Custom</option>
+                </select>
               </div>
             </div>
 
@@ -10492,18 +10486,21 @@
             </div>
 
             <div class="flex flex-wrap gap-2 mt-3">
-              <button onclick="setDirectTripQuickFilter('today')" class="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-slate-400 hover:text-primary-400 hover:border-primary-500/30 transition-colors">
-                Hoy
-              </button>
-              <button onclick="setDirectTripQuickFilter('week')" class="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-slate-400 hover:text-primary-400 hover:border-primary-500/30 transition-colors">
-                Esta semana
-              </button>
-              <button onclick="setDirectTripQuickFilter('month')" class="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-slate-400 hover:text-primary-400 hover:border-primary-500/30 transition-colors">
-                Este mes
-              </button>
+              <div class="w-full sm:w-48">
+                <label class="block text-xs text-slate-500 mb-1">Periodo rapido</label>
+                <select id="directTripQuickFilter" onchange="setDirectTripQuickFilter(this.value)"
+                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
+                  <option value="" ${!AppState.directTripFilters.quickPeriod ? 'selected' : ''}>Seleccionar</option>
+                  <option value="today" ${AppState.directTripFilters.quickPeriod === 'today' ? 'selected' : ''}>Hoy</option>
+                  <option value="week" ${AppState.directTripFilters.quickPeriod === 'week' ? 'selected' : ''}>Semana</option>
+                  <option value="month" ${AppState.directTripFilters.quickPeriod === 'month' ? 'selected' : ''}>Mes</option>
+                </select>
+              </div>
+              <div class="flex items-end">
               <button onclick="clearDirectTripFilters()" class="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1">
                 <i data-lucide="x-circle" class="w-3 h-3"></i> Limpiar
               </button>
+              </div>
             </div>
 
             ${AppState.directTripFilters.company || AppState.directTripFilters.dateFrom || AppState.directTripFilters.dateTo || AppState.directTripFilters.status !== 'all' ? `
@@ -10609,6 +10606,7 @@
       AppState.directTripFilters.dateFrom = document.getElementById('directTripFilterDateFrom').value;
       AppState.directTripFilters.dateTo = document.getElementById('directTripFilterDateTo').value;
       AppState.directTripFilters.status = document.getElementById('directTripFilterStatus').value;
+      AppState.directTripFilters.quickPeriod = '';
       renderFilterPage('directTripFilterSearch');
     }
 
@@ -10619,6 +10617,12 @@
       let fromDate, toDate;
 
       switch(period) {
+        case '':
+          AppState.directTripFilters.quickPeriod = '';
+          AppState.directTripFilters.dateFrom = '';
+          AppState.directTripFilters.dateTo = '';
+          renderPage();
+          return;
         case 'today':
           fromDate = toDate = formatDate(today);
           break;
@@ -10633,15 +10637,18 @@
           fromDate = formatDate(monthStart);
           toDate = formatDate(today);
           break;
+        default:
+          return;
       }
 
+      AppState.directTripFilters.quickPeriod = period;
       AppState.directTripFilters.dateFrom = fromDate;
       AppState.directTripFilters.dateTo = toDate;
       renderPage();
     }
 
     function clearDirectTripFilters() {
-      AppState.directTripFilters = { search: '', company: '', dateFrom: '', dateTo: '', status: 'all' };
+      AppState.directTripFilters = { search: '', company: '', dateFrom: '', dateTo: '', status: 'all', quickPeriod: '' };
       renderPage();
     }
 
