@@ -3096,19 +3096,6 @@
 
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
-          <div class="flex flex-wrap items-center justify-end gap-4">
-            <button onclick="exportSuppliersExcel()" class="min-w-[150px] px-5 py-3 rounded-lg bg-slate-900/80 border border-slate-700 text-slate-100 hover:border-emerald-400/50 hover:text-emerald-300 transition-all flex items-center justify-center gap-3">
-              <i data-lucide="file-spreadsheet" class="w-5 h-5 text-emerald-400"></i>
-              <span class="font-semibold">Excel</span>
-              <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500"></i>
-            </button>
-            <button onclick="showToast('La exportacion PDF de proveedores estara disponible pronto', 'info')" class="min-w-[150px] px-5 py-3 rounded-lg bg-slate-900/80 border border-slate-700 text-slate-100 hover:border-rose-400/50 hover:text-rose-300 transition-all flex items-center justify-center gap-3">
-              <i data-lucide="file-text" class="w-5 h-5 text-rose-400"></i>
-              <span class="font-semibold">PDF</span>
-              <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500"></i>
-            </button>
-          </div>
-
           <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             ${[
               { label: 'Total Proveedores', value: suppliers.length, detail: 'Activos', icon: 'users', color: 'blue' },
@@ -3136,7 +3123,7 @@
                 <label class="block text-sm text-slate-200 mb-2">Buscar proveedor</label>
                 <div class="relative">
                   <i data-lucide="search" class="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2"></i>
-                  <input type="text" id="supplierFilterSearch" value="${escapeAttr(filters.search || '')}" onkeydown="if(event.key === 'Enter') updateSupplierFilters()" placeholder="Buscar por nombre del proveedor..."
+                  <input type="text" id="supplierFilterSearch" value="${escapeAttr(filters.search || '')}" oninput="updateSupplierFilters()" placeholder="Buscar por nombre del proveedor..."
                     class="w-full pl-12 pr-4 py-3 bg-slate-950/40 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
                 </div>
               </div>
@@ -3169,8 +3156,8 @@
               <button onclick="clearSupplierFilters()" class="px-4 py-3 rounded-lg bg-slate-950/40 border border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 transition-all flex items-center justify-center gap-2">
                 <i data-lucide="refresh-cw" class="w-5 h-5"></i> Limpiar filtros
               </button>
-              <button onclick="updateSupplierFilters()" class="px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
-                <i data-lucide="search" class="w-5 h-5"></i> Buscar
+              <button onclick="exportSuppliersExcel()" class="px-4 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20">
+                <i data-lucide="file-spreadsheet" class="w-5 h-5"></i> Excel
               </button>
             </div>
           </div>
