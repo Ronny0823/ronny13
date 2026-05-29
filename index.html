@@ -3123,7 +3123,7 @@
                 <label class="block text-sm text-slate-200 mb-2">Buscar proveedor</label>
                 <div class="relative">
                   <i data-lucide="search" class="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2"></i>
-                  <input type="text" id="supplierFilterSearch" value="${escapeAttr(filters.search || '')}" oninput="updateSupplierFilters()" placeholder="Buscar por nombre del proveedor..."
+                  <input type="text" id="supplierFilterSearch" value="${escapeAttr(filters.search || '')}" oninput="updateSupplierSearchLive()" placeholder="Buscar por nombre del proveedor..."
                     class="w-full pl-12 pr-4 py-3 bg-slate-950/40 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
                 </div>
               </div>
@@ -3165,7 +3165,7 @@
           <div class="glass rounded-xl border border-slate-800/80 overflow-hidden">
             <div class="px-5 py-5 flex flex-wrap items-center gap-3 border-b border-slate-800">
               <h2 class="text-xl font-bold text-slate-100">Listado de proveedores</h2>
-              <span class="px-3 py-1 rounded-full bg-slate-800/80 text-slate-300 text-sm">${suppliers.length} proveedores</span>
+              <span id="supplierVisibleCount" class="px-3 py-1 rounded-full bg-slate-800/80 text-slate-300 text-sm">${suppliers.length} proveedores</span>
             </div>
             ${suppliers.length === 0 ? `
               <div class="p-12 text-center">
@@ -3191,7 +3191,7 @@
                     ${supplierRows.map(row => {
                       const last = dateParts(row.lastDelivery?.date);
                       return `
-                        <tr class="border-t border-slate-800 hover:bg-slate-900/50 transition-colors">
+                        <tr data-supplier-row data-supplier-name="${escapeAttr(row.supplier.toLowerCase())}" class="border-t border-slate-800 hover:bg-slate-900/50 transition-colors">
                           <td class="px-5 py-4">
                             <div class="flex items-center gap-3">
                               <div class="w-11 h-11 rounded-full bg-gradient-to-br ${row.index % 2 === 0 ? 'from-blue-600 to-blue-800' : 'from-violet-600 to-violet-800'} flex items-center justify-center">
@@ -3232,6 +3232,9 @@
                         </tr>
                       `;
                     }).join('')}
+                    <tr id="supplierLiveEmptyRow" class="hidden border-t border-slate-800">
+                      <td colspan="7" class="px-5 py-8 text-center text-slate-500">No hay proveedores que coincidan con la busqueda.</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -3302,6 +3305,26 @@
           </div>
         </div>
       `;
+    }
+
+    function updateSupplierSearchLive() {
+      const input = document.getElementById('supplierFilterSearch');
+      const query = (input?.value || '').toLowerCase().trim();
+      AppState.supplierFilters.search = input?.value || '';
+
+      const rows = Array.from(document.querySelectorAll('[data-supplier-row]'));
+      let visibleCount = 0;
+      rows.forEach(row => {
+        const matches = !query || (row.dataset.supplierName || '').includes(query);
+        row.classList.toggle('hidden', !matches);
+        if (matches) visibleCount++;
+      });
+
+      const count = document.getElementById('supplierVisibleCount');
+      if (count) count.textContent = `${visibleCount} proveedor${visibleCount === 1 ? '' : 'es'}`;
+
+      const emptyRow = document.getElementById('supplierLiveEmptyRow');
+      if (emptyRow) emptyRow.classList.toggle('hidden', visibleCount !== 0);
     }
 
     function updateSupplierFilters() {
