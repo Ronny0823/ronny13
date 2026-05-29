@@ -2022,7 +2022,7 @@
       chartInstance: null,
       sidebarOpen: false,
       entryFilters: { supplier: '', dateFrom: '', dateTo: '' },
-      supplierFilters: { search: '', dateFrom: '', dateTo: '' },
+      supplierFilters: { search: '', material: '', status: '', dateFrom: '', dateTo: '' },
       creditFilters: { client: '', dateFrom: '', dateTo: '', status: 'all' },
       invoiceFilters: { client: '', dateFrom: '', dateTo: '' },
       reportFilters: { period: 'week', dateFrom: '', dateTo: '' },
@@ -3026,20 +3026,23 @@
 
     function getFilteredSupplierEntries() {
       const entries = getRecords('entry');
-      const filters = AppState.supplierFilters || { search: '', dateFrom: '', dateTo: '' };
+      const filters = AppState.supplierFilters || { search: '', material: '', status: '', dateFrom: '', dateTo: '' };
       const supplierSearch = (filters.search || '').toLowerCase().trim();
 
       return entries.filter(entry => {
         if (!entry.supplier_name) return false;
         const matchesName = !supplierSearch || entry.supplier_name.toLowerCase().includes(supplierSearch);
+        const matchesMaterial = !filters.material || entry.material_name === filters.material;
+        const matchesStatus = !filters.status || filters.status === 'active';
         const matchesDates = !(filters.dateFrom || filters.dateTo) || matchesDateFilter(entry.date, filters.dateFrom, filters.dateTo);
-        return matchesName && matchesDates;
+        return matchesName && matchesMaterial && matchesStatus && matchesDates;
       });
     }
 
     function renderSuppliers(container) {
       const filteredEntries = getFilteredSupplierEntries();
-      const filters = AppState.supplierFilters || { search: '', dateFrom: '', dateTo: '' };
+      const allEntries = getRecords('entry').filter(e => e.supplier_name);
+      const filters = AppState.supplierFilters || { search: '', material: '', status: '', dateFrom: '', dateTo: '' };
       const suppMap = {};
       
       filteredEntries.forEach(e => {
@@ -3048,107 +3051,283 @@
         suppMap[e.supplier_name].push(e);
       });
       const suppliers = Object.keys(suppMap).sort();
+      const todayKey = new Date().toISOString().split('T')[0];
+      const materialOptions = [...new Set(allEntries.map(e => e.material_name).filter(Boolean))].sort();
+      const totalVolume = filteredEntries.reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
+      const todayDeliveries = filteredEntries.filter(entry => (entry.date || '').startsWith(todayKey)).length;
+      const materialTotals = {};
+      const supplierRows = suppliers.map((supplier, index) => {
+        const entriesSupp = suppMap[supplier].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const deliveries = entriesSupp.length;
+        const volume = entriesSupp.reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
+        const lastDelivery = entriesSupp[entriesSupp.length - 1];
+        const materialMap = {};
+        entriesSupp.forEach(entry => {
+          const material = entry.material_name || 'Sin material';
+          const quantity = Number(entry.quantity) || 0;
+          materialMap[material] = (materialMap[material] || 0) + quantity;
+          materialTotals[material] = (materialTotals[material] || 0) + quantity;
+        });
+        return { supplier, index, entries: entriesSupp, deliveries, volume, lastDelivery, materials: materialMap };
+      });
+      const maxSupplierDeliveries = Math.max(1, ...supplierRows.map(row => row.deliveries));
+      const maxSupplierVolume = Math.max(1, ...supplierRows.map(row => row.volume));
+      const materialList = Object.entries(materialTotals).sort(([a], [b]) => a.localeCompare(b));
+      const materialGradient = materialList.length
+        ? materialList.reduce((parts, [material, value], index) => {
+            const start = materialList.slice(0, index).reduce((sum, [, current]) => sum + current, 0) / Math.max(totalVolume, 1) * 100;
+            const end = start + (value / Math.max(totalVolume, 1) * 100);
+            const color = index % 2 === 0 ? '#1558ff' : '#16c77a';
+            parts.push(`${color} ${start}% ${end}%`);
+            return parts;
+          }, []).join(', ')
+        : '#1e293b 0% 100%';
+      const topDeliveries = supplierRows.slice().sort((a, b) => b.deliveries - a.deliveries).slice(0, 4);
+      const topVolumes = supplierRows.slice().sort((a, b) => b.volume - a.volume).slice(0, 4);
+      const dateParts = (value) => {
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return { day: '-', hour: '-' };
+        return {
+          day: d.toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+          hour: d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true })
+        };
+      };
+      const hasFilters = filters.search || filters.material || filters.status || filters.dateFrom || filters.dateTo;
 
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
-          <div>
-            <h2 class="text-2xl font-bold text-slate-100">Proveedores</h2>
-            <p class="text-slate-500 text-sm mt-1">Directorio de proveedores activos</p>
+          <div class="flex flex-wrap items-center justify-end gap-4">
+            <button onclick="exportSuppliersExcel()" class="min-w-[150px] px-5 py-3 rounded-lg bg-slate-900/80 border border-slate-700 text-slate-100 hover:border-emerald-400/50 hover:text-emerald-300 transition-all flex items-center justify-center gap-3">
+              <i data-lucide="file-spreadsheet" class="w-5 h-5 text-emerald-400"></i>
+              <span class="font-semibold">Excel</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500"></i>
+            </button>
+            <button onclick="showToast('La exportacion PDF de proveedores estara disponible pronto', 'info')" class="min-w-[150px] px-5 py-3 rounded-lg bg-slate-900/80 border border-slate-700 text-slate-100 hover:border-rose-400/50 hover:text-rose-300 transition-all flex items-center justify-center gap-3">
+              <i data-lucide="file-text" class="w-5 h-5 text-rose-400"></i>
+              <span class="font-semibold">PDF</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500"></i>
+            </button>
           </div>
 
-          <div class="glass rounded-xl p-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Buscar proveedor</label>
-                <input type="text" id="supplierFilterSearch" value="${escapeAttr(filters.search || '')}" oninput="updateSupplierFilters()" placeholder="Nombre del proveedor..."
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Desde</label>
-                <input type="date" id="supplierFilterDateFrom" value="${escapeAttr(filters.dateFrom || '')}" onchange="updateSupplierFilters()"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Hasta</label>
-                <input type="date" id="supplierFilterDateTo" value="${escapeAttr(filters.dateTo || '')}" onchange="updateSupplierFilters()"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
-              </div>
-            </div>
-              <div class="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
-                <span>${suppliers.length} proveedor(es), ${filteredEntries.length} entrega(s) encontradas</span>
-                <div class="flex flex-wrap items-center gap-2">
-                  <button onclick="exportSuppliersExcel()" class="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1">
-                    <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Excel
-                  </button>
-                  ${filters.search || filters.dateFrom || filters.dateTo ? `
-                <button onclick="clearSupplierFilters()" class="text-rose-400 hover:text-rose-300 flex items-center gap-1">
-                  <i data-lucide="x" class="w-3 h-3"></i> Limpiar filtros
-                </button>
-                  ` : ''}
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            ${[
+              { label: 'Total Proveedores', value: suppliers.length, detail: 'Activos', icon: 'users', color: 'blue' },
+              { label: 'Total Entregas', value: filteredEntries.length, detail: 'Realizadas', icon: 'truck', color: 'emerald' },
+              { label: 'Total m3 Entregados', value: `${fmt.number(totalVolume, 2)} m3`, detail: 'En total', icon: 'box', color: 'violet' },
+              { label: 'Entregas Hoy', value: todayDeliveries, detail: 'Hoy', icon: 'calendar-days', color: 'amber' }
+            ].map(card => `
+              <div class="glass rounded-xl p-5 border border-slate-800/80 min-h-[136px] flex items-center gap-4">
+                <div class="w-14 h-14 rounded-2xl bg-${card.color}-500/15 border border-${card.color}-500/20 flex items-center justify-center shadow-lg shadow-${card.color}-500/10">
+                  <i data-lucide="${card.icon}" class="w-7 h-7 text-${card.color}-400"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-slate-200 font-medium">${card.label}</div>
+                  <div class="text-3xl font-bold text-white mt-2 font-mono">${card.value}</div>
+                  <div class="text-sm text-slate-400 mt-2">${card.detail}</div>
                 </div>
               </div>
+            `).join('')}
           </div>
 
-          ${suppliers.length === 0 ? `
-            <div class="glass rounded-xl p-12 text-center">
-              <i data-lucide="truck" class="w-16 h-16 text-slate-600 mx-auto mb-4"></i>
-              <h3 class="text-lg font-semibold text-slate-300 mb-2">Sin Proveedores</h3>
-              <p class="text-slate-500 max-w-md mx-auto">${filters.search || filters.dateFrom || filters.dateTo ? 'No hay proveedores que coincidan con los filtros seleccionados' : 'Los proveedores se crearan automaticamente al registrar entradas de material'}</p>
+          <div class="glass rounded-xl p-6 border border-slate-800/80">
+            <h2 class="text-xl font-bold text-slate-100 mb-5">Buscar y filtrar proveedores</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <div>
+                <label class="block text-sm text-slate-200 mb-2">Buscar proveedor</label>
+                <div class="relative">
+                  <i data-lucide="search" class="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2"></i>
+                  <input type="text" id="supplierFilterSearch" value="${escapeAttr(filters.search || '')}" onkeydown="if(event.key === 'Enter') updateSupplierFilters()" placeholder="Buscar por nombre del proveedor..."
+                    class="w-full pl-12 pr-4 py-3 bg-slate-950/40 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-slate-200 mb-2">Material</label>
+                <select id="supplierFilterMaterial" onchange="updateSupplierFilters()" class="w-full px-4 py-3 bg-slate-950/40 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+                  <option value="">Todos los materiales</option>
+                  ${materialOptions.map(material => `<option value="${escapeAttr(material)}" ${filters.material === material ? 'selected' : ''}>${escapeHtml(material)}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm text-slate-200 mb-2">Estado</label>
+                <select id="supplierFilterStatus" onchange="updateSupplierFilters()" class="w-full px-4 py-3 bg-slate-950/40 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+                  <option value="">Todos</option>
+                  <option value="active" ${filters.status === 'active' ? 'selected' : ''}>Activos</option>
+                </select>
+              </div>
             </div>
-          ` : `
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              ${suppliers.map(s => {
-                const entries_supp = suppMap[s];
-                const totalDeliveries = entries_supp.length;
-                const totalVolume = entries_supp.reduce((a, e) => a + (e.quantity || 0), 0);
-                const lastDelivery = entries_supp[entries_supp.length - 1];
-                const uniqueMaterials = [...new Set(entries_supp.map(e => e.material_name))].length;
-                
-                return `
-                  <div class="glass rounded-xl p-5 hover-lift">
-                    <div class="flex items-start justify-between mb-4">
-                      <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center border border-blue-500/20">
-                        <i data-lucide="building-2" class="w-6 h-6 text-blue-400"></i>
-                      </div>
-                      <span class="status-badge bg-emerald-500/10 text-emerald-400 text-xs">
-                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-400"></div> Activo
-                      </span>
-                    </div>
-                    <h3 class="font-semibold text-slate-200 text-lg mb-1">${s}</h3>
-                    <p class="text-slate-500 text-sm mb-4">${uniqueMaterials} materiales suministrados</p>
-                    
-                    <div class="grid grid-cols-2 gap-3 mb-4">
-                      <div class="bg-slate-800/50 rounded-lg p-3">
-                        <div class="text-xs text-slate-500 mb-1">Entregas</div>
-                        <div class="text-lg font-semibold text-slate-200 font-mono">${totalDeliveries}</div>
-                      </div>
-                      <div class="bg-slate-800/50 rounded-lg p-3">
-                        <div class="text-xs text-slate-500 mb-1">Volumen Total</div>
-                        <div class="text-lg font-semibold text-slate-200 font-mono">${fmt.number(totalVolume)}</div>
-                      </div>
-                    </div>
-                    
-                    <div class="text-xs text-slate-500 pt-3 border-t border-slate-800">
-                      Ultima entrega: ${lastDelivery ? fmt.date(lastDelivery.date) : '-'}
-                    </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mt-5 items-end">
+              <div>
+                <label class="block text-sm text-slate-200 mb-2">Desde</label>
+                <input type="date" id="supplierFilterDateFrom" value="${escapeAttr(filters.dateFrom || '')}" onchange="updateSupplierFilters()"
+                  class="w-full px-4 py-3 bg-slate-950/40 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+              </div>
+              <div>
+                <label class="block text-sm text-slate-200 mb-2">Hasta</label>
+                <input type="date" id="supplierFilterDateTo" value="${escapeAttr(filters.dateTo || '')}" onchange="updateSupplierFilters()"
+                  class="w-full px-4 py-3 bg-slate-950/40 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+              </div>
+              <button onclick="clearSupplierFilters()" class="px-4 py-3 rounded-lg bg-slate-950/40 border border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 transition-all flex items-center justify-center gap-2">
+                <i data-lucide="refresh-cw" class="w-5 h-5"></i> Limpiar filtros
+              </button>
+              <button onclick="updateSupplierFilters()" class="px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
+                <i data-lucide="search" class="w-5 h-5"></i> Buscar
+              </button>
+            </div>
+          </div>
+
+          <div class="glass rounded-xl border border-slate-800/80 overflow-hidden">
+            <div class="px-5 py-5 flex flex-wrap items-center gap-3 border-b border-slate-800">
+              <h2 class="text-xl font-bold text-slate-100">Listado de proveedores</h2>
+              <span class="px-3 py-1 rounded-full bg-slate-800/80 text-slate-300 text-sm">${suppliers.length} proveedores</span>
+            </div>
+            ${suppliers.length === 0 ? `
+              <div class="p-12 text-center">
+                <i data-lucide="truck" class="w-16 h-16 text-slate-600 mx-auto mb-4"></i>
+                <h3 class="text-lg font-semibold text-slate-300 mb-2">Sin Proveedores</h3>
+                <p class="text-slate-500 max-w-md mx-auto">${hasFilters ? 'No hay proveedores que coincidan con los filtros seleccionados' : 'Los proveedores se crearan automaticamente al registrar entradas de material'}</p>
+              </div>
+            ` : `
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[900px] text-sm">
+                  <thead class="bg-slate-900/80 text-blue-400">
+                    <tr>
+                      <th class="px-5 py-4 text-left font-medium">Proveedor</th>
+                      <th class="px-5 py-4 text-left font-medium">Material(es)</th>
+                      <th class="px-5 py-4 text-center font-medium">Entregas</th>
+                      <th class="px-5 py-4 text-center font-medium">Total m3</th>
+                      <th class="px-5 py-4 text-left font-medium">Ultima entrega</th>
+                      <th class="px-5 py-4 text-center font-medium">Estado</th>
+                      <th class="px-5 py-4 text-center font-medium">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${supplierRows.map(row => {
+                      const last = dateParts(row.lastDelivery?.date);
+                      return `
+                        <tr class="border-t border-slate-800 hover:bg-slate-900/50 transition-colors">
+                          <td class="px-5 py-4">
+                            <div class="flex items-center gap-3">
+                              <div class="w-11 h-11 rounded-full bg-gradient-to-br ${row.index % 2 === 0 ? 'from-blue-600 to-blue-800' : 'from-violet-600 to-violet-800'} flex items-center justify-center">
+                                <i data-lucide="building-2" class="w-5 h-5 text-white"></i>
+                              </div>
+                              <div>
+                                <div class="font-semibold text-slate-100">${escapeHtml(row.supplier)}</div>
+                                <div class="text-xs text-slate-400 mt-1">Proveedor activo</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td class="px-5 py-4 text-slate-200">
+                            <ul class="space-y-1">
+                              ${Object.entries(row.materials).map(([material, value]) => `<li class="flex gap-2"><span class="text-slate-400">•</span><span>${escapeHtml(material)} (${fmt.number(value, 2)} m3)</span></li>`).join('')}
+                            </ul>
+                          </td>
+                          <td class="px-5 py-4 text-center text-slate-200 font-mono">${row.deliveries}</td>
+                          <td class="px-5 py-4 text-center text-slate-200 font-mono">${fmt.number(row.volume, 2)} m3</td>
+                          <td class="px-5 py-4 text-slate-200">
+                            <div>${last.day}</div>
+                            <div class="mt-1">${last.hour}</div>
+                          </td>
+                          <td class="px-5 py-4 text-center">
+                            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Activo
+                            </span>
+                          </td>
+                          <td class="px-5 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                              <button onclick="showToast('Vista de proveedor: ${escapeAttr(row.supplier)}', 'info')" class="w-10 h-10 rounded-full bg-slate-950/40 border border-slate-700 text-slate-200 hover:text-blue-300 hover:border-blue-400/40 transition-colors flex items-center justify-center">
+                                <i data-lucide="eye" class="w-5 h-5"></i>
+                              </button>
+                              <button onclick="showToast('Edicion de proveedor disponible desde entradas de material', 'info')" class="w-10 h-10 rounded-full bg-slate-950/40 border border-slate-700 text-slate-200 hover:text-blue-300 hover:border-blue-400/40 transition-colors flex items-center justify-center">
+                                <i data-lucide="pencil" class="w-5 h-5"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div class="px-5 py-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-slate-300">
+                <div class="flex items-center gap-3">
+                  <span>Mostrar</span>
+                  <select class="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100">
+                    <option>10</option>
+                  </select>
+                  <span>registros</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="w-9 h-9 rounded-lg bg-slate-950/40 border border-slate-700 text-slate-500 flex items-center justify-center"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                  <button class="w-9 h-9 rounded-lg bg-blue-600 text-white font-semibold">1</button>
+                  <button class="w-9 h-9 rounded-lg bg-slate-950/40 border border-slate-700 text-slate-400 flex items-center justify-center"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                </div>
+              </div>
+            `}
+          </div>
+
+          <div class="glass rounded-xl p-5 border border-slate-800/80">
+            <h2 class="text-xl font-bold text-slate-100 mb-5">Resumen visual</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <div class="rounded-lg border border-slate-800 bg-slate-950/20 p-5">
+                <h3 class="text-center text-slate-100 font-semibold mb-4">Total m3 por material</h3>
+                <div class="mx-auto w-40 h-40 rounded-full flex items-center justify-center" style="background: conic-gradient(${materialGradient});">
+                  <div class="w-24 h-24 rounded-full bg-slate-950 flex flex-col items-center justify-center text-white">
+                    <span class="text-2xl font-bold font-mono">${fmt.number(totalVolume, 2)}</span>
+                    <span class="text-sm">m3</span>
                   </div>
-                `;
-              }).join('')}
+                </div>
+                <div class="mt-4 space-y-2">
+                  ${materialList.map(([material, value], index) => `
+                    <div class="flex items-center justify-center gap-2 text-sm text-slate-200">
+                      <span class="w-3 h-3 rounded-sm ${index % 2 === 0 ? 'bg-blue-600' : 'bg-emerald-500'}"></span>
+                      <span>${escapeHtml(material)}: ${fmt.number(value, 2)} m3 (${totalVolume ? Math.round(value / totalVolume * 100) : 0}%)</span>
+                    </div>
+                  `).join('') || '<p class="text-center text-slate-500 text-sm">Sin datos</p>'}
+                </div>
+              </div>
+              <div class="rounded-lg border border-slate-800 bg-slate-950/20 p-5">
+                <h3 class="text-center text-slate-100 font-semibold mb-4">Entregas por proveedor</h3>
+                <div class="h-48 flex items-end justify-center gap-8 border-b border-slate-700 px-4">
+                  ${topDeliveries.map(row => `
+                    <div class="flex flex-col items-center gap-2">
+                      <div class="text-slate-200 font-mono">${row.deliveries}</div>
+                      <div class="w-16 rounded-t bg-gradient-to-t from-blue-700 to-blue-500" style="height:${Math.max(18, row.deliveries / maxSupplierDeliveries * 120)}px"></div>
+                      <div class="text-xs text-slate-300 max-w-[72px] truncate">${escapeHtml(row.supplier)}</div>
+                    </div>
+                  `).join('') || '<p class="text-slate-500 text-sm self-center">Sin datos</p>'}
+                </div>
+                <div class="mt-3 text-center text-sm text-slate-300"><span class="inline-block w-3 h-3 rounded-sm bg-blue-600 mr-2"></span>Entregas</div>
+              </div>
+              <div class="rounded-lg border border-slate-800 bg-slate-950/20 p-5">
+                <h3 class="text-center text-slate-100 font-semibold mb-4">Total m3 por proveedor</h3>
+                <div class="h-48 flex items-end justify-center gap-8 border-b border-slate-700 px-4">
+                  ${topVolumes.map((row, index) => `
+                    <div class="flex flex-col items-center gap-2">
+                      <div class="text-slate-200 font-mono">${fmt.number(row.volume, 2)}</div>
+                      <div class="w-16 rounded-t ${index % 2 === 0 ? 'bg-gradient-to-t from-blue-700 to-blue-500' : 'bg-gradient-to-t from-emerald-700 to-emerald-500'}" style="height:${Math.max(18, row.volume / maxSupplierVolume * 120)}px"></div>
+                      <div class="text-xs text-slate-300 max-w-[72px] truncate">${escapeHtml(row.supplier)}</div>
+                    </div>
+                  `).join('') || '<p class="text-slate-500 text-sm self-center">Sin datos</p>'}
+                </div>
+                <div class="mt-3 text-center text-sm text-slate-300"><span class="inline-block w-3 h-3 rounded-sm bg-blue-600 mr-2"></span>Total m3</div>
+              </div>
             </div>
-          `}
+          </div>
         </div>
       `;
     }
 
     function updateSupplierFilters() {
       AppState.supplierFilters.search = document.getElementById('supplierFilterSearch')?.value || '';
+      AppState.supplierFilters.material = document.getElementById('supplierFilterMaterial')?.value || '';
+      AppState.supplierFilters.status = document.getElementById('supplierFilterStatus')?.value || '';
       AppState.supplierFilters.dateFrom = document.getElementById('supplierFilterDateFrom')?.value || '';
       AppState.supplierFilters.dateTo = document.getElementById('supplierFilterDateTo')?.value || '';
       renderFilterPage('supplierFilterSearch');
     }
 
     function clearSupplierFilters() {
-      AppState.supplierFilters = { search: '', dateFrom: '', dateTo: '' };
+      AppState.supplierFilters = { search: '', material: '', status: '', dateFrom: '', dateTo: '' };
       renderPage();
     }
 
