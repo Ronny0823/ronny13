@@ -2055,6 +2055,7 @@
       deleteConfirmId: null,
       chartInstance: null,
       sidebarOpen: false,
+      clientFilters: { search: '' },
       entryFilters: { search: '', supplier: '', dateFrom: '', dateTo: '', quickPeriod: '' },
       supplierFilters: { search: '', material: '', status: '', dateFrom: '', dateTo: '' },
       creditFilters: { client: '', dateFrom: '', dateTo: '', status: 'all' },
@@ -3617,8 +3618,16 @@
     }
 
     function renderClients(container) {
-      const clients = getRecords('client');
+      const allClients = getRecords('client');
       const sales = getRecords('sale');
+      const search = (AppState.clientFilters?.search || '').toLowerCase().trim();
+      const clients = search
+        ? allClients.filter(c =>
+            (c.client_name || '').toLowerCase().includes(search) ||
+            (c.client_phone || '').toLowerCase().includes(search) ||
+            (c.client_address || '').toLowerCase().includes(search)
+          )
+        : allClients;
       
       const clientTotals = {};
       sales.forEach(s => {
@@ -3637,15 +3646,38 @@
             </button>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            ${clients.length === 0 ? `
-              <div class="md:col-span-2 lg:col-span-3 glass rounded-xl p-12 text-center">
-                <i data-lucide="users" class="w-16 h-16 text-slate-600 mx-auto mb-4"></i>
-                <h3 class="text-lg font-semibold text-slate-300 mb-2">Sin Clientes</h3>
-                <p class="text-slate-500 mb-4">Comienza agregando tu primer cliente</p>
-                <button onclick="showClientModal()" class="px-4 py-2 bg-primary-500/20 text-primary-400 rounded-lg hover:bg-primary-500/30 transition-colors font-medium">Agregar Cliente</button>
-              </div>
-            ` : clients.map(c => `
+          <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <label class="block text-sm font-medium text-slate-400 mb-2">Buscar cliente</label>
+            <div class="relative">
+              <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-3.5 pointer-events-none"></i>
+              <input type="text" id="clientSearchInput" value="${escapeAttr(AppState.clientFilters?.search || '')}" oninput="updateClientSearch()"
+                autocomplete="off" placeholder="Nombre, contacto o direccion..."
+                class="w-full pl-10 pr-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus transition-all">
+            </div>
+            <div class="text-xs text-slate-500 mt-2">Mostrando ${clients.length} de ${allClients.length} clientes</div>
+          </div>
+
+          <div id="clientCardsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            ${renderClientCards(clients, clientTotals, allClients.length)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderClientCards(clients, clientTotals, totalClients = clients.length) {
+      const hasSearch = !!(AppState.clientFilters?.search || '').trim();
+      if (clients.length === 0) {
+        return `
+          <div class="md:col-span-2 lg:col-span-3 glass rounded-xl p-12 text-center">
+            <i data-lucide="users" class="w-16 h-16 text-slate-600 mx-auto mb-4"></i>
+            <h3 class="text-lg font-semibold text-slate-300 mb-2">${hasSearch ? 'Sin resultados' : 'Sin Clientes'}</h3>
+            <p class="text-slate-500 mb-4">${hasSearch ? 'No hay clientes que coincidan con esa busqueda' : 'Comienza agregando tu primer cliente'}</p>
+            ${totalClients === 0 ? `<button onclick="showClientModal()" class="px-4 py-2 bg-primary-500/20 text-primary-400 rounded-lg hover:bg-primary-500/30 transition-colors font-medium">Agregar Cliente</button>` : ''}
+          </div>
+        `;
+      }
+
+      return clients.map(c => `
               <div class="glass rounded-xl p-5 hover-lift group">
                 <div class="flex items-start gap-4">
                   <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500/20 to-primary-600/20 flex items-center justify-center text-primary-400 font-bold text-lg border border-primary-500/20">
@@ -3687,10 +3719,28 @@
                   `}
                 </div>
               </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
+            `).join('');
+    }
+
+    function updateClientSearch() {
+      if (!AppState.clientFilters) AppState.clientFilters = { search: '' };
+      AppState.clientFilters.search = document.getElementById('clientSearchInput')?.value || '';
+      const search = AppState.clientFilters.search.toLowerCase().trim();
+      const allClients = getRecords('client');
+      const clients = search
+        ? allClients.filter(c =>
+            (c.client_name || '').toLowerCase().includes(search) ||
+            (c.client_phone || '').toLowerCase().includes(search) ||
+            (c.client_address || '').toLowerCase().includes(search)
+          )
+        : allClients;
+      const clientTotals = {};
+      getRecords('sale').forEach(s => {
+        clientTotals[s.client_name] = (clientTotals[s.client_name] || 0) + (s.sale_total || 0);
+      });
+      const grid = document.getElementById('clientCardsGrid');
+      if (grid) grid.innerHTML = renderClientCards(clients, clientTotals, allClients.length);
+      if (window.lucide) lucide.createIcons();
     }
 
     function renderSales(container) {
@@ -3757,15 +3807,14 @@
                   </div>
 
                   <div class="space-y-3">
-                    <input type="text" id="saleMaterial" list="saleMaterialList" oninput="updateSalePrice()" onchange="updateSalePrice()"
-                      placeholder="Escribe o selecciona material..."
-                      class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus transition-all">
-                    <datalist id="saleMaterialList">
-                      ${materials.map(m => {
-                        const stock = inv[m.name] ? inv[m.name].stock : 0;
-                        return `<option value="${escapeAttr(m.name)}" label="Stock: ${escapeAttr(fmt.number(stock))} ${stock <= 0 ? '(Agotado)' : ''}"></option>`;
-                      }).join('')}
-                    </datalist>
+                    <div class="relative">
+                      <input type="text" id="saleMaterial" oninput="updateSaleMaterialSuggestions(); updateSalePrice()" onchange="updateSalePrice()"
+                        onfocus="updateSaleMaterialSuggestions()" onblur="hideSaleMaterialSuggestions()"
+                        autocomplete="off" placeholder="Escribe o selecciona material..."
+                        class="w-full px-4 py-3 pr-10 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus transition-all">
+                      <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute right-3 top-3.5 pointer-events-none"></i>
+                      <div id="saleMaterialSuggestions" class="hidden absolute z-50 left-0 right-0 top-full mt-2 max-h-56 overflow-y-auto bg-slate-950 border border-slate-700 rounded-lg shadow-xl shadow-black/30"></div>
+                    </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div class="min-w-0">
@@ -3909,6 +3958,51 @@
     function hideSaleClientSuggestions() {
       setTimeout(() => {
         document.getElementById('saleClientSuggestions')?.classList.add('hidden');
+      }, 120);
+    }
+
+    function updateSaleMaterialSuggestions() {
+      const input = document.getElementById('saleMaterial');
+      const box = document.getElementById('saleMaterialSuggestions');
+      if (!input || !box) return;
+
+      const query = input.value.trim().toLowerCase();
+      const inv = calcInventory();
+      const materials = getRecords('material')
+        .filter(m => !query || (m.name || '').toLowerCase().includes(query))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .slice(0, 8);
+
+      if (!materials.length) {
+        box.innerHTML = `<div class="px-4 py-3 text-sm text-slate-500">Sin materiales encontrados</div>`;
+        box.classList.remove('hidden');
+        return;
+      }
+
+      box.innerHTML = materials.map(m => {
+        const stock = inv[m.name] ? inv[m.name].stock : 0;
+        return `
+          <button type="button" data-material="${escapeAttr(m.name || '')}" onmousedown="selectSaleMaterial(this.dataset.material)"
+            class="w-full text-left px-4 py-3 hover:bg-slate-800/80 border-b border-slate-800 last:border-b-0 transition-colors ${stock <= 0 ? 'opacity-60' : ''}">
+            <div class="font-medium text-slate-200">${escapeHtml(m.name || 'Sin nombre')}</div>
+            <div class="text-xs text-slate-500">Stock: ${fmt.number(stock)}${stock <= 0 ? ' (Agotado)' : ''} - Precio: ${fmt.currency(m.price || 0)}</div>
+          </button>
+        `;
+      }).join('');
+      box.classList.remove('hidden');
+    }
+
+    function selectSaleMaterial(name) {
+      const input = document.getElementById('saleMaterial');
+      const box = document.getElementById('saleMaterialSuggestions');
+      if (input) input.value = name;
+      if (box) box.classList.add('hidden');
+      updateSalePrice();
+    }
+
+    function hideSaleMaterialSuggestions() {
+      setTimeout(() => {
+        document.getElementById('saleMaterialSuggestions')?.classList.add('hidden');
       }, 120);
     }
 
