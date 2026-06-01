@@ -3757,16 +3757,15 @@
                   </div>
 
                   <div class="space-y-3">
-                    <select id="saleMaterial" onchange="updateSalePrice()"
-                      class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 input-focus transition-all select-custom cursor-pointer">
-                      <option value="">Seleccionar material...</option>
+                    <input type="text" id="saleMaterial" list="saleMaterialList" oninput="updateSalePrice()" onchange="updateSalePrice()"
+                      placeholder="Escribe o selecciona material..."
+                      class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus transition-all">
+                    <datalist id="saleMaterialList">
                       ${materials.map(m => {
                         const stock = inv[m.name] ? inv[m.name].stock : 0;
-                        return `<option value="${escapeAttr(m.name)}" data-price="${escapeAttr(m.price)}" data-stock="${escapeAttr(stock)}" ${stock <= 0 ? 'disabled' : ''}>
-                          ${escapeHtml(m.name)} - Stock: ${fmt.number(stock)} ${stock <= 0 ? '(Agotado)' : ''}
-                        </option>`;
+                        return `<option value="${escapeAttr(m.name)}" label="Stock: ${escapeAttr(fmt.number(stock))} ${stock <= 0 ? '(Agotado)' : ''}"></option>`;
                       }).join('')}
-                    </select>
+                    </datalist>
 
                     <div class="grid grid-cols-2 gap-4">
                       <div>
@@ -3890,10 +3889,21 @@
 
     function updateSalePrice() {
       const sel = document.getElementById('saleMaterial');
-      const opt = sel.options[sel.selectedIndex];
-      if (!opt.value) return;
+      if (!sel) return;
+
+      const materialName = (sel.value || '').trim();
+      if (!materialName) {
+        updateSaleTotal();
+        return;
+      }
       
-      const price = Math.max(0, toFiniteNumber(opt.dataset.price, 0));
+      const material = getRecords('material').find(m => m.name === materialName);
+      if (!material) {
+        updateSaleTotal();
+        return;
+      }
+
+      const price = Math.max(0, toFiniteNumber(material.price, 0));
       document.getElementById('salePrice').value = price;
       updateSaleTotal();
     }
@@ -3902,11 +3912,11 @@
       const sel = document.getElementById('saleMaterial');
       if (!sel) return null;
 
-      const opt = sel.options[sel.selectedIndex];
-      const materialName = sel.value;
+      const materialName = (sel.value || '').trim();
       const qty = toFiniteNumber(document.getElementById('saleQty')?.value, 0);
       const price = toFiniteNumber(document.getElementById('salePrice')?.value, 0);
-      const stock = toFiniteNumber(opt?.dataset.stock, 0);
+      const inv = calcInventory();
+      const stock = toFiniteNumber(inv[materialName]?.stock, 0);
 
       if (!materialName || !isPositiveNumber(qty) || !isPositiveNumber(price) || stock < 0) return null;
 
