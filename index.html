@@ -3767,18 +3767,18 @@
                       }).join('')}
                     </datalist>
 
-                    <div class="grid grid-cols-2 gap-4">
-                      <div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div class="min-w-0">
                         <label class="block text-xs text-slate-500 mb-1">Cantidad</label>
                         <input type="number" id="saleQty" step="0.1" min="0.1" inputmode="decimal" oninput="updateSaleTotal()"
                           class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus transition-all">
                       </div>
-                      <div>
+                      <div class="min-w-0">
                         <label class="block text-xs text-slate-500 mb-1">Precio Unitario</label>
                         <input type="number" id="salePrice" step="0.01" min="0.01" inputmode="decimal" oninput="updateSaleTotal()"
                           class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus transition-all">
                       </div>
-                      <div class="col-span-2">
+                      <div class="sm:col-span-2">
                         <label class="block text-xs text-slate-500 mb-1">Nota</label>
                         <textarea id="saleNote" rows="3" placeholder="Escribe una nota para esta venta..."
                           class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus transition-all resize-y"></textarea>
@@ -3902,13 +3902,14 @@
         return;
       }
       
-      const material = getRecords('material').find(m => m.name === materialName);
+      const material = getRecords('material').find(m => (m.name || '').toLowerCase() === materialName.toLowerCase());
       if (!material) {
         updateSaleTotal();
         return;
       }
 
       const price = Math.max(0, toFiniteNumber(material.price, 0));
+      sel.value = material.name;
       document.getElementById('salePrice').value = price;
       updateSaleTotal();
     }
@@ -3917,13 +3918,15 @@
       const sel = document.getElementById('saleMaterial');
       if (!sel) return null;
 
-      const materialName = (sel.value || '').trim();
+      const typedMaterialName = (sel.value || '').trim();
+      const material = getRecords('material').find(m => (m.name || '').toLowerCase() === typedMaterialName.toLowerCase());
+      const materialName = material ? material.name : typedMaterialName;
       const qty = toFiniteNumber(document.getElementById('saleQty')?.value, 0);
       const price = toFiniteNumber(document.getElementById('salePrice')?.value, 0);
       const inv = calcInventory();
       const stock = toFiniteNumber(inv[materialName]?.stock, 0);
 
-      if (!materialName || !isPositiveNumber(qty) || !isPositiveNumber(price) || stock < 0) return null;
+      if (!material || !materialName || !isPositiveNumber(qty) || !isPositiveNumber(price) || stock < 0) return null;
 
       return {
         material_name: materialName,
@@ -3973,7 +3976,14 @@
     function addSaleItem() {
       const item = getCurrentSaleItem();
       if (!item) {
-        showToast('Selecciona un producto, cantidad y precio para agregar', 'warning');
+        const materialName = (document.getElementById('saleMaterial')?.value || '').trim();
+        const qty = toFiniteNumber(document.getElementById('saleQty')?.value, 0);
+        const price = toFiniteNumber(document.getElementById('salePrice')?.value, 0);
+        if (!materialName) showToast('Escribe o selecciona un material.', 'warning');
+        else if (!getRecords('material').some(m => (m.name || '').toLowerCase() === materialName.toLowerCase())) showToast('Ese material no esta registrado en inventario.', 'warning');
+        else if (!isPositiveNumber(qty)) showToast('Escribe la cantidad antes de presionar +.', 'warning');
+        else if (!isPositiveNumber(price)) showToast('Escribe el precio unitario antes de presionar +.', 'warning');
+        else showToast('Revisa el material, cantidad y precio para agregar.', 'warning');
         return false;
       }
 
