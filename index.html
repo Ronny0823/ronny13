@@ -5572,7 +5572,7 @@
         }
       }
 
-      const reportSearch = (AppState.reportFilters.search || '').toLowerCase().trim();
+          const reportSearch = (AppState.reportFilters.search || '').toLowerCase().trim();
       if (reportSearch) {
         filteredSales = filteredSales.filter(s => {
           const itemNames = Array.isArray(s.items) ? s.items.map(i => i.material_name).join(' ') : '';
@@ -5580,6 +5580,7 @@
             (s.invoice_number || '').toLowerCase().includes(reportSearch) ||
             (s.material_name || '').toLowerCase().includes(reportSearch) ||
             itemNames.toLowerCase().includes(reportSearch) ||
+            (s.note || '').toLowerCase().includes(reportSearch) ||
             (s.vehicle_plate || '').toLowerCase().includes(reportSearch);
         });
       }
@@ -5827,6 +5828,7 @@
                       <th class="py-2 pr-3">Factura</th>
                       <th class="py-2 pr-3">Cliente</th>
                       <th class="py-2 pr-3">Material</th>
+                      <th class="py-2 pr-3">Nota</th>
                       <th class="py-2 pr-3">Pago</th>
                       <th class="py-2 text-right">Total</th>
                     </tr>
@@ -5837,6 +5839,7 @@
                         <td class="py-3 pr-3 text-slate-300 font-medium">${s.invoice_number || 'S/F'}<div class="text-xs text-slate-600">${fmt.date(s.date)}</div></td>
                         <td class="py-3 pr-3 text-slate-400">${s.client_name || 'Sin cliente'}</td>
                         <td class="py-3 pr-3 text-slate-400">${s.material_name || 'Varios productos'}</td>
+                        <td class="py-3 pr-3 text-slate-400 max-w-xs break-words">${s.note ? escapeHtml(s.note) : '<span class="text-slate-600">Sin nota</span>'}</td>
                         <td class="py-3 pr-3">
                           <span class="text-xs px-2 py-1 rounded-full ${s.payment_type === 'credito' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}">
                             ${s.payment_type === 'credito' ? (s.payment_status === 'pagada' ? 'Credito pagado' : 'Credito pendiente') : 'Contado'}
@@ -5983,33 +5986,38 @@
             (s.invoice_number || '').toLowerCase().includes(reportSearch) ||
             (s.material_name || '').toLowerCase().includes(reportSearch) ||
             itemNames.toLowerCase().includes(reportSearch) ||
+            (s.note || '').toLowerCase().includes(reportSearch) ||
             (s.vehicle_plate || '').toLowerCase().includes(reportSearch);
         });
       }
 
-      const saleRows = sales.map(s => {
-        const material = Array.isArray(s.items) && s.items.length
-          ? s.items.map(i => i.material_name).filter(Boolean).join(' / ')
-          : (s.material_name || '');
-        const quantity = Array.isArray(s.items) && s.items.length
-          ? s.items.reduce((a, i) => a + (Number(i.quantity) || 0), 0)
-          : (Number(s.sale_quantity) || 0);
+      const saleRows = sales.flatMap(s => {
         const saleDate = new Date(s.date);
         const fecha = Number.isNaN(saleDate.getTime()) ? (s.date || '') : saleDate.toLocaleDateString('es-DO');
         const hora = Number.isNaN(saleDate.getTime()) ? '' : saleDate.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true });
-        return [
+        const items = Array.isArray(s.items) && s.items.length ? s.items : [{
+          material_name: s.material_name || '',
+          quantity: Number(s.sale_quantity) || 0,
+          price: Number(s.price) || 0,
+          subtotal: Number(s.sale_subtotal) || 0
+        }];
+
+        return items.map((item, index) => [
           fecha,
           hora,
+          s.invoice_number || '',
           s.client_name || '',
           s.vehicle_plate || '',
-          material,
-          quantity,
-          Number(s.sale_subtotal) || 0,
-          Number(s.sale_tax) || 0,
-          Number(s.sale_total) || 0,
+          item.material_name || '',
+          Number(item.quantity) || 0,
+          Number(item.price) || 0,
+          Number(item.subtotal) || 0,
+          index === 0 ? (Number(s.sale_tax) || 0) : 0,
+          index === 0 ? (Number(s.sale_total) || 0) : 0,
+          s.note || '',
           s.payment_type === 'credito' ? 'CREDITO' : 'CONTADO',
           s.payment_status === 'pagada' ? 'PAGADA' : 'PENDIENTE'
-        ];
+        ]);
       });
 
       const contadoSales = sales.filter(s => s.payment_type !== 'credito');
@@ -6018,7 +6026,7 @@
       const totalCredito = creditoSales.reduce((a, s) => a + (Number(s.sale_total) || 0), 0);
       const totalGeneral = totalContado + totalCredito;
       const rows = [
-        ['Fecha', 'Hora', 'Cliente', 'Placa', 'Material', 'Cantidad', 'Subtotal', 'IVA', 'Total', 'Tipo de Pago', 'Estado'],
+        ['Fecha', 'Hora', 'Factura', 'Cliente', 'Placa', 'Material', 'Cantidad', 'Precio Unitario', 'Subtotal', 'IVA', 'Total', 'Nota', 'Tipo de Pago', 'Estado'],
         ...saleRows,
         [],
         [],
@@ -6032,8 +6040,9 @@
       const workbook = XLSX.utils.book_new();
       const sheet = XLSX.utils.aoa_to_sheet(rows);
       sheet['!cols'] = [
-        { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 22 }, { wch: 12 },
-        { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }
+        { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 14 }, { wch: 22 },
+        { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 30 },
+        { wch: 16 }, { wch: 14 }
       ];
       const salesEndRow = saleRows.length + 1;
       const summaryTitleRow = saleRows.length + 4;
@@ -6094,21 +6103,21 @@
         numFmt: '#,##0.00'
       };
 
-      rangeStyle('A1:K1', headerStyle);
+      rangeStyle('A1:N1', headerStyle);
       if (salesEndRow > 1) {
-        rangeStyle(`A2:K${salesEndRow}`, bodyStyle);
-        rangeStyle(`G2:I${salesEndRow}`, moneyStyle);
+        rangeStyle(`A2:N${salesEndRow}`, bodyStyle);
+        rangeStyle(`H2:K${salesEndRow}`, moneyStyle);
       }
       rangeStyle(`A${summaryTitleRow}:C${summaryTitleRow}`, summaryTitleStyle);
       rangeStyle(`A${summaryHeaderRow}:C${summaryHeaderRow}`, headerStyle);
       rangeStyle(`A${summaryHeaderRow + 1}:C${summaryTotalRow - 1}`, bodyStyle);
       rangeStyle(`A${summaryTotalRow}:C${summaryTotalRow}`, summaryTotalStyle);
       rangeStyle(`C${summaryHeaderRow + 1}:C${summaryTotalRow}`, summaryTotalStyle);
-      rangeStyle(`L1:L${summaryTotalRow}`, {
+      rangeStyle(`O1:O${summaryTotalRow}`, {
         fill: { fgColor: { rgb: gridBlack } },
         border: baseBorder
       });
-      sheet['!autofilter'] = { ref: `A1:K${Math.max(salesEndRow, 1)}` };
+      sheet['!autofilter'] = { ref: `A1:N${Math.max(salesEndRow, 1)}` };
       sheet['!rows'] = [{ hpt: 24 }];
 
       XLSX.utils.book_append_sheet(workbook, sheet, 'Reporte ventas');
