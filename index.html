@@ -2328,6 +2328,16 @@
       dateInput: (iso) => iso ? iso.split('T')[0] : ''
     };
 
+    function formatDateKey(dateKey) {
+      if (!dateKey) return '-';
+      const match = String(dateKey).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return fmt.date(dateKey);
+      const [, year, month, day] = match;
+      return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('es-MX', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      });
+    }
+
     function getLocalDateKey(value) {
       if (!value) return '';
       const raw = String(value);
@@ -5765,7 +5775,7 @@
       const totalIva = salesWithIva.reduce((a, s) => a + (s.sale_tax || 0), 0);
       const collectionRate = creditRevenue > 0 ? (paidCredit / creditRevenue) * 100 : 100;
       const insights = [
-        bestDay ? { icon: 'calendar-check', label: 'Dia mas fuerte', value: `${fmt.date(bestDay[0])} - ${fmt.currency(bestDay[1])}`, color: 'emerald' } : null,
+        bestDay ? { icon: 'calendar-check', label: 'Dia mas fuerte', value: `${formatDateKey(bestDay[0])} - ${fmt.currency(bestDay[1])}`, color: 'emerald' } : null,
         bestSale ? { icon: 'trophy', label: 'Venta mas alta', value: `${bestSale.invoice_number || 'S/F'} - ${fmt.currency(bestSale.sale_total || 0)}`, color: 'amber' } : null,
         topClients[0] ? { icon: 'star', label: 'Cliente principal', value: `${topClients[0][0]} - ${fmt.currency(topClients[0][1])}`, color: 'blue' } : null,
         pendingCredit > 0 ? { icon: 'alert-triangle', label: 'Credito por cobrar', value: `${fmt.currency(pendingCredit)} pendiente`, color: 'rose' } : { icon: 'shield-check', label: 'Cartera limpia', value: 'Sin saldo pendiente en el filtro', color: 'emerald' }
