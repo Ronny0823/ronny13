@@ -3945,7 +3945,7 @@
       const today = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
 
       container.innerHTML = `
-        <div class="space-y-6 animate-fade-in w-full">
+        <div class="space-y-6 animate-fade-in w-full" style="width:100%;max-width:none;">
           <div>
             <h2 class="text-2xl font-bold text-slate-100">Nueva Venta</h2>
             <p class="text-slate-500 text-sm mt-1">Registrar transaccion de venta</p>
@@ -3959,8 +3959,9 @@
               <button onclick="navigate('inventory')" class="px-4 py-2 bg-amber-500/20 text-amber-400 rounded-lg hover:bg-amber-500/30 transition-colors font-medium">Ir a Inventario</button>
             </div>
           ` : `
-            <div class="glass rounded-xl p-6 w-full">
-              <form onsubmit="handleSale(event)" id="saleForm" class="space-y-5 w-full">
+            <div class="glass rounded-xl p-6 w-full" style="width:100%;max-width:none;">
+              <form onsubmit="handleSale(event)" id="saleForm" class="space-y-5 w-full" style="width:100%;max-width:none;">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 <div>
                   <label class="block text-sm font-medium text-slate-400 mb-2">Cliente</label>
                   <div class="relative">
@@ -3989,6 +3990,7 @@
                   <input type="text" id="saleVehiclePlate" placeholder="Ej: ABC-1234" maxlength="20"
                     class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 font-mono uppercase placeholder-slate-600 input-focus transition-all">
                   <p class="text-xs text-slate-500 mt-1">Opcional - Para control de transporte</p>
+                </div>
                 </div>
 
                 <div class="p-4 bg-slate-800/30 rounded-lg border border-slate-700/50">
