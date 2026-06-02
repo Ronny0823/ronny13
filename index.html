@@ -3136,7 +3136,7 @@
         return;
       }
 
-      const entries = getFilteredEntries().slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+      const entries = getFilteredEntries().slice().sort((a, b) => new Date(a.date) - new Date(b.date));
       if (!entries.length) {
         showToast('No hay entradas para exportar en PDF.', 'warning');
         return;
@@ -3147,9 +3147,7 @@
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 14;
-      const navy = [7, 37, 80];
-      const muted = [79, 89, 105];
-      const rowFill = [247, 248, 250];
+      const black = [0, 0, 0];
       let y = 0;
 
       const materialTotals = {};
@@ -3188,79 +3186,62 @@
       };
 
       const drawTopHeader = () => {
-        y = 16;
+        y = 14;
         const logo = AppState.config.company_logo || RLRR_LOGO_DATA;
         try {
-          doc.addImage(logo, 'PNG', margin, 12, 13, 13);
+          doc.addImage(logo, 'PNG', margin + 2, 9, 18, 13);
         } catch (err) {
-          doc.setDrawColor(...navy);
-          doc.setLineWidth(0.7);
-          doc.rect(margin, 12, 13, 13);
+          doc.setDrawColor(...black);
+          doc.setLineWidth(0.4);
+          doc.rect(margin + 2, 9, 18, 13);
         }
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(15);
-        doc.setTextColor(...navy);
-        doc.text(AppState.config.company_name || 'Tu Empresa', margin + 18, 17);
+        doc.setFontSize(13);
+        doc.setTextColor(...black);
+        doc.text(AppState.config.company_name || 'AGRECACI', margin + 26, 14);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
-        doc.setTextColor(...muted);
-        doc.text('Gestion de Materiales', margin + 18, 24);
+        doc.text('Gestion de Materiales', margin + 26, 22);
 
         doc.setFontSize(10);
-        doc.setTextColor(20, 20, 20);
+        doc.setTextColor(...black);
         doc.setFont('helvetica', 'bold');
-        doc.text('Fecha del reporte:', pageWidth - 68, 17);
-        doc.text('Hora:', pageWidth - 68, 24);
+        doc.text('Fecha del reporte:', pageWidth - 70, 14);
+        doc.text('Hora:', pageWidth - 70, 22);
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...navy);
-        doc.text(formatReportDate(reportDate), pageWidth - margin, 17, { align: 'right' });
-        doc.text(formatReportTime(reportDate), pageWidth - margin, 24, { align: 'right' });
+        doc.text(formatReportDate(reportDate), pageWidth - margin, 14, { align: 'right' });
+        doc.text(formatReportTime(reportDate), pageWidth - margin, 22, { align: 'right' });
 
-        doc.setDrawColor(...navy);
-        doc.setLineWidth(0.7);
-        doc.line(margin, 34, pageWidth - margin, 34);
+        doc.setDrawColor(...black);
+        doc.setLineWidth(0.45);
+        doc.line(margin, 31, pageWidth - margin, 31);
       };
 
       const drawTitleAndTableHead = () => {
-        y = 58;
+        y = 50;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(20);
-        doc.setTextColor(...navy);
+        doc.setFontSize(16);
+        doc.setTextColor(...black);
         doc.text('REPORTE DE ENTRADA DE MATERIALES', pageWidth / 2, y, { align: 'center' });
         y += 18;
 
         doc.setFontSize(10);
-        doc.setTextColor(...navy);
+        doc.setTextColor(...black);
         const headers = [
-          { label: 'Fecha', x: margin + 3, w: 58, align: 'left' },
-          { label: 'Material', x: margin + 70, w: 42, align: 'left' },
-          { label: 'Cantidad', x: margin + 118, w: 28, align: 'center' },
-          { label: 'Proveedor', x: margin + 144, w: 36, align: 'center' },
-          { label: 'Factura', x: pageWidth - margin - 6, w: 34, align: 'right' }
+          { label: 'Fecha', x: margin + 18, align: 'left' },
+          { label: 'Material', x: margin + 70, align: 'left' },
+          { label: 'Cantidad', x: pageWidth / 2 + 1, align: 'center' },
+          { label: 'Proveedor', x: margin + 135, align: 'left' },
+          { label: 'Factura', x: pageWidth - margin - 28, align: 'left' }
         ];
-        doc.setDrawColor(...navy);
-        doc.setLineWidth(0.5);
+        doc.setDrawColor(...black);
+        doc.setLineWidth(0.35);
         headers.forEach(h => {
           doc.text(h.label, h.x, y, { align: h.align });
         });
-        doc.line(margin, y + 4, pageWidth - margin, y + 4);
-        y += 12;
-      };
-
-      const drawFooter = () => {
-        const footerY = pageHeight - 16;
-        doc.setDrawColor(...navy);
-        doc.setLineWidth(0.7);
-        doc.line(margin, pageHeight - 7, pageWidth - margin, pageHeight - 7);
-        doc.circle(pageWidth / 2, footerY - 3, 4);
-        doc.setLineWidth(0.9);
-        doc.line(pageWidth / 2 - 2, footerY - 3, pageWidth / 2 - 0.4, footerY - 1.2);
-        doc.line(pageWidth / 2 - 0.4, footerY - 1.2, pageWidth / 2 + 2.5, footerY - 5);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.setTextColor(...muted);
-        doc.text('Reporte generado automaticamente por el sistema', pageWidth / 2, footerY + 8, { align: 'center' });
+        doc.line(margin + 10, y + 6, pageWidth - margin - 8, y + 6);
+        y += 13;
       };
 
       const drawPageScaffold = () => {
@@ -3269,8 +3250,7 @@
       };
 
       const addPageIfNeeded = (needed = 10) => {
-        if (y + needed <= pageHeight - 28) return;
-        drawFooter();
+        if (y + needed <= pageHeight - 14) return;
         doc.addPage();
         drawPageScaffold();
       };
@@ -3279,63 +3259,56 @@
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
 
-      entries.forEach((e, index) => {
-        addPageIfNeeded(15);
-        const rowY = y - 7;
-        doc.setFillColor(...rowFill);
-        doc.rect(margin, rowY, pageWidth - (margin * 2), 12, 'F');
-        doc.setTextColor(15, 23, 42);
-        doc.text(textFit(formatEntryDate(e.date), 58), margin + 3, y);
+      entries.forEach(e => {
+        addPageIfNeeded(9);
+        doc.setTextColor(...black);
+        doc.text(textFit(formatEntryDate(e.date), 58), margin + 18, y);
         doc.text(textFit(e.material_name || '', 42), margin + 70, y);
-        doc.text(String(fmt.number(Number(e.quantity) || 0, 0)), margin + 126, y, { align: 'center' });
-        doc.text(textFit(e.supplier_name || '', 36), margin + 162, y, { align: 'center' });
-        doc.text(textFit(e.supplier_invoice || '', 34), pageWidth - margin - 6, y, { align: 'right' });
-        y += index === entries.length - 1 ? 14 : 15;
+        doc.text(String(fmt.number(Number(e.quantity) || 0, 0)), pageWidth / 2 + 1, y, { align: 'center' });
+        doc.text(textFit(e.supplier_name || '', 42), margin + 135, y);
+        doc.text(textFit(e.supplier_invoice || '', 34), pageWidth - margin - 28, y);
+        y += 9;
       });
 
-      y += 8;
-      addPageIfNeeded(58);
+      y += 16;
+      addPageIfNeeded(50);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(15);
-      doc.setTextColor(...navy);
+      doc.setFontSize(12);
+      doc.setTextColor(...black);
       doc.text('RESUMEN DE MATERIALES', pageWidth / 2, y, { align: 'center' });
-      y += 17;
+      y += 10;
 
-      doc.setFontSize(11);
-      const summaryWidth = 104;
+      doc.setFontSize(10);
+      const summaryWidth = 86;
       const summaryX = (pageWidth - summaryWidth) / 2;
-      const totalX = summaryX + summaryWidth - 12;
+      const totalX = summaryX + summaryWidth - 10;
       doc.text('Material', summaryX + 5, y);
       doc.text('Total', totalX, y, { align: 'center' });
-      doc.setDrawColor(...navy);
-      doc.setLineWidth(0.5);
+      doc.setDrawColor(...black);
+      doc.setLineWidth(0.35);
       doc.line(summaryX, y + 5, summaryX + summaryWidth, y + 5);
-      y += 14;
+      y += 10;
 
       const sortedTotals = Object.entries(materialTotals).sort(([a], [b]) => a.localeCompare(b));
       sortedTotals.forEach(([material, total]) => {
-        addPageIfNeeded(13);
-        doc.setFillColor(...rowFill);
-        doc.rect(summaryX, y - 8, summaryWidth, 12, 'F');
+        addPageIfNeeded(8);
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(15, 23, 42);
+        doc.setTextColor(...black);
         doc.text(textFit(material, 62), summaryX + 5, y);
         doc.text(fmt.number(total, 0), totalX, y, { align: 'center' });
-        y += 13;
+        y += 8;
       });
 
       addPageIfNeeded(14);
       const totalGeneral = sortedTotals.reduce((sum, [, total]) => sum + total, 0);
-      doc.setDrawColor(...navy);
-      doc.line(summaryX, y - 6, summaryX + summaryWidth, y - 6);
-      doc.setFillColor(...rowFill);
-      doc.rect(summaryX, y - 5, summaryWidth, 12, 'F');
+      doc.setDrawColor(...black);
+      doc.line(summaryX, y - 4, summaryX + summaryWidth, y - 4);
+      y += 4;
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(...black);
       doc.text('TOTAL GENERAL', summaryX + 5, y);
       doc.text(fmt.number(totalGeneral, 0), totalX, y, { align: 'center' });
-
-      drawFooter();
+      doc.line(summaryX, y + 7, summaryX + summaryWidth, y + 7);
       doc.save(`reporte_entrada_materiales_${new Date().toISOString().split('T')[0]}.pdf`);
       showToast(`PDF de entradas generado: ${entries.length} registros`, 'success');
     }
