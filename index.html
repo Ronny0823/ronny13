@@ -3050,9 +3050,14 @@
                             <button onclick="cancelDelete()" class="text-xs text-slate-400 hover:text-slate-300">No</button>
                           </div>
                         ` : `
-                          <button onclick="askDelete('${e.__backendId}')" class="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                          </button>
+                          <div class="flex items-center justify-end gap-2">
+                            <button onclick="showEntryModal('${e.__backendId}')" class="p-2 rounded-lg text-slate-400 hover:text-primary-400 hover:bg-primary-500/10 transition-colors" title="Editar">
+                              <i data-lucide="edit-2" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="askDelete('${e.__backendId}')" class="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors" title="Eliminar">
+                              <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                          </div>
                         `}
                       </td>
                     </tr>
@@ -8710,54 +8715,55 @@
       }
     }
 
-    function showEntryModal() {
+    function showEntryModal(editId = null) {
       const materials = getRecords('material');
+      const existing = editId ? AppState.data.find(r => r.__backendId === editId && r.type === 'entry') : null;
       
       showModal(`
         <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
           <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-bold text-slate-100">Registrar Entrada</h2>
+            <h2 class="text-xl font-bold text-slate-100">${existing ? 'Editar Entrada' : 'Registrar Entrada'}</h2>
             <button onclick="closeModal()" class="text-slate-400 hover:text-slate-200">
               <i data-lucide="x" class="w-5 h-5"></i>
             </button>
           </div>
           
-          <form onsubmit="saveEntry(event)" class="space-y-4">
+          <form onsubmit="saveEntry(event, ${existing ? `'${existing.__backendId}'` : 'null'})" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Fecha de Entrada</label>
-              <input type="datetime-local" id="entryDate" required
+              <input type="datetime-local" id="entryDate" required value="${existing ? escapeAttr(toDateTimeLocalValue(existing.date)) : ''}"
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
               <p class="text-xs text-slate-500 mt-1">Por defecto: fecha y hora actual</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Material</label>
              <select id="entryMat" required class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus select-custom">
-                ${materials.map(m => `<option value="${m.name}">${m.name}</option>`).join('')}
+                ${materials.map(m => `<option value="${escapeAttr(m.name)}" ${existing?.material_name === m.name ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('')}
               </select>
             </div>
             
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="block text-sm font-medium text-slate-400 mb-2">Cantidad</label>
-                <input type="number" id="entryQty" step="0.1" min="0.1" required
+                <input type="number" id="entryQty" step="0.1" min="0.1" required value="${existing ? escapeAttr(existing.quantity) : ''}"
                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
               </div>
               <div>
                 <label class="block text-sm font-medium text-slate-400 mb-2">Costo Unitario</label>
-                <input type="number" id="entryPrice" step="0.01" min="0" placeholder="Opcional"
+                <input type="number" id="entryPrice" step="0.01" min="0" placeholder="Opcional" value="${existing ? escapeAttr(existing.price || '') : ''}"
                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
               </div>
             </div>
             
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Proveedor</label>
-              <input type="text" id="entrySupp" required placeholder="Nombre del proveedor"
+              <input type="text" id="entrySupp" required placeholder="Nombre del proveedor" value="${existing ? escapeAttr(existing.supplier_name || '') : ''}"
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
             </div>
             
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Factura del Proveedor</label>
-              <input type="text" id="entrySupplierInv" placeholder="Ej: FAC-001"
+              <input type="text" id="entrySupplierInv" placeholder="Ej: FAC-001" value="${existing ? escapeAttr(existing.supplier_invoice || '') : ''}"
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono placeholder-slate-600 input-focus">
             </div>
             
@@ -8766,7 +8772,7 @@
                 Cancelar
               </button>
               <button type="submit" class="flex-1 px-4 py-3 bg-primary-500 hover:bg-primary-400 text-slate-900 font-bold rounded-lg transition-all hover:shadow-lg hover:shadow-primary-500/20">
-                Registrar Entrada
+                ${existing ? 'Guardar Cambios' : 'Registrar Entrada'}
               </button>
             </div>
           </form>
@@ -8775,24 +8781,38 @@
 
       // Inicializar fecha actual por defecto
       setTimeout(() => {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
         const dateInput = document.getElementById('entryDate');
-        if (dateInput) {
+        if (dateInput && !dateInput.value) {
+          const now = new Date();
+          now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
           dateInput.value = now.toISOString().slice(0, 16);
         }
       }, 100);
     }
 
-    async function saveEntry(e) {
+    function toDateTimeLocalValue(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return String(value).slice(0, 16);
+      date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+      return date.toISOString().slice(0, 16);
+    }
+
+    async function saveEntry(e, editId = null) {
       e.preventDefault();
       
-      if (AppState.data.length >= 999) {
+      if (!editId && AppState.data.length >= 999) {
         showToast('Limite de registros alcanzado', 'error');
         return;
       }
 
       try {
+        const existing = editId ? AppState.data.find(r => r.__backendId === editId && r.type === 'entry') : null;
+        if (editId && !existing) {
+          showToast('No se encontro la entrada para editar', 'error');
+          return;
+        }
+
         const data = {
           type: 'entry',
           material_name: document.getElementById('entryMat').value,
@@ -8800,18 +8820,22 @@
           price: parseFloat(document.getElementById('entryPrice').value || 0),
           supplier_name: document.getElementById('entrySupp').value.trim(),
           supplier_invoice: document.getElementById('entrySupplierInv').value.trim(),
-          date: new Date().toISOString()
+          date: document.getElementById('entryDate').value || new Date().toISOString()
         };
-        
-        data.__backendId = 'ent_' + Date.now();
-        AppState.data.push(data);
+
+        if (existing) {
+          Object.assign(existing, data);
+        } else {
+          data.__backendId = 'ent_' + Date.now();
+          AppState.data.push(data);
+        }
         AppState.saveUserData();
         
-        showToast('Entrada registrada correctamente');
+        showToast(existing ? 'Entrada actualizada correctamente' : 'Entrada registrada correctamente');
         closeModal();
         renderPage();
       } catch (err) {
-        showToast('Error al registrar entrada', 'error');
+        showToast('Error al guardar la entrada', 'error');
         console.error(err);
       }
     }
