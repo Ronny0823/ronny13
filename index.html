@@ -3497,7 +3497,7 @@
               </div>
             ` : `
               <div class="overflow-x-auto">
-                <table class="w-full min-w-[900px] text-sm">
+                <table class="w-full min-w-[820px] text-sm">
                   <thead class="bg-slate-900/80 text-blue-400">
                     <tr>
                       <th class="px-5 py-4 text-left font-medium">Proveedor</th>
@@ -3506,7 +3506,6 @@
                       <th class="px-5 py-4 text-center font-medium">Total m3</th>
                       <th class="px-5 py-4 text-left font-medium">Ultima entrega</th>
                       <th class="px-5 py-4 text-center font-medium">Estado</th>
-                      <th class="px-5 py-4 text-center font-medium">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3540,16 +3539,6 @@
                             <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                               <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Activo
                             </span>
-                          </td>
-                          <td class="px-5 py-4">
-                            <div class="flex items-center justify-center gap-2">
-                              <button onclick="showToast('Vista de proveedor: ${escapeAttr(row.supplier)}', 'info')" class="w-10 h-10 rounded-full bg-slate-950/40 border border-slate-700 text-slate-200 hover:text-blue-300 hover:border-blue-400/40 transition-colors flex items-center justify-center">
-                                <i data-lucide="eye" class="w-5 h-5"></i>
-                              </button>
-                              <button onclick="showToast('Edicion de proveedor disponible desde entradas de material', 'info')" class="w-10 h-10 rounded-full bg-slate-950/40 border border-slate-700 text-slate-200 hover:text-blue-300 hover:border-blue-400/40 transition-colors flex items-center justify-center">
-                                <i data-lucide="pencil" class="w-5 h-5"></i>
-                              </button>
-                            </div>
                           </td>
                         </tr>
                       `;
