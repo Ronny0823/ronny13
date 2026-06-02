@@ -3945,7 +3945,7 @@
       const today = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
 
       container.innerHTML = `
-        <div class="space-y-6 animate-fade-in max-w-2xl">
+        <div class="space-y-6 animate-fade-in w-full">
           <div>
             <h2 class="text-2xl font-bold text-slate-100">Nueva Venta</h2>
             <p class="text-slate-500 text-sm mt-1">Registrar transaccion de venta</p>
@@ -3959,8 +3959,8 @@
               <button onclick="navigate('inventory')" class="px-4 py-2 bg-amber-500/20 text-amber-400 rounded-lg hover:bg-amber-500/30 transition-colors font-medium">Ir a Inventario</button>
             </div>
           ` : `
-            <div class="glass rounded-xl p-6">
-              <form onsubmit="handleSale(event)" id="saleForm" class="space-y-5">
+            <div class="glass rounded-xl p-6 w-full">
+              <form onsubmit="handleSale(event)" id="saleForm" class="space-y-5 w-full">
                 <div>
                   <label class="block text-sm font-medium text-slate-400 mb-2">Cliente</label>
                   <div class="relative">
