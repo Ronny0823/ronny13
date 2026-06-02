@@ -2901,26 +2901,7 @@
     function renderEntries(container) {
       const entries = getRecords('entry');
       const materials = getRecords('material');
-      
-      const suppliers = [...new Set(entries.map(e => e.supplier_name).filter(Boolean))].sort();
-      
-      let filteredEntries = entries;
-      if (AppState.entryFilters.search) {
-        const search = AppState.entryFilters.search.toLowerCase();
-        filteredEntries = filteredEntries.filter(e => 
-          (e.material_name?.toLowerCase() || '').includes(search) ||
-          (e.supplier_name?.toLowerCase() || '').includes(search) ||
-          (e.supplier_invoice?.toLowerCase() || '').includes(search)
-        );
-      }
-      if (AppState.entryFilters.supplier) {
-        filteredEntries = filteredEntries.filter(e => 
-          e.supplier_name?.toLowerCase().includes(AppState.entryFilters.supplier.toLowerCase())
-        );
-      }
-      if (AppState.entryFilters.dateFrom || AppState.entryFilters.dateTo) {
-        filteredEntries = filteredEntries.filter(e => matchesDateFilter(e.date, AppState.entryFilters.dateFrom, AppState.entryFilters.dateTo));
-      }
+      const filteredEntries = getFilteredEntries();
 
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
@@ -2950,12 +2931,11 @@
                 </div>
               </div>
               <div>
-                <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
-                <select id="entryFilterSupplier" onchange="updateEntryFilters()"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
-                  <option value="">Todos los proveedores</option>
-                  ${suppliers.map(s => `<option value="${s}" ${AppState.entryFilters.supplier === s ? 'selected' : ''}>${s}</option>`).join('')}
-                </select>
+                <label class="block text-xs text-slate-500 mb-1">PDF</label>
+                <button type="button" onclick="exportEntryReportPDF()"
+                  class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-rose-500 hover:bg-rose-400 text-white rounded-lg text-sm font-semibold transition-colors">
+                  <i data-lucide="file-text" class="w-4 h-4"></i> PDF
+                </button>
               </div>
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Desde</label>
@@ -3118,7 +3098,6 @@
 
     function updateEntryFilters() {
       AppState.entryFilters.search = document.getElementById('entryFilterSearch')?.value || '';
-      AppState.entryFilters.supplier = document.getElementById('entryFilterSupplier').value;
       AppState.entryFilters.dateFrom = document.getElementById('entryFilterDateFrom').value;
       AppState.entryFilters.dateTo = document.getElementById('entryFilterDateTo').value;
       AppState.entryFilters.quickPeriod = '';
@@ -3128,6 +3107,126 @@
     function clearEntryFilters() {
       AppState.entryFilters = { search: '', supplier: '', dateFrom: '', dateTo: '', quickPeriod: '' };
       renderPage();
+    }
+
+    function getFilteredEntries() {
+      let filteredEntries = getRecords('entry');
+      if (AppState.entryFilters.search) {
+        const search = AppState.entryFilters.search.toLowerCase();
+        filteredEntries = filteredEntries.filter(e =>
+          (e.material_name?.toLowerCase() || '').includes(search) ||
+          (e.supplier_name?.toLowerCase() || '').includes(search) ||
+          (e.supplier_invoice?.toLowerCase() || '').includes(search)
+        );
+      }
+      if (AppState.entryFilters.supplier) {
+        filteredEntries = filteredEntries.filter(e =>
+          e.supplier_name?.toLowerCase().includes(AppState.entryFilters.supplier.toLowerCase())
+        );
+      }
+      if (AppState.entryFilters.dateFrom || AppState.entryFilters.dateTo) {
+        filteredEntries = filteredEntries.filter(e => matchesDateFilter(e.date, AppState.entryFilters.dateFrom, AppState.entryFilters.dateTo));
+      }
+      return filteredEntries;
+    }
+
+    function exportEntryReportPDF() {
+      if (!window.jspdf?.jsPDF) {
+        showToast('La libreria PDF no esta disponible.', 'error');
+        return;
+      }
+
+      const entries = getFilteredEntries().slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+      if (!entries.length) {
+        showToast('No hay entradas para exportar en PDF.', 'warning');
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 8;
+      let y = 18;
+
+      const materialTotals = {};
+      entries.forEach(e => {
+        const material = e.material_name || 'Sin material';
+        materialTotals[material] = (materialTotals[material] || 0) + (Number(e.quantity) || 0);
+      });
+
+      const drawHeader = () => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(17);
+        doc.setTextColor(0, 0, 0);
+        doc.text('REPORTE DE ENTRADA DE MATERIALES', margin, y);
+        y += 10;
+
+        doc.setFontSize(10);
+        const headers = [
+          { label: 'Fecha', x: margin, w: 44 },
+          { label: 'Material', x: 58, w: 36 },
+          { label: 'Cantidad', x: 95, w: 31 },
+          { label: 'Proveedor', x: 127, w: 36 },
+          { label: 'Factura', x: 164, w: 40 }
+        ];
+        headers.forEach(h => {
+          doc.rect(h.x - 1, y - 5, h.w, 7);
+          doc.text(h.label, h.x, y);
+        });
+        y += 10;
+      };
+
+      const addPageIfNeeded = (needed = 10) => {
+        if (y + needed <= pageHeight - 12) return;
+        doc.addPage();
+        y = 18;
+        drawHeader();
+      };
+
+      drawHeader();
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+
+      entries.forEach(e => {
+        addPageIfNeeded(8);
+        const date = e.date ? new Date(e.date) : null;
+        const dateText = date && !Number.isNaN(date.getTime())
+          ? date.toLocaleString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+          : (e.date || '');
+        doc.text(String(dateText), margin, y);
+        doc.text(String(e.material_name || ''), 58, y);
+        doc.text(String(fmt.number(Number(e.quantity) || 0, 0)), 95, y);
+        doc.text(String(e.supplier_name || ''), 127, y);
+        doc.text(String(e.supplier_invoice || ''), 164, y);
+        y += 8;
+      });
+
+      y += 8;
+      addPageIfNeeded(34);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('RESUMEN DE MATERIALES', margin, y);
+      y += 10;
+
+      doc.setFontSize(11);
+      const sortedTotals = Object.entries(materialTotals).sort(([a], [b]) => a.localeCompare(b));
+      sortedTotals.forEach(([material, total]) => {
+        addPageIfNeeded(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(material, margin + 4, y);
+        doc.text(fmt.number(total, 0), 58, y);
+        y += 7;
+      });
+
+      addPageIfNeeded(8);
+      const totalGeneral = sortedTotals.reduce((sum, [, total]) => sum + total, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text('TOTAL GENERAL', margin + 4, y);
+      doc.text(fmt.number(totalGeneral, 0), 58, y);
+
+      doc.save(`reporte_entrada_materiales_${new Date().toISOString().split('T')[0]}.pdf`);
+      showToast(`PDF de entradas generado: ${entries.length} registros`, 'success');
     }
 
     function getFilteredSupplierEntries() {
