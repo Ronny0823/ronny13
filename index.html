@@ -3146,8 +3146,11 @@
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 8;
-      let y = 18;
+      const margin = 14;
+      const navy = [7, 37, 80];
+      const muted = [79, 89, 105];
+      const rowFill = [247, 248, 250];
+      let y = 0;
 
       const materialTotals = {};
       entries.forEach(e => {
@@ -3155,76 +3158,184 @@
         materialTotals[material] = (materialTotals[material] || 0) + (Number(e.quantity) || 0);
       });
 
-      const drawHeader = () => {
+      const reportDate = new Date();
+      const formatReportDate = (date) => date.toLocaleDateString('es-MX', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+      const formatReportTime = (date) => date.toLocaleTimeString('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).replace('a. m.', 'a. m.').replace('p. m.', 'p. m.');
+      const formatEntryDate = (value) => {
+        const date = value ? new Date(value) : null;
+        if (!date || Number.isNaN(date.getTime())) return value || '';
+        return date.toLocaleString('es-MX', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        }).replace('a. m.', 'a. m.').replace('p. m.', 'p. m.');
+      };
+      const textFit = (text, maxWidth) => {
+        const value = String(text || '');
+        const lines = doc.splitTextToSize(value, maxWidth);
+        return lines.length > 1 ? `${lines[0].replace(/\s+$/g, '')}...` : value;
+      };
+
+      const drawTopHeader = () => {
+        y = 16;
+        const logo = AppState.config.company_logo || RLRR_LOGO_DATA;
+        try {
+          doc.addImage(logo, 'PNG', margin, 12, 13, 13);
+        } catch (err) {
+          doc.setDrawColor(...navy);
+          doc.setLineWidth(0.7);
+          doc.rect(margin, 12, 13, 13);
+        }
+
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(17);
-        doc.setTextColor(0, 0, 0);
-        doc.text('REPORTE DE ENTRADA DE MATERIALES', margin, y);
-        y += 10;
+        doc.setFontSize(15);
+        doc.setTextColor(...navy);
+        doc.text(AppState.config.company_name || 'Tu Empresa', margin + 18, 17);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(...muted);
+        doc.text('Gestion de Materiales', margin + 18, 24);
 
         doc.setFontSize(10);
+        doc.setTextColor(20, 20, 20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Fecha del reporte:', pageWidth - 68, 17);
+        doc.text('Hora:', pageWidth - 68, 24);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...navy);
+        doc.text(formatReportDate(reportDate), pageWidth - margin, 17, { align: 'right' });
+        doc.text(formatReportTime(reportDate), pageWidth - margin, 24, { align: 'right' });
+
+        doc.setDrawColor(...navy);
+        doc.setLineWidth(0.7);
+        doc.line(margin, 34, pageWidth - margin, 34);
+      };
+
+      const drawTitleAndTableHead = () => {
+        y = 58;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(...navy);
+        doc.text('REPORTE DE ENTRADA DE MATERIALES', pageWidth / 2, y, { align: 'center' });
+        y += 18;
+
+        doc.setFontSize(10);
+        doc.setTextColor(...navy);
         const headers = [
-          { label: 'Fecha', x: margin, w: 44 },
-          { label: 'Material', x: 58, w: 36 },
-          { label: 'Cantidad', x: 95, w: 31 },
-          { label: 'Proveedor', x: 127, w: 36 },
-          { label: 'Factura', x: 164, w: 40 }
+          { label: 'Fecha', x: margin + 3, w: 58, align: 'left' },
+          { label: 'Material', x: margin + 70, w: 42, align: 'left' },
+          { label: 'Cantidad', x: margin + 118, w: 28, align: 'center' },
+          { label: 'Proveedor', x: margin + 144, w: 36, align: 'center' },
+          { label: 'Factura', x: pageWidth - margin - 6, w: 34, align: 'right' }
         ];
+        doc.setDrawColor(...navy);
+        doc.setLineWidth(0.5);
         headers.forEach(h => {
-          doc.rect(h.x - 1, y - 5, h.w, 7);
-          doc.text(h.label, h.x, y);
+          doc.text(h.label, h.x, y, { align: h.align });
         });
-        y += 10;
+        doc.line(margin, y + 4, pageWidth - margin, y + 4);
+        y += 12;
+      };
+
+      const drawFooter = () => {
+        const footerY = pageHeight - 16;
+        doc.setDrawColor(...navy);
+        doc.setLineWidth(0.7);
+        doc.line(margin, pageHeight - 7, pageWidth - margin, pageHeight - 7);
+        doc.circle(pageWidth / 2, footerY - 3, 4);
+        doc.setLineWidth(0.9);
+        doc.line(pageWidth / 2 - 2, footerY - 3, pageWidth / 2 - 0.4, footerY - 1.2);
+        doc.line(pageWidth / 2 - 0.4, footerY - 1.2, pageWidth / 2 + 2.5, footerY - 5);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...muted);
+        doc.text('Reporte generado automaticamente por el sistema', pageWidth / 2, footerY + 8, { align: 'center' });
+      };
+
+      const drawPageScaffold = () => {
+        drawTopHeader();
+        drawTitleAndTableHead();
       };
 
       const addPageIfNeeded = (needed = 10) => {
-        if (y + needed <= pageHeight - 12) return;
+        if (y + needed <= pageHeight - 28) return;
+        drawFooter();
         doc.addPage();
-        y = 18;
-        drawHeader();
+        drawPageScaffold();
       };
 
-      drawHeader();
+      drawPageScaffold();
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
 
-      entries.forEach(e => {
-        addPageIfNeeded(8);
-        const date = e.date ? new Date(e.date) : null;
-        const dateText = date && !Number.isNaN(date.getTime())
-          ? date.toLocaleString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
-          : (e.date || '');
-        doc.text(String(dateText), margin, y);
-        doc.text(String(e.material_name || ''), 58, y);
-        doc.text(String(fmt.number(Number(e.quantity) || 0, 0)), 95, y);
-        doc.text(String(e.supplier_name || ''), 127, y);
-        doc.text(String(e.supplier_invoice || ''), 164, y);
-        y += 8;
+      entries.forEach((e, index) => {
+        addPageIfNeeded(15);
+        const rowY = y - 7;
+        doc.setFillColor(...rowFill);
+        doc.rect(margin, rowY, pageWidth - (margin * 2), 12, 'F');
+        doc.setTextColor(15, 23, 42);
+        doc.text(textFit(formatEntryDate(e.date), 58), margin + 3, y);
+        doc.text(textFit(e.material_name || '', 42), margin + 70, y);
+        doc.text(String(fmt.number(Number(e.quantity) || 0, 0)), margin + 126, y, { align: 'center' });
+        doc.text(textFit(e.supplier_name || '', 36), margin + 162, y, { align: 'center' });
+        doc.text(textFit(e.supplier_invoice || '', 34), pageWidth - margin - 6, y, { align: 'right' });
+        y += index === entries.length - 1 ? 14 : 15;
       });
 
       y += 8;
-      addPageIfNeeded(34);
+      addPageIfNeeded(58);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.text('RESUMEN DE MATERIALES', margin, y);
-      y += 10;
+      doc.setFontSize(15);
+      doc.setTextColor(...navy);
+      doc.text('RESUMEN DE MATERIALES', pageWidth / 2, y, { align: 'center' });
+      y += 17;
 
       doc.setFontSize(11);
+      const summaryWidth = 104;
+      const summaryX = (pageWidth - summaryWidth) / 2;
+      const totalX = summaryX + summaryWidth - 12;
+      doc.text('Material', summaryX + 5, y);
+      doc.text('Total', totalX, y, { align: 'center' });
+      doc.setDrawColor(...navy);
+      doc.setLineWidth(0.5);
+      doc.line(summaryX, y + 5, summaryX + summaryWidth, y + 5);
+      y += 14;
+
       const sortedTotals = Object.entries(materialTotals).sort(([a], [b]) => a.localeCompare(b));
       sortedTotals.forEach(([material, total]) => {
-        addPageIfNeeded(7);
+        addPageIfNeeded(13);
+        doc.setFillColor(...rowFill);
+        doc.rect(summaryX, y - 8, summaryWidth, 12, 'F');
         doc.setFont('helvetica', 'normal');
-        doc.text(material, margin + 4, y);
-        doc.text(fmt.number(total, 0), 58, y);
-        y += 7;
+        doc.setTextColor(15, 23, 42);
+        doc.text(textFit(material, 62), summaryX + 5, y);
+        doc.text(fmt.number(total, 0), totalX, y, { align: 'center' });
+        y += 13;
       });
 
-      addPageIfNeeded(8);
+      addPageIfNeeded(14);
       const totalGeneral = sortedTotals.reduce((sum, [, total]) => sum + total, 0);
+      doc.setDrawColor(...navy);
+      doc.line(summaryX, y - 6, summaryX + summaryWidth, y - 6);
+      doc.setFillColor(...rowFill);
+      doc.rect(summaryX, y - 5, summaryWidth, 12, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.text('TOTAL GENERAL', margin + 4, y);
-      doc.text(fmt.number(totalGeneral, 0), 58, y);
+      doc.setTextColor(15, 23, 42);
+      doc.text('TOTAL GENERAL', summaryX + 5, y);
+      doc.text(fmt.number(totalGeneral, 0), totalX, y, { align: 'center' });
 
+      drawFooter();
       doc.save(`reporte_entrada_materiales_${new Date().toISOString().split('T')[0]}.pdf`);
       showToast(`PDF de entradas generado: ${entries.length} registros`, 'success');
     }
