@@ -2357,6 +2357,33 @@
 
     let filterRenderTimer = null;
     let isFilterRendering = false;
+    let isTextComposing = false;
+
+    document.addEventListener('compositionstart', () => {
+      isTextComposing = true;
+    });
+
+    document.addEventListener('compositionend', () => {
+      isTextComposing = false;
+    });
+
+    function isTouchKeyboardLikely() {
+      return window.matchMedia?.('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    }
+
+    function getFilterRenderDelay() {
+      if (isTextComposing) return 600;
+      return isTouchKeyboardLikely() ? 450 : 180;
+    }
+
+    function enhanceSearchInputs(root = document) {
+      root.querySelectorAll('input[type="text"][id*="Search"], input[type="search"], input[id$="FilterSearch"], #fuelSearch, #configPrinterSearch, #currencySearch').forEach(input => {
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('autocapitalize', 'none');
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('spellcheck', 'false');
+      });
+    }
 
     function renderPageForFilter(searchInputId) {
       const active = document.getElementById(searchInputId);
@@ -2397,7 +2424,7 @@
 
     function renderFilterPage(searchInputId) {
       if (document.activeElement?.id === searchInputId) {
-        renderPageDebounced(0, searchInputId);
+        renderPageDebounced(getFilterRenderDelay(), searchInputId);
         return;
       }
       clearTimeout(filterRenderTimer);
@@ -2584,6 +2611,7 @@
       }
       
       lucide.createIcons();
+      enhanceSearchInputs(container);
     }
 
     async function syncCurrentUserFromCloud({ silent = false } = {}) {
