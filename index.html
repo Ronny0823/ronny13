@@ -5699,7 +5699,11 @@
               <h2 class="text-2xl font-bold text-slate-100">Facturas</h2>
               <p class="text-slate-500 text-sm mt-1">Registro de facturacion - Gestion completa</p>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+              <button type="button" onclick="navigate('sales')"
+                class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-400 text-slate-900 font-semibold rounded-lg transition-all">
+                <i data-lucide="shopping-cart" class="w-4 h-4"></i> Nueva Venta
+              </button>
               <div class="text-right">
                 <div class="text-xs text-slate-500">Total Filtrado</div>
                 <div class="text-xl font-bold text-emerald-400 font-mono">${fmt.currency(totalRevenue)}</div>
