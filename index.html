@@ -8973,9 +8973,137 @@
       }
     }
 
+    function getInvoiceEditItems(invoice) {
+      if (Array.isArray(invoice.items) && invoice.items.length) {
+        return invoice.items.map(item => ({
+          material_name: item.material_name,
+          quantity: toFiniteNumber(item.quantity, 0),
+          price: toFiniteNumber(item.price, 0),
+          subtotal: toFiniteNumber(item.subtotal, 0) || toFiniteNumber(item.quantity, 0) * toFiniteNumber(item.price, 0)
+        })).filter(item => item.material_name && item.quantity > 0 && item.price > 0);
+      }
+
+      return [{
+        material_name: invoice.material_name,
+        quantity: toFiniteNumber(invoice.quantity, 0),
+        price: toFiniteNumber(invoice.price, 0),
+        subtotal: toFiniteNumber(invoice.subtotal, 0) || toFiniteNumber(invoice.quantity, 0) * toFiniteNumber(invoice.price, 0)
+      }].filter(item => item.material_name && item.quantity > 0 && item.price > 0);
+    }
+
+    function getInvoiceOriginalQtyByMaterial(invoice) {
+      const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+      const items = sale ? getInvoiceEditItems(sale) : getInvoiceEditItems(invoice);
+      return items.reduce((map, item) => {
+        map[item.material_name] = (map[item.material_name] || 0) + toFiniteNumber(item.quantity, 0);
+        return map;
+      }, {});
+    }
+
+    function updateEditInvoiceMaterialPrice() {
+      const materialName = document.getElementById('editInvNewMaterial')?.value || '';
+      const material = getRecords('material').find(m => m.name === materialName);
+      const priceInput = document.getElementById('editInvNewPrice');
+      if (material && priceInput) priceInput.value = Math.max(0, toFiniteNumber(material.price, 0));
+    }
+
+    function renderEditInvoiceItems() {
+      const list = document.getElementById('editInvItemsList');
+      if (!list) return;
+
+      if (!AppState.editInvoiceItems?.length) {
+        list.innerHTML = `<div class="text-sm text-slate-500 text-center py-3 border border-dashed border-slate-700 rounded-lg">Agrega al menos un material a la factura</div>`;
+        updateEditInvoiceTotalPreview();
+        return;
+      }
+
+      list.innerHTML = AppState.editInvoiceItems.map((item, index) => `
+        <div class="flex items-center justify-between gap-3 p-3 bg-slate-900/40 border border-slate-700/50 rounded-lg">
+          <div class="min-w-0">
+            <div class="font-medium text-slate-200 truncate">${escapeHtml(item.material_name)}</div>
+            <div class="text-xs text-slate-500 font-mono">${fmt.number(item.quantity)} x ${fmt.currency(item.price)}</div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <span class="font-mono text-emerald-400">${fmt.currency(item.subtotal)}</span>
+            <button type="button" onclick="removeEditInvoiceItem(${index})" class="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors" title="Quitar material">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      `).join('');
+
+      updateEditInvoiceTotalPreview();
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function updateEditInvoiceTotalPreview() {
+      const invoiceId = AppState.editInvoiceId;
+      const invoice = AppState.data.find(r => r.__backendId === invoiceId);
+      const totalPreview = document.getElementById('editInvTotalPreview');
+      const subtotalPreview = document.getElementById('editInvSubtotalPreview');
+      const taxPreview = document.getElementById('editInvTaxPreview');
+      if (!invoice || !totalPreview) return;
+
+      const subtotal = (AppState.editInvoiceItems || []).reduce((sum, item) => sum + toFiniteNumber(item.subtotal, 0), 0);
+      const tax = invoice.iva_enabled ? subtotal * (toFiniteNumber(invoice.iva_rate, 0) / 100) : 0;
+      const total = subtotal + tax;
+
+      if (subtotalPreview) subtotalPreview.textContent = fmt.currency(subtotal);
+      if (taxPreview) taxPreview.textContent = fmt.currency(tax);
+      totalPreview.textContent = fmt.currency(total);
+    }
+
+    function addEditInvoiceItem() {
+      const invoice = AppState.data.find(r => r.__backendId === AppState.editInvoiceId);
+      const materialName = document.getElementById('editInvNewMaterial')?.value || '';
+      const qty = toFiniteNumber(document.getElementById('editInvNewQty')?.value, 0);
+      const price = toFiniteNumber(document.getElementById('editInvNewPrice')?.value, 0);
+      const material = getRecords('material').find(m => m.name === materialName);
+
+      if (!invoice || !material) {
+        showToast('Selecciona un material registrado.', 'warning');
+        return;
+      }
+      if (!isPositiveNumber(qty) || !isPositiveNumber(price)) {
+        showToast('Cantidad y precio deben ser mayores que cero.', 'warning');
+        return;
+      }
+
+      const originalQty = getInvoiceOriginalQtyByMaterial(invoice);
+      const requestedQty = (AppState.editInvoiceItems || [])
+        .filter(item => item.material_name === materialName)
+        .reduce((sum, item) => sum + toFiniteNumber(item.quantity, 0), 0) + qty;
+      const stock = toFiniteNumber(calcInventory()[materialName]?.stock, 0) + toFiniteNumber(originalQty[materialName], 0);
+
+      if (requestedQty > stock) {
+        showToast(`Stock insuficiente para ${materialName}`, 'error');
+        return;
+      }
+
+      AppState.editInvoiceItems.push({
+        material_name: materialName,
+        quantity: qty,
+        price: price,
+        subtotal: qty * price
+      });
+
+      document.getElementById('editInvNewMaterial').value = '';
+      document.getElementById('editInvNewQty').value = '';
+      document.getElementById('editInvNewPrice').value = '';
+      renderEditInvoiceItems();
+    }
+
+    function removeEditInvoiceItem(index) {
+      AppState.editInvoiceItems.splice(index, 1);
+      renderEditInvoiceItems();
+    }
+
     function editInvoice(invoiceId) {
       const invoice = AppState.data.find(r => r.__backendId === invoiceId);
       if (!invoice) return;
+      const materials = getRecords('material');
+      AppState.editInvoiceId = invoiceId;
+      AppState.editInvoiceItems = getInvoiceEditItems(invoice);
 
       showModal(`
         <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
@@ -9005,29 +9133,50 @@
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono uppercase input-focus">
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-slate-400 mb-2">Material</label>
-                <input type="text" id="editInvMaterial" value="${invoice.material_name}" required
-                  class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <label class="block text-sm font-medium text-slate-400">Materiales de la factura</label>
               </div>
-              <div>
-                <label class="block text-sm font-medium text-slate-400 mb-2">Cantidad</label>
-                <input type="number" id="editInvQty" step="0.1" value="${invoice.quantity}" required
-                  class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
-              </div>
+              <div id="editInvItemsList" class="space-y-2"></div>
             </div>
 
-            <div>
-              <label class="block text-sm font-medium text-slate-400 mb-2">Precio Unitario</label>
-              <input type="number" id="editInvPrice" step="0.01" value="${invoice.price}" required
-                class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
+            <div class="grid grid-cols-1 md:grid-cols-[1fr_120px_140px_auto] gap-3 items-end p-4 bg-slate-800/30 rounded-lg border border-slate-700/50">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Material</label>
+                <select id="editInvNewMaterial" onchange="updateEditInvoiceMaterialPrice()" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus select-custom">
+                  <option value="">Seleccionar...</option>
+                  ${materials.map(m => `<option value="${escapeAttr(m.name)}">${escapeHtml(m.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Cantidad</label>
+                <input type="number" id="editInvNewQty" step="0.1" min="0.1"
+                  class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Precio</label>
+                <input type="number" id="editInvNewPrice" step="0.01" min="0.01"
+                  class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
+              </div>
+              <button type="button" onclick="addEditInvoiceItem()" class="h-10 px-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="plus" class="w-4 h-4"></i> Agregar
+              </button>
             </div>
 
             <div class="p-4 bg-slate-800/30 rounded-lg border border-slate-700/50">
-              <div class="flex items-center justify-between">
-                <span class="text-sm text-slate-400">Total Calculado:</span>
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-slate-400">Subtotal:</span>
+                  <span id="editInvSubtotalPreview" class="font-mono text-slate-300">${fmt.currency(invoice.subtotal || 0)}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-slate-400">IVA:</span>
+                  <span id="editInvTaxPreview" class="font-mono text-slate-300">${fmt.currency(invoice.tax || 0)}</span>
+                </div>
+                <div class="flex items-center justify-between pt-2 border-t border-slate-700/50">
+                  <span class="text-sm text-slate-400">Total Calculado:</span>
                 <span id="editInvTotalPreview" class="text-xl font-bold text-emerald-400 font-mono">${fmt.currency(invoice.sale_total)}</span>
+                </div>
               </div>
             </div>
 
@@ -9043,23 +9192,8 @@
         </div>
       `);
 
-      // Agregar listeners para calcular total en tiempo real
       setTimeout(() => {
-        const qtyInput = document.getElementById('editInvQty');
-        const priceInput = document.getElementById('editInvPrice');
-        const totalPreview = document.getElementById('editInvTotalPreview');
-
-        const updateTotal = () => {
-          const qty = parseFloat(qtyInput.value) || 0;
-          const price = parseFloat(priceInput.value) || 0;
-          const subtotal = qty * price;
-          const tax = invoice.iva_enabled ? subtotal * (invoice.iva_rate / 100) : 0;
-          const total = subtotal + tax;
-          totalPreview.textContent = fmt.currency(total);
-        };
-
-        qtyInput.addEventListener('input', updateTotal);
-        priceInput.addEventListener('input', updateTotal);
+        renderEditInvoiceItems();
       }, 100);
     }
 
@@ -9069,32 +9203,58 @@
       const invoice = AppState.data.find(r => r.__backendId === invoiceId);
       if (!invoice) return;
 
-      const qty = toFiniteNumber(document.getElementById('editInvQty').value, 0);
-      const price = toFiniteNumber(document.getElementById('editInvPrice').value, 0);
       const clientName = safeText(document.getElementById('editInvClient').value);
-      const materialName = safeText(document.getElementById('editInvMaterial').value);
+      const items = (AppState.editInvoiceItems || []).map(item => ({
+        material_name: item.material_name,
+        quantity: toFiniteNumber(item.quantity, 0),
+        price: toFiniteNumber(item.price, 0),
+        subtotal: toFiniteNumber(item.subtotal, 0)
+      }));
 
-      if (!clientName || !materialName) {
-        showToast('Cliente y material son requeridos.', 'warning');
+      if (!clientName) {
+        showToast('El cliente es requerido.', 'warning');
         return;
       }
 
-      if (!isPositiveNumber(qty) || !isPositiveNumber(price)) {
-        showToast('Cantidad y precio deben ser mayores que cero.', 'warning');
+      if (!items.length) {
+        showToast('Agrega al menos un material a la factura.', 'warning');
         return;
       }
 
-      const subtotal = qty * price;
+      const invalidItem = items.find(item => !item.material_name || !isPositiveNumber(item.quantity) || !isPositiveNumber(item.price) || !isPositiveNumber(item.subtotal));
+      if (invalidItem) {
+        showToast('Hay un material con cantidad o precio invalido.', 'warning');
+        return;
+      }
+
+      const originalQty = getInvoiceOriginalQtyByMaterial(invoice);
+      const requestedQty = items.reduce((map, item) => {
+        map[item.material_name] = (map[item.material_name] || 0) + item.quantity;
+        return map;
+      }, {});
+      const inv = calcInventory();
+      const stockProblem = Object.entries(requestedQty).find(([name, qty]) => qty > (toFiniteNumber(inv[name]?.stock, 0) + toFiniteNumber(originalQty[name], 0)));
+      if (stockProblem) {
+        showToast(`Stock insuficiente para ${stockProblem[0]}`, 'error');
+        return;
+      }
+
+      const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
       const tax = invoice.iva_enabled ? subtotal * (invoice.iva_rate / 100) : 0;
       const total = subtotal + tax;
+      const firstItem = items[0];
+      const materialLabel = items.length === 1 ? firstItem.material_name : 'Varios productos';
+      const quantityTotal = items.reduce((sum, item) => sum + item.quantity, 0);
+      const averagePrice = items.length === 1 ? firstItem.price : 0;
 
       try {
         // Actualizar factura
         invoice.client_name = clientName;
         invoice.vehicle_plate = safeText(document.getElementById('editInvPlate').value).toUpperCase();
-        invoice.material_name = materialName;
-        invoice.quantity = qty;
-        invoice.price = price;
+        invoice.material_name = materialLabel;
+        invoice.quantity = quantityTotal;
+        invoice.price = averagePrice;
+        invoice.items = items;
         invoice.subtotal = subtotal;
         invoice.tax = tax;
         invoice.sale_total = total;
@@ -9105,11 +9265,19 @@
           sale.client_name = invoice.client_name;
           sale.vehicle_plate = invoice.vehicle_plate;
           sale.material_name = invoice.material_name;
-          sale.sale_quantity = qty;
-          sale.price = price;
+          sale.sale_quantity = quantityTotal;
+          sale.price = averagePrice;
+          sale.items = items;
           sale.sale_subtotal = subtotal;
           sale.sale_tax = tax;
           sale.sale_total = total;
+          if (sale.payment_status === 'pagada') {
+            sale.amount_paid = total;
+            sale.remaining_balance = 0;
+          } else {
+            sale.amount_paid = Math.min(toFiniteNumber(sale.amount_paid, 0), total);
+            sale.remaining_balance = Math.max(0, total - toFiniteNumber(sale.amount_paid, 0));
+          }
         }
 
         AppState.saveUserData();
