@@ -4824,26 +4824,26 @@
               </div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-              <button onclick="setCreditStatusFilter('all')" id="btnStatusAll" 
+              <button onclick="setCreditStatusFilter('all')" data-credit-action="status" data-status="all" id="btnStatusAll" 
                 class="py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.creditFilters.status === 'all' ? 'bg-primary-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
                 Todos
               </button>
-              <button onclick="setCreditStatusFilter('pending')" id="btnStatusPending"
+              <button onclick="setCreditStatusFilter('pending')" data-credit-action="status" data-status="pending" id="btnStatusPending"
                 class="py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.creditFilters.status === 'pending' ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
                 Deudores
               </button>
-              <button onclick="setCreditStatusFilter('paid')" id="btnStatusPaid"
+              <button onclick="setCreditStatusFilter('paid')" data-credit-action="status" data-status="paid" id="btnStatusPaid"
                 class="py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.creditFilters.status === 'paid' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
                 Pagados
               </button>
-              <button onclick="setCreditStatusFilter('payments')" id="btnStatusPayments"
+              <button onclick="setCreditStatusFilter('payments')" data-credit-action="status" data-status="payments" id="btnStatusPayments"
                 class="py-2 px-3 rounded-lg text-sm font-medium transition-all ${AppState.creditFilters.status === 'payments' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}">
                 Abonos
               </button>
             </div>
             ${AppState.creditFilters.client || AppState.creditFilters.dateFrom || AppState.creditFilters.dateTo || AppState.creditFilters.status !== 'all' ? `
               <div class="mt-3 flex items-center gap-2">
-                <button onclick="clearCreditFilters()" class="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
+                <button onclick="clearCreditFilters()" data-credit-action="clear-filters" class="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
                   <i data-lucide="x-circle" class="w-3 h-3"></i> Limpiar filtros
                 </button>
                 <span class="text-xs text-slate-500">- Mostrando ${filteredClients.length} clientes</span>
@@ -4911,14 +4911,14 @@
                         Seleccionar abonos para imprimir
                       </div>
                       <div class="flex gap-2">
-                        <button onclick="selectVisibleCreditPayments(true)" class="text-xs text-primary-400 hover:text-primary-300">Seleccionar todos</button>
+                        <button onclick="selectVisibleCreditPayments(true)" data-credit-action="select-visible-payments" data-select="true" class="text-xs text-primary-400 hover:text-primary-300">Seleccionar todos</button>
                         <span class="text-slate-600">|</span>
-                        <button onclick="selectVisibleCreditPayments(false)" class="text-xs text-slate-400 hover:text-slate-300">Ninguno</button>
+                        <button onclick="selectVisibleCreditPayments(false)" data-credit-action="select-visible-payments" data-select="false" class="text-xs text-slate-400 hover:text-slate-300">Ninguno</button>
                       </div>
                     </div>
                     <div class="mt-3 flex items-center justify-between">
                       <span class="text-sm text-slate-400">Seleccionados: <span id="selectedPaymentCount" class="font-bold text-primary-400">0</span></span>
-                      <button onclick="printSelectedCreditPayments()" id="btnPrintSelectedPayments" disabled
+                      <button onclick="printSelectedCreditPayments()" data-credit-action="print-selected-payments" id="btnPrintSelectedPayments" disabled
                         class="py-2 px-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                         <i data-lucide="printer" class="w-4 h-4"></i> Imprimir
                       </button>
@@ -4953,7 +4953,7 @@
                           </div>
                           <div class="mt-3 flex items-center justify-between pt-3 border-t border-slate-700/50">
                             <span class="text-xs text-slate-500">${p.method ? 'Metodo: ' + p.method : 'Abono registrado'}</span>
-                            <button onclick="printPaymentReceipt('${p.__backendId}')" class="px-3 py-1 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded text-xs hover:bg-primary-500/20 transition-colors flex items-center gap-1">
+                            <button onclick="printPaymentReceipt('${p.__backendId}')" data-credit-action="print-payment-receipt" data-payment-id="${escapeAttr(p.__backendId)}" class="px-3 py-1 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded text-xs hover:bg-primary-500/20 transition-colors flex items-center gap-1">
                               <i data-lucide="printer" class="w-3 h-3"></i> Imprimir recibo
                             </button>
                           </div>
@@ -5038,11 +5038,11 @@
                           Seleccionar facturas para pago:
                         </div>
                         <div class="flex gap-2">
-                          <button onclick="selectAllInvoices('${cn}', true)" class="text-xs text-primary-400 hover:text-primary-300">
+                          <button onclick="selectAllInvoices(${clientArg}, true)" data-credit-action="select-all-invoices" data-client="${escapeAttr(cn)}" data-select="true" class="text-xs text-primary-400 hover:text-primary-300">
                             Seleccionar todas
                           </button>
                           <span class="text-slate-600">|</span>
-                          <button onclick="selectAllInvoices('${cn}', false)" class="text-xs text-slate-400 hover:text-slate-300">
+                          <button onclick="selectAllInvoices(${clientArg}, false)" data-credit-action="select-all-invoices" data-client="${escapeAttr(cn)}" data-select="false" class="text-xs text-slate-400 hover:text-slate-300">
                             Ninguna
                           </button>
                         </div>
@@ -5051,9 +5051,9 @@
                       <div class="space-y-2 max-h-64 overflow-y-auto" id="invoiceList_${safeClientKey}">
                         ${pendingTransactions.map(t => `
                           <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-800/30 border border-slate-700/50 hover:border-primary-500/30 transition-colors cursor-pointer"
-                               onclick="toggleInvoiceSelection('${t.__backendId}', '${cn}')">
-                            <input type="checkbox" id="chk_${t.__backendId}" class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
-                                   onchange="event.stopPropagation(); updateSelectedTotal('${cn}')">
+                               onclick="toggleInvoiceSelection('${t.__backendId}', ${clientArg})" data-credit-action="toggle-invoice" data-sale-id="${escapeAttr(t.__backendId)}" data-client="${escapeAttr(cn)}">
+                            <input type="checkbox" id="chk_${t.__backendId}" data-client="${escapeAttr(cn)}" class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
+                                   onchange="event.stopPropagation(); updateSelectedTotal(${clientArg})">
                             <div class="flex-1 min-w-0">
                               <div class="flex items-center justify-between">
                                 <span class="font-medium text-slate-300 text-sm">${t.invoice_number}</span>
@@ -5078,11 +5078,11 @@
                           <span id="selectedTotal_${safeClientKey}" class="text-lg font-bold text-emerald-400 font-mono">$0.00</span>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                        <button onclick="paySelectedInvoices(${clientArg})" id="btnPaySelected_${safeClientKey}" disabled
+                        <button onclick="paySelectedInvoices(${clientArg})" data-credit-action="pay-selected" data-client="${escapeAttr(cn)}" id="btnPaySelected_${safeClientKey}" disabled
                             class="py-2 px-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                             <i data-lucide="check-circle" class="w-4 h-4"></i> Pagar Seleccionadas
                           </button>
-                        <button onclick="showPartialPaymentModal(${clientArg})" id="btnPartialPay_${safeClientKey}" disabled
+                        <button onclick="showPartialPaymentModal(${clientArg})" data-credit-action="partial-selected" data-client="${escapeAttr(cn)}" id="btnPartialPay_${safeClientKey}" disabled
                             class="py-2 px-3 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded-lg text-sm font-medium hover:bg-primary-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                             <i data-lucide="plus-circle" class="w-4 h-4"></i> Abonar
                           </button>
@@ -5100,9 +5100,9 @@
                             ${AppState.creditFilters.status === 'paid' ? 'Seleccionar facturas pagadas' : 'Seleccionar facturas deudoras'}
                           </div>
                           <div class="flex gap-2">
-                            <button onclick="selectVisibleCreditInvoices('${safeClientKey}', ${clientArg}, true)" class="text-xs text-primary-400 hover:text-primary-300">Seleccionar todas</button>
+                            <button onclick="selectVisibleCreditInvoices('${safeClientKey}', ${clientArg}, true)" data-credit-action="select-visible-invoices" data-client-key="${safeClientKey}" data-client="${escapeAttr(cn)}" data-select="true" class="text-xs text-primary-400 hover:text-primary-300">Seleccionar todas</button>
                             <span class="text-slate-600">|</span>
-                            <button onclick="selectVisibleCreditInvoices('${safeClientKey}', ${clientArg}, false)" class="text-xs text-slate-400 hover:text-slate-300">Ninguna</button>
+                            <button onclick="selectVisibleCreditInvoices('${safeClientKey}', ${clientArg}, false)" data-credit-action="select-visible-invoices" data-client-key="${safeClientKey}" data-client="${escapeAttr(cn)}" data-select="false" class="text-xs text-slate-400 hover:text-slate-300">Ninguna</button>
                           </div>
                         </div>
                         <div class="grid grid-cols-2 gap-2 mb-3">
@@ -5111,16 +5111,16 @@
                         </div>
                         <div class="grid ${canPaySelected ? 'grid-cols-3' : 'grid-cols-1'} gap-2">
                           ${canPaySelected ? `
-                            <button onclick="paySelectedInvoices(${clientArg})" id="btnPaySelected_${safeClientKey}" disabled
+                            <button onclick="paySelectedInvoices(${clientArg})" data-credit-action="pay-selected" data-client="${escapeAttr(cn)}" id="btnPaySelected_${safeClientKey}" disabled
                               class="py-2 px-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                               <i data-lucide="check-circle" class="w-4 h-4"></i> Pagar
                             </button>
-                            <button onclick="showPartialPaymentModal(${clientArg})" id="btnPartialPay_${safeClientKey}" disabled
+                            <button onclick="showPartialPaymentModal(${clientArg})" data-credit-action="partial-selected" data-client="${escapeAttr(cn)}" id="btnPartialPay_${safeClientKey}" disabled
                               class="py-2 px-3 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded-lg text-sm font-medium hover:bg-primary-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                               <i data-lucide="plus-circle" class="w-4 h-4"></i> Abonar
                             </button>
                           ` : ''}
-                          <button onclick="printSelectedCreditInvoices('${safeClientKey}')" id="btnPrintSelected_${safeClientKey}" disabled
+                          <button onclick="printSelectedCreditInvoices('${safeClientKey}')" data-credit-action="print-selected-invoices" data-client-key="${safeClientKey}" id="btnPrintSelected_${safeClientKey}" disabled
                             class="py-2 px-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                             <i data-lucide="printer" class="w-4 h-4"></i> Imprimir
                           </button>
@@ -5140,7 +5140,7 @@
                         <div class="bg-slate-800/30 rounded-lg p-3 border ${t.remaining > 0 ? 'border-rose-500/20' : 'border-emerald-500/20'}">
                           <div class="flex items-center justify-between mb-2">
                             <div class="flex items-center gap-2">
-                              ${canSelectInvoices && canSelectTransaction ? `<input type="checkbox" id="chk_${t.__backendId}" class="credit-invoice-check credit_invoice_${safeClientKey} w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500" onchange="updateSelectedTotal(${clientArg})">` : ''}
+                              ${canSelectInvoices && canSelectTransaction ? `<input type="checkbox" id="chk_${t.__backendId}" data-client="${escapeAttr(cn)}" class="credit-invoice-check credit_invoice_${safeClientKey} w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500" onchange="updateSelectedTotal(${clientArg})">` : ''}
                               <i data-lucide="file-text" class="w-4 h-4 text-slate-500"></i>
                               <span class="text-slate-300 font-medium">${t.invoice_number}</span>
                               <span class="text-slate-500 text-xs">${fmt.date(t.date)}</span>
@@ -5171,7 +5171,7 @@
                                   <span class="text-emerald-400">${fmt.dateTime(p.date)}</span>
                                   <div class="flex items-center gap-2">
                                     <span class="font-mono text-emerald-400">${fmt.currency(p.amount)}</span>
-                                    <button onclick="printPaymentReceipt('${p.__backendId}')" class="text-primary-400 hover:text-primary-300" title="Imprimir recibo">
+                                    <button onclick="printPaymentReceipt('${p.__backendId}')" data-credit-action="print-payment-receipt" data-payment-id="${escapeAttr(p.__backendId)}" class="text-primary-400 hover:text-primary-300" title="Imprimir recibo">
                                       <i data-lucide="printer" class="w-3 h-3"></i>
                                     </button>
                                   </div>
@@ -5190,10 +5190,10 @@
                             </div>
                             ${t.remaining > 0 ? `
                               <div class="flex items-center gap-2">
-                                <button onclick="showPaymentModal(${saleIdArg})" class="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-xs hover:bg-emerald-500/20 transition-colors flex items-center gap-1">
+                                <button onclick="showPaymentModal(${saleIdArg})" data-credit-action="show-payment" data-sale-id="${escapeAttr(t.__backendId)}" class="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-xs hover:bg-emerald-500/20 transition-colors flex items-center gap-1">
                                   <i data-lucide="plus-circle" class="w-3 h-3"></i> Abonar
                                 </button>
-                                <button onclick="showFullPaymentModal(${saleIdArg})" class="px-3 py-1 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded text-xs hover:bg-primary-500/20 transition-colors flex items-center gap-1">
+                                <button onclick="showFullPaymentModal(${saleIdArg})" data-credit-action="show-full-payment" data-sale-id="${escapeAttr(t.__backendId)}" class="px-3 py-1 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded text-xs hover:bg-primary-500/20 transition-colors flex items-center gap-1">
                                   <i data-lucide="check-circle" class="w-3 h-3"></i> Pago Total
                                 </button>
                               </div>
@@ -5709,6 +5709,72 @@
       AppState.creditFilters = { search: '', client: '', dateFrom: '', dateTo: '', status: 'all' };
       renderPage();
     }
+
+    document.addEventListener('click', (event) => {
+      const target = event.target.closest?.('[data-credit-action]');
+      if (!target || target.disabled) return;
+
+      const action = target.dataset.creditAction;
+      const clientName = target.dataset.client || '';
+      const select = target.dataset.select === 'true';
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      try {
+        switch (action) {
+          case 'status':
+            setCreditStatusFilter(target.dataset.status || 'all');
+            break;
+          case 'clear-filters':
+            clearCreditFilters();
+            break;
+          case 'select-all-invoices':
+            selectAllInvoices(clientName, select);
+            break;
+          case 'select-visible-invoices':
+            selectVisibleCreditInvoices(target.dataset.clientKey, clientName, select);
+            break;
+          case 'toggle-invoice':
+            toggleInvoiceSelection(target.dataset.saleId, clientName);
+            break;
+          case 'pay-selected':
+            paySelectedInvoices(clientName);
+            break;
+          case 'partial-selected':
+            showPartialPaymentModal(clientName);
+            break;
+          case 'print-selected-invoices':
+            printSelectedCreditInvoices(target.dataset.clientKey);
+            break;
+          case 'select-visible-payments':
+            selectVisibleCreditPayments(select);
+            break;
+          case 'print-selected-payments':
+            printSelectedCreditPayments();
+            break;
+          case 'print-payment-receipt':
+            printPaymentReceipt(target.dataset.paymentId);
+            break;
+          case 'show-payment':
+            showPaymentModal(target.dataset.saleId);
+            break;
+          case 'show-full-payment':
+            showFullPaymentModal(target.dataset.saleId);
+            break;
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('No se pudo ejecutar la accion de credito', 'error');
+      }
+    }, true);
+
+    document.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!target?.classList?.contains('credit-invoice-check')) return;
+      event.stopImmediatePropagation();
+      updateSelectedTotal(target.dataset.client || '');
+    }, true);
 
     function renderInvoices(container) {
       let invoices = getRecords('invoice');
