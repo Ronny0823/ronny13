@@ -5264,7 +5264,7 @@
             </div>
           </div>
 
-          <form onsubmit="saveFullPayment(event, '${saleId}', ${remaining})" class="space-y-4">
+          <form onsubmit="saveFullPayment(event, '${saleId}', ${remaining})" data-credit-submit="full-payment" data-sale-id="${escapeAttr(saleId)}" data-max-amount="${remaining}" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Monto a Pagar (editable)</label>
               <div class="relative">
@@ -5311,9 +5311,15 @@
       
       const method = document.getElementById('paymentMethod').value;
       const notes = safeText(document.getElementById('paymentNotes').value);
-      const safeAmount = toFiniteNumber(amount, 0);
+      const enteredAmount = document.getElementById('fullPaymentAmount')?.value;
+      const safeAmount = toFiniteNumber(enteredAmount || amount, 0);
+      const maxAmount = toFiniteNumber(amount, 0);
       if (!isPositiveNumber(safeAmount)) {
         showToast('El monto del pago debe ser mayor que cero.', 'error');
+        return;
+      }
+      if (safeAmount > maxAmount) {
+        showToast(`El pago no puede ser mayor a ${fmt.currency(maxAmount)}.`, 'error');
         return;
       }
       
@@ -5339,14 +5345,18 @@
         
         AppState.data.push(paymentData);
         
-        sale.payment_status = 'pagada';
-        sale.remaining_balance = 0;
-        sale.amount_paid = sale.sale_total;
+        const payments = getRecords('payment').filter(p => p.sale_id === saleId);
+        const totalPaid = payments.reduce((sum, p) => sum + toFiniteNumber(p.amount, 0), 0);
+        const remaining = Math.max(0, (sale.sale_total || 0) - totalPaid);
+
+        sale.payment_status = remaining <= 0.01 ? 'pagada' : 'pendiente';
+        sale.remaining_balance = remaining;
+        sale.amount_paid = totalPaid;
 
         const invoice = AppState.data.find(r => r.type === 'invoice' && r.invoice_number === sale.invoice_number);
         if (invoice) {
-          invoice.payment_status = 'pagada';
-          invoice.status = 'pagada';
+          invoice.payment_status = remaining <= 0.01 ? 'pagada' : 'pendiente';
+          invoice.status = remaining <= 0.01 ? 'pagada' : 'pendiente';
         }
         
         AppState.saveUserData();
@@ -5404,7 +5414,7 @@
             </div>
           </div>
           
-          <form onsubmit="savePayment(event, '${saleId}', ${remaining})" class="space-y-4">
+          <form onsubmit="savePayment(event, '${saleId}', ${remaining})" data-credit-submit="single-payment" data-sale-id="${escapeAttr(saleId)}" data-max-amount="${remaining}" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Monto del Abono</label>
               <div class="relative">
@@ -5774,6 +5784,35 @@
       if (!target?.classList?.contains('credit-invoice-check')) return;
       event.stopImmediatePropagation();
       updateSelectedTotal(target.dataset.client || '');
+    }, true);
+
+    document.addEventListener('submit', (event) => {
+      const form = event.target;
+      const action = form?.dataset?.creditSubmit;
+      if (!action) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      try {
+        switch (action) {
+          case 'full-payment':
+            saveFullPayment(event, form.dataset.saleId, toFiniteNumber(form.dataset.maxAmount, 0));
+            break;
+          case 'single-payment':
+            savePayment(event, form.dataset.saleId, toFiniteNumber(form.dataset.maxAmount, 0));
+            break;
+          case 'multiple-payment':
+            processMultiplePayment(event, form.dataset.client || '');
+            break;
+          case 'partial-multiple-payment':
+            processPartialMultiplePayment(event, form.dataset.client || '');
+            break;
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('No se pudo guardar el pago de credito', 'error');
+      }
     }, true);
 
     function renderInvoices(container) {
@@ -10041,7 +10080,7 @@
             `).join('')}
           </div>
 
-          <form onsubmit="processMultiplePayment(event, ${clientArg})" class="space-y-4">
+          <form onsubmit="processMultiplePayment(event, ${clientArg})" data-credit-submit="multiple-payment" data-client="${escapeAttr(clientName)}" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Metodo de Pago</label>
               <select id="multiPaymentMethod" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus select-custom">
@@ -10215,7 +10254,7 @@
             </div>
           </div>
 
-          <form onsubmit="processPartialMultiplePayment(event, ${clientArg})" class="space-y-4">
+          <form onsubmit="processPartialMultiplePayment(event, ${clientArg})" data-credit-submit="partial-multiple-payment" data-client="${escapeAttr(clientName)}" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-slate-400 mb-2">Metodo de Pago</label>
               <select id="partialMultiPaymentMethod" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus select-custom">
