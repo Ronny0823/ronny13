@@ -4550,6 +4550,7 @@
       btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Procesando...`;
       printBtn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Procesando...`;
       lucide.createIcons();
+      let saleCompleted = false;
       
       try {
         const saleData = {
@@ -4638,11 +4639,15 @@
         }
         renderSaleItemsList();
         updateSaleTotal();
+        saleCompleted = true;
         
       } catch (err) {
         showToast('Error al procesar la venta', 'error');
         console.error(err);
       } finally {
+        if (saleCompleted && AppState.currentPage === 'invoices') {
+          AppState.invoiceSalePanelOpen = false;
+        }
         btn.disabled = false;
         printBtn.disabled = false;
         btn.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> Guardar Venta`;
