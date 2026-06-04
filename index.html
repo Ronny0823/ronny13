@@ -4658,6 +4658,23 @@
     }
 
     // ==================== GESTION DE CREDITO CON ABONOS Y PAGO TOTAL ====================
+    function getCreditClientKey(clientName) {
+      const value = String(clientName || 'cliente');
+      let hash = 0;
+      for (let i = 0; i < value.length; i++) {
+        hash = ((hash << 5) - hash) + value.charCodeAt(i);
+        hash |= 0;
+      }
+      const slug = value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40) || 'cliente';
+      return `credit_client_${slug}_${(hash >>> 0).toString(36)}`;
+    }
+
     function renderCredit(container) {
       const sales = getRecords('sale').filter(s => s.payment_type === 'credito' || s.payment_status === 'pagada');
       const payments = getRecords('payment');
@@ -4974,7 +4991,7 @@
                 : visibleTransactions.reduce((sum, t) => sum + Math.max(0, t.remaining || 0), 0);
               const percentPaid = viewTotalDebt > 0 ? Math.min(100, (viewTotalPaid / viewTotalDebt) * 100) : 0;
               const hasPending = pendingTransactions.length > 0;
-              const safeClientKey = cn.replace(/\s+/g, '_');
+              const safeClientKey = getCreditClientKey(cn);
               const clientArg = JSON.stringify(cn);
               const canSelectInvoices = AppState.creditFilters.status === 'all' || AppState.creditFilters.status === 'pending' || AppState.creditFilters.status === 'paid';
               const canPaySelected = AppState.creditFilters.status === 'all' || AppState.creditFilters.status === 'pending';
@@ -5031,7 +5048,7 @@
                         </div>
                       </div>
 
-                      <div class="space-y-2 max-h-64 overflow-y-auto" id="invoiceList_${cn.replace(/\s+/g, '_')}">
+                      <div class="space-y-2 max-h-64 overflow-y-auto" id="invoiceList_${safeClientKey}">
                         ${pendingTransactions.map(t => `
                           <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-800/30 border border-slate-700/50 hover:border-primary-500/30 transition-colors cursor-pointer"
                                onclick="toggleInvoiceSelection('${t.__backendId}', '${cn}')">
@@ -5054,18 +5071,18 @@
                       <div class="mt-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
                         <div class="flex items-center justify-between mb-2">
                           <span class="text-sm text-slate-400">Facturas seleccionadas:</span>
-                          <span id="selectedCount_${cn.replace(/\s+/g, '_')}" class="text-sm font-bold text-primary-400">0</span>
+                          <span id="selectedCount_${safeClientKey}" class="text-sm font-bold text-primary-400">0</span>
                         </div>
                         <div class="flex items-center justify-between mb-3">
                           <span class="text-sm text-slate-400">Monto total seleccionado:</span>
-                          <span id="selectedTotal_${cn.replace(/\s+/g, '_')}" class="text-lg font-bold text-emerald-400 font-mono">$0.00</span>
+                          <span id="selectedTotal_${safeClientKey}" class="text-lg font-bold text-emerald-400 font-mono">$0.00</span>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                          <button onclick="paySelectedInvoices('${cn}')" id="btnPaySelected_${cn.replace(/\s+/g, '_')}" disabled
+                        <button onclick="paySelectedInvoices(${clientArg})" id="btnPaySelected_${safeClientKey}" disabled
                             class="py-2 px-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                             <i data-lucide="check-circle" class="w-4 h-4"></i> Pagar Seleccionadas
                           </button>
-                          <button onclick="showPartialPaymentModal('${cn}')" id="btnPartialPay_${cn.replace(/\s+/g, '_')}" disabled
+                        <button onclick="showPartialPaymentModal(${clientArg})" id="btnPartialPay_${safeClientKey}" disabled
                             class="py-2 px-3 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded-lg text-sm font-medium hover:bg-primary-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                             <i data-lucide="plus-circle" class="w-4 h-4"></i> Abonar
                           </button>
@@ -9479,7 +9496,7 @@
       let selectedCount = 0;
       let selectedTotal = 0;
 
-      const safeClientName = clientName.replace(/\s+/g, '_');
+      const safeClientName = getCreditClientKey(clientName);
       const checkedBoxes = Array.from(document.querySelectorAll(`.credit_invoice_${safeClientName}:checked`));
       const sourceSales = checkedBoxes.length
         ? checkedBoxes.map(cb => AppState.data.find(r => r.__backendId === cb.id.replace('chk_', ''))).filter(Boolean)
