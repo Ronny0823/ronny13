@@ -2059,6 +2059,7 @@
       deleteConfirmId: null,
       chartInstance: null,
       sidebarOpen: false,
+      invoiceSalePanelOpen: false,
       clientFilters: { search: '' },
       entryFilters: { search: '', supplier: '', dateFrom: '', dateTo: '', quickPeriod: '' },
       supplierFilters: { search: '', material: '', status: '', dateFrom: '', dateTo: '' },
@@ -5700,9 +5701,9 @@
               <p class="text-slate-500 text-sm mt-1">Registro de facturacion - Gestion completa</p>
             </div>
             <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-              <button type="button" onclick="navigate('sales')"
-                class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-400 text-slate-900 font-semibold rounded-lg transition-all">
-                <i data-lucide="shopping-cart" class="w-4 h-4"></i> Nueva Venta
+              <button type="button" onclick="toggleInvoiceSalePanel()"
+                class="inline-flex items-center justify-center gap-2 px-4 py-2 ${AppState.invoiceSalePanelOpen ? 'bg-slate-700 hover:bg-slate-600 text-slate-100' : 'bg-primary-500 hover:bg-primary-400 text-slate-900'} font-semibold rounded-lg transition-all">
+                <i data-lucide="${AppState.invoiceSalePanelOpen ? 'chevron-up' : 'shopping-cart'}" class="w-4 h-4"></i> ${AppState.invoiceSalePanelOpen ? 'Ocultar opciones' : 'Nueva Venta'}
               </button>
               <div class="text-right">
                 <div class="text-xs text-slate-500">Total Filtrado</div>
@@ -5710,6 +5711,12 @@
               </div>
             </div>
           </div>
+
+          ${AppState.invoiceSalePanelOpen ? `
+            <div class="border border-primary-500/30 bg-primary-500/5 rounded-xl p-4">
+              <div id="invoiceInlineSaleContainer"></div>
+            </div>
+          ` : ''}
 
           <div class="glass rounded-xl p-4 border border-slate-700/50">
             <div class="flex items-center gap-2 mb-3 text-primary-400">
@@ -5886,7 +5893,18 @@
           </div>
         </div>
       `;
+
+      if (AppState.invoiceSalePanelOpen) {
+        const inlineSaleContainer = document.getElementById('invoiceInlineSaleContainer');
+        if (inlineSaleContainer) renderSales(inlineSaleContainer);
+      }
     }
+
+    function toggleInvoiceSalePanel() {
+      AppState.invoiceSalePanelOpen = !AppState.invoiceSalePanelOpen;
+      renderPage();
+    }
+
     function updateInvoiceFilters() {
       AppState.invoiceFilters.search = document.getElementById('invoiceFilterSearch')?.value || '';
       AppState.invoiceFilters.client = document.getElementById('invoiceFilterClient').value;
