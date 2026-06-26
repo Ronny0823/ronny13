@@ -6243,6 +6243,91 @@
       };
     }
 
+    function getCurrentMonthPaymentStatusReport() {
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const monthEnd = getLocalDateKey(now.toISOString());
+      const sales = getRecords('sale');
+      const payments = getRecords('payment');
+      const salesById = Object.fromEntries(sales.map(sale => [sale.__backendId, sale]));
+      const monthSales = sales.filter(sale => matchesDateFilter(sale.date, monthStart, monthEnd));
+      const monthPayments = payments
+        .map(payment => ({ payment, sale: salesById[payment.sale_id] || null }))
+        .filter(({ payment }) => matchesDateFilter(payment.date, monthStart, monthEnd));
+
+      const paidClientMap = new Map();
+      monthPayments.forEach(({ payment, sale }) => {
+        const clientName = payment.client_name || sale?.client_name || 'Sin cliente';
+        if (!paidClientMap.has(clientName)) {
+          paidClientMap.set(clientName, {
+            clientName,
+            paymentCount: 0,
+            invoiceSet: new Set(),
+            paidAmount: 0,
+            methods: new Set()
+          });
+        }
+        const client = paidClientMap.get(clientName);
+        client.paymentCount += 1;
+        client.invoiceSet.add(payment.invoice_number || sale?.invoice_number || 'S/F');
+        client.paidAmount += toFiniteNumber(payment.amount, 0);
+        if (payment.method) client.methods.add(payment.method);
+      });
+
+      const pendingClientMap = new Map();
+      monthSales.forEach(sale => {
+        const saleTotal = toFiniteNumber(sale.sale_total, 0);
+        const paidAmount = sale.payment_type === 'credito'
+          ? payments
+              .filter(payment => payment.sale_id === sale.__backendId)
+              .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0)
+          : saleTotal;
+        const pendingAmount = sale.payment_type === 'credito'
+          ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paidAmount)))
+          : 0;
+        if (pendingAmount <= 0.01) return;
+
+        const clientName = sale.client_name || 'Sin cliente';
+        if (!pendingClientMap.has(clientName)) {
+          pendingClientMap.set(clientName, {
+            clientName,
+            invoiceCount: 0,
+            invoiceSet: new Set(),
+            totalAmount: 0,
+            paidAmount: 0,
+            pendingAmount: 0
+          });
+        }
+        const client = pendingClientMap.get(clientName);
+        client.invoiceCount += 1;
+        client.invoiceSet.add(sale.invoice_number || 'S/F');
+        client.totalAmount += saleTotal;
+        client.paidAmount += Math.min(saleTotal, paidAmount);
+        client.pendingAmount += pendingAmount;
+      });
+
+      const paidClients = Array.from(paidClientMap.values()).map(client => ({
+        ...client,
+        invoices: Array.from(client.invoiceSet),
+        methodsText: Array.from(client.methods).join(', ') || '-'
+      }));
+      const pendingClients = Array.from(pendingClientMap.values()).map(client => ({
+        ...client,
+        invoices: Array.from(client.invoiceSet)
+      }));
+
+      return {
+        monthStart,
+        monthEnd,
+        paidClients,
+        pendingClients,
+        monthPayments,
+        monthSales,
+        totalPaidAmount: paidClients.reduce((sum, client) => sum + client.paidAmount, 0),
+        totalPendingAmount: pendingClients.reduce((sum, client) => sum + client.pendingAmount, 0)
+      };
+    }
+
     function renderReports(container) {
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
@@ -6454,7 +6539,12 @@
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
                 <i data-lucide="user-check" class="w-5 h-5 text-emerald-400"></i> Estado de pagos de clientes
               </h3>
-              <span class="text-xs text-slate-500">${customerPaymentStatus.clients.length} cliente(s) en el filtro</span>
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                <span class="text-xs text-slate-500">${customerPaymentStatus.clients.length} cliente(s) en el filtro</span>
+                <button onclick="exportCurrentMonthPaymentStatusReport()" class="inline-flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors text-xs font-semibold">
+                  <i data-lucide="download" class="w-4 h-4"></i> Descargar mes actual
+                </button>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
@@ -6984,6 +7074,72 @@
 
       XLSX.writeFile(workbook, `reporte_ventas_${new Date().toISOString().split('T')[0]}.xlsx`);
       showToast(`Reporte Excel exportado: ${sales.length} ventas, ${paymentEntries.length} pagos y ${customerPaymentStatus.clients.length} clientes`);
+    }
+
+    function exportCurrentMonthPaymentStatusReport() {
+      if (!window.XLSX) {
+        showExcelLibraryError();
+        return;
+      }
+
+      const report = getCurrentMonthPaymentStatusReport();
+      const workbook = XLSX.utils.book_new();
+      const periodText = `${formatDateKey(report.monthStart)} a ${formatDateKey(report.monthEnd)}`;
+
+      const summaryRows = [
+        ['REPORTE DE PAGOS DEL MES'],
+        ['PERIODO', periodText],
+        [],
+        ['CONCEPTO', 'CANTIDAD', 'MONTO'],
+        ['CLIENTES QUE PAGARON ESTE MES', report.paidClients.length, report.totalPaidAmount],
+        ['CLIENTES QUE NO HAN PAGADO ESTE MES', report.pendingClients.length, report.totalPendingAmount],
+        ['PAGOS REGISTRADOS ESTE MES', report.monthPayments.length, report.totalPaidAmount],
+        ['VENTAS DEL MES REVISADAS', report.monthSales.length, '']
+      ];
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+      summarySheet['!cols'] = [{ wch: 34 }, { wch: 18 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Resumen');
+
+      const paidRows = [
+        ['Cliente', 'Cantidad de pagos', 'Facturas', 'Metodos', 'Monto pagado'],
+        ...report.paidClients
+          .slice()
+          .sort((a, b) => b.paidAmount - a.paidAmount)
+          .map(client => [
+            client.clientName,
+            client.paymentCount,
+            client.invoices.join(', '),
+            client.methodsText,
+            client.paidAmount
+          ])
+      ];
+      const paidSheet = XLSX.utils.aoa_to_sheet(paidRows);
+      paidSheet['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 34 }, { wch: 22 }, { wch: 16 }];
+      paidSheet['!autofilter'] = { ref: `A1:E${Math.max(paidRows.length, 1)}` };
+      XLSX.utils.book_append_sheet(workbook, paidSheet, 'Pagaron este mes');
+
+      const pendingRows = [
+        ['Cliente', 'Facturas pendientes', 'Facturas', 'Monto venta', 'Monto abonado', 'Monto pendiente'],
+        ...report.pendingClients
+          .slice()
+          .sort((a, b) => b.pendingAmount - a.pendingAmount)
+          .map(client => [
+            client.clientName,
+            client.invoiceCount,
+            client.invoices.join(', '),
+            client.totalAmount,
+            client.paidAmount,
+            client.pendingAmount
+          ])
+      ];
+      const pendingSheet = XLSX.utils.aoa_to_sheet(pendingRows);
+      pendingSheet['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 34 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
+      pendingSheet['!autofilter'] = { ref: `A1:F${Math.max(pendingRows.length, 1)}` };
+      XLSX.utils.book_append_sheet(workbook, pendingSheet, 'No han pagado');
+
+      const fileMonth = report.monthStart.slice(0, 7);
+      XLSX.writeFile(workbook, `reporte_pagos_estado_${fileMonth}.xlsx`);
+      showToast(`Reporte del mes descargado: ${report.paidClients.length} pagaron y ${report.pendingClients.length} no han pagado`);
     }
     
 
