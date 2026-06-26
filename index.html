@@ -32,7 +32,7 @@
             slate: { 850: '#151e2e', 900: '#0f172a', 950: '#020617' }
           },
           animation: {
-            'fade-in': 'fadeIn 0.3s ease-out',
+            'fade-in': 'none',
             'slide-up': 'slideUp 0.4s ease-out',
             'slide-in-left': 'slideInLeft 0.3s ease-out',
             'slide-out-left': 'slideOutLeft 0.3s ease-in',
@@ -2630,9 +2630,7 @@
         case 'settings': renderSettings(container); break;
       }
 
-      if (isFilterRendering) {
-        container.querySelectorAll('.animate-fade-in').forEach(el => el.classList.remove('animate-fade-in'));
-      }
+      container.querySelectorAll('.animate-fade-in').forEach(el => el.classList.remove('animate-fade-in'));
       
       lucide.createIcons();
       enhanceSearchInputs(container);
