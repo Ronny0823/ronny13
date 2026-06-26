@@ -6394,12 +6394,12 @@
       return `
         <div class="glass rounded-xl p-6 border border-slate-700/50">
           <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-5">
-            <div class="flex items-start gap-4">
+            <div class="flex items-start gap-4 min-w-0">
               <div class="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
                 <i data-lucide="file-text" class="w-7 h-7 text-blue-400"></i>
               </div>
-              <div>
-                <h3 class="text-xl font-bold text-slate-100">Reporte: Clientes Pendientes por Pagar</h3>
+              <div class="min-w-0">
+                <h3 class="text-lg sm:text-xl font-bold text-slate-100 leading-tight whitespace-normal break-words">Reporte: Clientes Pendientes por Pagar</h3>
                 <p class="text-slate-500 text-sm mt-1">Muestra los clientes con saldo pendiente en el periodo seleccionado.</p>
               </div>
             </div>
@@ -7006,7 +7006,7 @@
             body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
             .header { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 24px; }
             .icon { width: 48px; height: 48px; border: 3px solid #1267b2; border-radius: 8px; color: #1267b2; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; }
-            h1 { font-size: 26px; margin: 0 0 8px; }
+            h1 { font-size: 24px; margin: 0 0 8px; line-height: 1.2; overflow-wrap: anywhere; }
             p { margin: 0; color: #475569; font-size: 15px; line-height: 1.4; }
             .period { border: 1px solid #d1d5db; border-radius: 8px; padding: 14px 18px; margin-bottom: 18px; font-weight: bold; }
             table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
