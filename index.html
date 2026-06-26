@@ -2638,6 +2638,17 @@
       enhanceSearchInputs(container);
     }
 
+    function renderPageQuietly({ preserveScroll = true } = {}) {
+      const scrollState = { x: window.scrollX, y: window.scrollY };
+      const previousFilterRendering = isFilterRendering;
+      isFilterRendering = true;
+      renderPage();
+      isFilterRendering = previousFilterRendering;
+      if (preserveScroll) {
+        requestAnimationFrame(() => window.scrollTo(scrollState.x, scrollState.y));
+      }
+    }
+
     async function syncCurrentUserFromCloud({ silent = false } = {}) {
       if (!AuthSystem.currentUser?.username || !SupabaseSync.client) return false;
       try {
@@ -4678,7 +4689,11 @@
         btn.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> Guardar Venta`;
         printBtn.innerHTML = `<i data-lucide="printer" class="w-5 h-5"></i> Guardar e Imprimir`;
         lucide.createIcons();
-        renderPage();
+        if (saleCompleted && AppState.currentPage === 'invoices') {
+          renderPageQuietly();
+        } else {
+          renderPage();
+        }
       }
     }
 
