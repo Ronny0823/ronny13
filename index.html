@@ -6440,8 +6440,6 @@
                 <thead class="bg-slate-950/70">
                   <tr class="text-left text-xs uppercase text-slate-400">
                     <th class="py-3 px-4">Cliente</th>
-                    <th class="py-3 px-4 text-right">Total</th>
-                    <th class="py-3 px-4 text-right">Abonado</th>
                     <th class="py-3 px-4 text-right">Saldo pendiente</th>
                   </tr>
                 </thead>
@@ -6449,8 +6447,6 @@
                   ${report.clients.map(client => `
                     <tr class="border-t border-slate-800/80">
                       <td class="py-3 px-4 text-slate-200 font-medium">${escapeHtml(client.clientName)}</td>
-                      <td class="py-3 px-4 text-right font-mono text-slate-300">${fmt.currency(client.totalAmount)}</td>
-                      <td class="py-3 px-4 text-right font-mono text-slate-300">${fmt.currency(client.paidAmount)}</td>
                       <td class="py-3 px-4 text-right font-mono text-rose-400 font-semibold">${fmt.currency(client.pendingAmount)}</td>
                     </tr>
                   `).join('')}
@@ -6459,21 +6455,9 @@
             </div>
 
             <div class="rounded-xl border border-slate-700/60 overflow-hidden">
-              <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-slate-800">
-                <span class="text-slate-300">Total de ventas del periodo:</span>
-                <span class="font-mono font-bold text-slate-100">${fmt.currency(report.totalSales)}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-slate-800">
-                <span class="text-slate-300">Total abonado:</span>
-                <span class="font-mono font-bold text-slate-100">${fmt.currency(report.totalPaid)}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-slate-800">
+              <div class="flex items-center justify-between gap-4 px-4 py-3">
                 <span class="text-rose-400 font-semibold">Total pendiente por cobrar:</span>
                 <span class="font-mono font-bold text-rose-400">${fmt.currency(report.totalPending)}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4 px-4 py-3">
-                <span class="text-slate-300">Cantidad de clientes con saldo pendiente:</span>
-                <span class="font-mono font-bold text-slate-100">${report.clients.length}</span>
               </div>
             </div>
           `}
@@ -6955,25 +6939,19 @@
         ['REPORTE: CLIENTES PENDIENTES POR PAGAR'],
         ['PERIODO', `${formatDateKey(report.filters.dateFrom)} - ${formatDateKey(report.filters.dateTo)}`],
         [],
-        ['Cliente', 'Total', 'Abonado', 'Saldo pendiente', 'Facturas pendientes'],
+        ['Cliente', 'Saldo pendiente'],
         ...report.clients.map(client => [
           client.clientName,
-          client.totalAmount,
-          client.paidAmount,
-          client.pendingAmount,
-          client.invoices.join(', ')
+          client.pendingAmount
         ]),
         [],
-        ['Total de ventas del periodo', report.totalSales],
-        ['Total abonado', report.totalPaid],
-        ['Total pendiente por cobrar', report.totalPending],
-        ['Cantidad de clientes con saldo pendiente', report.clients.length]
+        ['Total pendiente por cobrar', report.totalPending]
       ];
 
       const workbook = XLSX.utils.book_new();
       const sheet = XLSX.utils.aoa_to_sheet(rows);
-      sheet['!cols'] = [{ wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 36 }];
-      sheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
+      sheet['!cols'] = [{ wch: 30 }, { wch: 18 }];
+      sheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
 
       const titleStyle = {
         font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 14 },
@@ -6987,16 +6965,16 @@
       };
       const moneyStyle = { numFmt: '#,##0.00' };
       if (sheet.A1) sheet.A1.s = titleStyle;
-      ['A4', 'B4', 'C4', 'D4', 'E4'].forEach(addr => {
+      ['A4', 'B4'].forEach(addr => {
         if (sheet[addr]) sheet[addr].s = headerStyle;
       });
       for (let row = 5; row < 5 + report.clients.length; row++) {
-        ['B', 'C', 'D'].forEach(col => {
+        ['B'].forEach(col => {
           const cell = sheet[`${col}${row}`];
           if (cell) cell.s = moneyStyle;
         });
       }
-      sheet['!autofilter'] = { ref: `A4:E${Math.max(4 + report.clients.length, 4)}` };
+      sheet['!autofilter'] = { ref: `A4:B${Math.max(4 + report.clients.length, 4)}` };
 
       XLSX.utils.book_append_sheet(workbook, sheet, 'Clientes pendientes');
       XLSX.writeFile(workbook, `clientes_pendientes_por_pagar_${report.filters.dateFrom}_a_${report.filters.dateTo}.xlsx`);
@@ -7009,8 +6987,6 @@
       const rows = report.clients.map(client => `
         <tr>
           <td>${escapeHtml(client.clientName)}</td>
-          <td class="money">${fmt.currency(client.totalAmount)}</td>
-          <td class="money">${fmt.currency(client.paidAmount)}</td>
           <td class="money pending">${fmt.currency(client.pendingAmount)}</td>
         </tr>
       `).join('');
@@ -7059,20 +7035,15 @@
             <thead>
               <tr>
                 <th>Cliente</th>
-                <th>Total</th>
-                <th>Abonado</th>
                 <th>Saldo pendiente</th>
               </tr>
             </thead>
             <tbody>
-              ${rows || '<tr><td colspan="4" style="text-align:center;color:#64748b;">No hay clientes con saldo pendiente en este periodo.</td></tr>'}
+              ${rows || '<tr><td colspan="2" style="text-align:center;color:#64748b;">No hay clientes con saldo pendiente en este periodo.</td></tr>'}
             </tbody>
           </table>
           <div class="totals">
-            <div class="total-row"><span>Total de ventas del periodo:</span><span class="strong">${fmt.currency(report.totalSales)}</span></div>
-            <div class="total-row"><span>Total abonado:</span><span class="strong">${fmt.currency(report.totalPaid)}</span></div>
             <div class="total-row"><span class="danger">Total pendiente por cobrar:</span><span class="strong danger">${fmt.currency(report.totalPending)}</span></div>
-            <div class="total-row"><span>Cantidad de clientes con saldo pendiente:</span><span class="strong">${report.clients.length}</span></div>
           </div>
         </body>
         </html>
