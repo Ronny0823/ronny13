@@ -6169,9 +6169,84 @@
         });
     }
 
+    function getReportCustomerPaymentStatus(sales) {
+      const payments = getRecords('payment');
+      const clientMap = new Map();
+
+      sales.forEach(sale => {
+        const clientName = sale.client_name || 'Sin cliente';
+        const saleTotal = toFiniteNumber(sale.sale_total, 0);
+        const paidAmount = sale.payment_type === 'credito'
+          ? payments
+              .filter(payment => payment.sale_id === sale.__backendId)
+              .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0)
+          : saleTotal;
+        const pendingAmount = sale.payment_type === 'credito'
+          ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paidAmount)))
+          : 0;
+        const isPaid = pendingAmount <= 0.01;
+
+        if (!clientMap.has(clientName)) {
+          clientMap.set(clientName, {
+            clientName,
+            invoiceCount: 0,
+            paidInvoices: 0,
+            pendingInvoices: 0,
+            totalAmount: 0,
+            paidAmount: 0,
+            pendingAmount: 0,
+            invoices: []
+          });
+        }
+
+        const client = clientMap.get(clientName);
+        client.invoiceCount += 1;
+        client.paidInvoices += isPaid ? 1 : 0;
+        client.pendingInvoices += isPaid ? 0 : 1;
+        client.totalAmount += saleTotal;
+        client.paidAmount += Math.min(saleTotal, paidAmount);
+        client.pendingAmount += pendingAmount;
+        client.invoices.push(sale.invoice_number || 'S/F');
+      });
+
+      const clients = Array.from(clientMap.values()).map(client => ({
+        ...client,
+        status: client.pendingAmount <= 0.01 ? 'PAGADO' : 'PENDIENTE'
+      }));
+      const paidClients = clients.filter(client => client.status === 'PAGADO');
+      const pendingClients = clients.filter(client => client.status === 'PENDIENTE');
+
+      return {
+        clients,
+        paidClients,
+        pendingClients,
+        paidInvoices: sales.filter(sale => {
+          const saleTotal = toFiniteNumber(sale.sale_total, 0);
+          const paid = sale.payment_type === 'credito'
+            ? payments.filter(payment => payment.sale_id === sale.__backendId).reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0)
+            : saleTotal;
+          const pending = sale.payment_type === 'credito'
+            ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paid)))
+            : 0;
+          return pending <= 0.01;
+        }).length,
+        pendingInvoices: sales.filter(sale => {
+          const saleTotal = toFiniteNumber(sale.sale_total, 0);
+          const paid = payments.filter(payment => payment.sale_id === sale.__backendId).reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
+          const pending = sale.payment_type === 'credito'
+            ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paid)))
+            : 0;
+          return pending > 0.01;
+        }).length,
+        totalPaidAmount: clients.reduce((sum, client) => sum + client.paidAmount, 0),
+        totalPendingAmount: clients.reduce((sum, client) => sum + client.pendingAmount, 0)
+      };
+    }
+
     function renderReports(container) {
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
+      const customerPaymentStatus = getReportCustomerPaymentStatus(filteredSales);
 
       const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const totalPayments = filteredPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0);
@@ -6372,6 +6447,73 @@
               <div class="text-2xl font-bold text-violet-400 font-mono truncate">${topPaymentMethod ? topPaymentMethod[0] : '-'}</div>
               <div class="text-xs text-slate-500 mt-1">${topPaymentMethod ? fmt.currency(topPaymentMethod[1]) : 'Sin pagos'}</div>
             </div>
+          </div>
+
+          <div class="glass rounded-xl p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+              <h3 class="font-semibold text-slate-200 flex items-center gap-2">
+                <i data-lucide="user-check" class="w-5 h-5 text-emerald-400"></i> Estado de pagos de clientes
+              </h3>
+              <span class="text-xs text-slate-500">${customerPaymentStatus.clients.length} cliente(s) en el filtro</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+              <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
+                <div class="text-xs uppercase text-slate-500 font-semibold">Clientes que pagaron</div>
+                <div class="text-2xl font-bold text-emerald-400 font-mono mt-1">${customerPaymentStatus.paidClients.length}</div>
+                <div class="text-xs text-slate-500 mt-1">${customerPaymentStatus.paidInvoices} factura(s) pagada(s)</div>
+              </div>
+              <div class="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4">
+                <div class="text-xs uppercase text-slate-500 font-semibold">Clientes pendientes</div>
+                <div class="text-2xl font-bold text-rose-400 font-mono mt-1">${customerPaymentStatus.pendingClients.length}</div>
+                <div class="text-xs text-slate-500 mt-1">${customerPaymentStatus.pendingInvoices} factura(s) pendiente(s)</div>
+              </div>
+              <div class="rounded-lg border border-sky-500/20 bg-sky-500/5 p-4">
+                <div class="text-xs uppercase text-slate-500 font-semibold">Monto pagado</div>
+                <div class="text-2xl font-bold text-sky-400 font-mono mt-1">${fmt.currency(customerPaymentStatus.totalPaidAmount)}</div>
+                <div class="text-xs text-slate-500 mt-1">Segun ventas del filtro</div>
+              </div>
+              <div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
+                <div class="text-xs uppercase text-slate-500 font-semibold">Monto pendiente</div>
+                <div class="text-2xl font-bold text-amber-400 font-mono mt-1">${fmt.currency(customerPaymentStatus.totalPendingAmount)}</div>
+                <div class="text-xs text-slate-500 mt-1">Saldo por cobrar</div>
+              </div>
+            </div>
+
+            ${customerPaymentStatus.clients.length === 0 ? '<p class="text-slate-500 text-sm">Sin clientes para mostrar</p>' : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs uppercase text-slate-500 border-b border-slate-800">
+                      <th class="py-2 pr-3">Cliente</th>
+                      <th class="py-2 pr-3">Estado</th>
+                      <th class="py-2 pr-3">Facturas</th>
+                      <th class="py-2 text-right pr-3">Pagado</th>
+                      <th class="py-2 text-right">Pendiente</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${customerPaymentStatus.clients
+                      .slice()
+                      .sort((a, b) => b.pendingAmount - a.pendingAmount || b.paidAmount - a.paidAmount)
+                      .slice(0, 10)
+                      .map(client => `
+                        <tr class="border-b border-slate-800/70">
+                          <td class="py-3 pr-3 text-slate-300 font-medium">${escapeHtml(client.clientName)}</td>
+                          <td class="py-3 pr-3">
+                            <span class="text-xs px-2 py-1 rounded-full ${client.status === 'PAGADO' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
+                              ${client.status === 'PAGADO' ? 'Pago' : 'No ha pagado'}
+                            </span>
+                          </td>
+                          <td class="py-3 pr-3 text-slate-400">${client.paidInvoices}/${client.invoiceCount} pagada(s)</td>
+                          <td class="py-3 text-right pr-3 font-mono text-emerald-400">${fmt.currency(client.paidAmount)}</td>
+                          <td class="py-3 text-right font-mono ${client.pendingAmount > 0 ? 'text-amber-400' : 'text-slate-500'}">${fmt.currency(client.pendingAmount)}</td>
+                        </tr>
+                      `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
           </div>
 
           <div class="glass rounded-xl p-6">
@@ -6610,6 +6752,7 @@
 
       const sales = getFilteredReportSales();
       const paymentEntries = getFilteredReportPayments();
+      const customerPaymentStatus = getReportCustomerPaymentStatus(sales);
 
       const saleRows = sales.flatMap(s => {
         const saleDate = new Date(s.date);
@@ -6809,8 +6952,38 @@
       paymentSummarySheet['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 16 }];
       XLSX.utils.book_append_sheet(workbook, paymentSummarySheet, 'Resumen pagos');
 
+      const customerStatusRows = [
+        ['RESUMEN ESTADO DE CLIENTES'],
+        ['CONCEPTO', 'CANTIDAD', 'MONTO'],
+        ['CLIENTES QUE PAGARON', customerPaymentStatus.paidClients.length, customerPaymentStatus.totalPaidAmount],
+        ['CLIENTES PENDIENTES', customerPaymentStatus.pendingClients.length, customerPaymentStatus.totalPendingAmount],
+        ['FACTURAS PAGADAS', customerPaymentStatus.paidInvoices, ''],
+        ['FACTURAS PENDIENTES', customerPaymentStatus.pendingInvoices, ''],
+        [],
+        ['CLIENTE', 'ESTADO', 'FACTURAS', 'PAGADAS', 'PENDIENTES', 'MONTO PAGADO', 'MONTO PENDIENTE', 'FACTURAS'],
+        ...customerPaymentStatus.clients
+          .slice()
+          .sort((a, b) => b.pendingAmount - a.pendingAmount || b.paidAmount - a.paidAmount)
+          .map(client => [
+            client.clientName,
+            client.status === 'PAGADO' ? 'PAGO' : 'NO HA PAGADO',
+            client.invoiceCount,
+            client.paidInvoices,
+            client.pendingInvoices,
+            client.paidAmount,
+            client.pendingAmount,
+            client.invoices.join(', ')
+          ])
+      ];
+      const customerStatusSheet = XLSX.utils.aoa_to_sheet(customerStatusRows);
+      customerStatusSheet['!cols'] = [
+        { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 12 },
+        { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 34 }
+      ];
+      XLSX.utils.book_append_sheet(workbook, customerStatusSheet, 'Estado clientes');
+
       XLSX.writeFile(workbook, `reporte_ventas_${new Date().toISOString().split('T')[0]}.xlsx`);
-      showToast(`Reporte Excel exportado: ${sales.length} ventas y ${paymentEntries.length} pagos`);
+      showToast(`Reporte Excel exportado: ${sales.length} ventas, ${paymentEntries.length} pagos y ${customerPaymentStatus.clients.length} clientes`);
     }
     
 
