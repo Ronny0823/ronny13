@@ -6950,9 +6950,10 @@
       }
 
       const report = getPendingClientPaymentReport();
+      const periodText = `${formatDateKey(report.filters.dateFrom)} - ${formatDateKey(report.filters.dateTo)}`;
       const rows = [
         ['CLIENTES PENDIENTES POR PAGAR'],
-        ['PERIODO', `${formatDateKey(report.filters.dateFrom)} - ${formatDateKey(report.filters.dateTo)}`],
+        [`PERIODO: ${periodText}`],
         [],
         ['Cliente', 'Saldo pendiente'],
         ...report.clients.map(client => [
@@ -6965,8 +6966,11 @@
 
       const workbook = XLSX.utils.book_new();
       const sheet = XLSX.utils.aoa_to_sheet(rows);
-      sheet['!cols'] = [{ wch: 30 }, { wch: 18 }];
-      sheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
+      sheet['!cols'] = [{ wch: 34 }, { wch: 18 }];
+      sheet['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } }
+      ];
 
       const titleStyle = {
         font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 14 },
@@ -6978,8 +6982,14 @@
         fill: { fgColor: { rgb: '0B2E6F' } },
         alignment: { horizontal: 'center', vertical: 'center' }
       };
+      const periodStyle = {
+        font: { bold: true, color: { rgb: '111827' } },
+        fill: { fgColor: { rgb: 'D9EAFB' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
       const moneyStyle = { numFmt: '#,##0.00' };
       if (sheet.A1) sheet.A1.s = titleStyle;
+      if (sheet.A2) sheet.A2.s = periodStyle;
       ['A4', 'B4'].forEach(addr => {
         if (sheet[addr]) sheet[addr].s = headerStyle;
       });
