@@ -948,6 +948,7 @@
       originalRemoveItem: localStorage.removeItem.bind(localStorage),
       pending: new Map(),
       flushTimer: null,
+      flushing: null,
       hooksInstalled: false,
       passwordRecoveryDetected: false,
 
@@ -1149,15 +1150,32 @@
       },
 
       async flush() {
-        if (!this.client || !this.pending.size) return;
-        const rows = Array.from(this.pending.values());
-        this.pending.clear();
+        if (!this.client) return;
+        if (this.flushing) return this.flushing;
+
+        this.flushing = (async () => {
+          while (this.pending.size) {
+            const rows = Array.from(this.pending.values());
+            this.pending.clear();
+            try {
+              const { error } = await this.client.from(SUPABASE_CONFIG.table).upsert(rows, { onConflict: 'key' });
+              if (error) {
+                rows.forEach(row => this.pending.set(row.key, row));
+                console.warn('No se pudo sincronizar Supabase:', error.message);
+                break;
+              }
+            } catch (error) {
+              rows.forEach(row => this.pending.set(row.key, row));
+              console.warn('No se pudo sincronizar Supabase. Se reintentara luego:', error.message || error);
+              break;
+            }
+          }
+        })();
+
         try {
-          const { error } = await this.client.from(SUPABASE_CONFIG.table).upsert(rows, { onConflict: 'key' });
-          if (error) console.warn('No se pudo sincronizar Supabase:', error.message);
-        } catch (error) {
-          rows.forEach(row => this.pending.set(row.key, row));
-          console.warn('No se pudo sincronizar Supabase. Se reintentara luego:', error.message || error);
+          await this.flushing;
+        } finally {
+          this.flushing = null;
         }
       }
     };
@@ -2056,6 +2074,7 @@
       currentPage: 'dashboard',
       invoiceCounter: 1000,
       saleItems: [],
+      saleSaving: false,
       deleteConfirmId: null,
       chartInstance: null,
       sidebarOpen: false,
@@ -2115,7 +2134,7 @@
         DataBackup.saveSafetyBackup(this.currentUser);
         localStorage.setItem(`erp_data_${this.currentUser}`, JSON.stringify(this.data));
         localStorage.setItem(`erp_config_${this.currentUser}`, JSON.stringify(this.config));
-        SupabaseSync.flush();
+        return SupabaseSync.flush();
       }
     };
 
@@ -4456,6 +4475,10 @@
 
     async function handleSale(e, shouldPrint = false) {
       if (e) e.preventDefault();
+      if (AppState.saleSaving) {
+        showToast('La venta ya se esta guardando. Espera un momento.', 'warning');
+        return;
+      }
       
       const btn = document.getElementById('saleBtn');
       const printBtn = document.getElementById('salePrintBtn');
@@ -4545,6 +4568,7 @@
       const invNum = generateInvoiceNum();
       const now = saleDate ? new Date(`${saleDate}T12:00:00`).toISOString() : new Date().toISOString();
       
+      AppState.saleSaving = true;
       btn.disabled = true;
       printBtn.disabled = true;
       btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Procesando...`;
@@ -4604,7 +4628,7 @@
         invoiceData.__backendId = 'inv_' + Date.now();
         AppState.data.push(invoiceData);
         
-        AppState.saveUserData();
+        await AppState.saveUserData();
         
         showToast(`OK Venta registrada - Factura ${invNum}`, 'success');
         
@@ -4645,6 +4669,7 @@
         showToast('Error al procesar la venta', 'error');
         console.error(err);
       } finally {
+        AppState.saleSaving = false;
         if (saleCompleted && AppState.currentPage === 'invoices') {
           AppState.invoiceSalePanelOpen = false;
         }
@@ -5508,7 +5533,7 @@
           invoice.status = remaining <= 0 ? 'pagada' : 'pendiente';
         }
         
-        AppState.saveUserData();
+        await AppState.saveUserData();
         
         showToast(`Abono de ${fmt.currency(amount)} registrado correctamente`, 'success');
         
@@ -8991,7 +9016,7 @@
           data.__backendId = 'ent_' + Date.now();
           AppState.data.push(data);
         }
-        AppState.saveUserData();
+        await AppState.saveUserData();
         
         showToast(existing ? 'Entrada actualizada correctamente' : 'Entrada registrada correctamente');
         closeModal();
