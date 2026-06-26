@@ -6103,51 +6103,86 @@
       renderPage();
     }
 
-    function renderReports(container) {
-      const sales = getRecords('sale');
+    function matchesReportPeriodDate(dateValue) {
       const now = new Date();
-      
-      let filteredSales = [...sales];
-      
+
       if (AppState.reportFilters.dateFrom || AppState.reportFilters.dateTo) {
-        filteredSales = sales.filter(s => matchesDateFilter(s.date, AppState.reportFilters.dateFrom, AppState.reportFilters.dateTo));
-      } else {
-        switch(AppState.reportFilters.period) {
-          case 'today':
-            const today = now.toISOString().split('T')[0];
-            filteredSales = sales.filter(s => s.date?.startsWith(today));
-            break;
-          case 'week':
-            const weekAgo = new Date(now - 7 * 86400000).toISOString().split('T')[0];
-            filteredSales = sales.filter(s => s.date?.split('T')[0] >= weekAgo);
-            break;
-          case 'month':
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            filteredSales = sales.filter(s => s.date?.split('T')[0] >= monthStart);
-            break;
-          case 'year':
-            const yearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-            filteredSales = sales.filter(s => s.date?.split('T')[0] >= yearStart);
-            break;
-          case 'custom':
-            break;
-        }
+        return matchesDateFilter(dateValue, AppState.reportFilters.dateFrom, AppState.reportFilters.dateTo);
       }
 
-          const reportSearch = (AppState.reportFilters.search || '').toLowerCase().trim();
-      if (reportSearch) {
-        filteredSales = filteredSales.filter(s => {
-          const itemNames = Array.isArray(s.items) ? s.items.map(i => i.material_name).join(' ') : '';
-          return (s.client_name || '').toLowerCase().includes(reportSearch) ||
-            (s.invoice_number || '').toLowerCase().includes(reportSearch) ||
-            (s.material_name || '').toLowerCase().includes(reportSearch) ||
-            itemNames.toLowerCase().includes(reportSearch) ||
-            (s.note || '').toLowerCase().includes(reportSearch) ||
-            (s.vehicle_plate || '').toLowerCase().includes(reportSearch);
-        });
+      const day = getLocalDateKey(dateValue);
+      if (!day) return !AppState.reportFilters.period;
+
+      switch(AppState.reportFilters.period) {
+        case 'today':
+          return day === getLocalDateKey(now.toISOString());
+        case 'week': {
+          const weekAgo = getLocalDateKey(new Date(now - 7 * 86400000).toISOString());
+          return day >= weekAgo;
+        }
+        case 'month': {
+          const monthStart = getLocalDateKey(new Date(now.getFullYear(), now.getMonth(), 1).toISOString());
+          return day >= monthStart;
+        }
+        case 'year': {
+          const yearStart = getLocalDateKey(new Date(now.getFullYear(), 0, 1).toISOString());
+          return day >= yearStart;
+        }
+        default:
+          return true;
       }
+    }
+
+    function saleMatchesReportSearch(sale, search) {
+      if (!search) return true;
+      const itemNames = Array.isArray(sale.items) ? sale.items.map(i => i.material_name).join(' ') : '';
+      return (sale.client_name || '').toLowerCase().includes(search) ||
+        (sale.invoice_number || '').toLowerCase().includes(search) ||
+        (sale.material_name || '').toLowerCase().includes(search) ||
+        itemNames.toLowerCase().includes(search) ||
+        (sale.note || '').toLowerCase().includes(search) ||
+        (sale.vehicle_plate || '').toLowerCase().includes(search);
+    }
+
+    function getFilteredReportSales() {
+      const reportSearch = (AppState.reportFilters.search || '').toLowerCase().trim();
+      return getRecords('sale')
+        .filter(s => matchesReportPeriodDate(s.date))
+        .filter(s => saleMatchesReportSearch(s, reportSearch));
+    }
+
+    function getFilteredReportPayments() {
+      const reportSearch = (AppState.reportFilters.search || '').toLowerCase().trim();
+      const salesById = Object.fromEntries(getRecords('sale').map(s => [s.__backendId, s]));
+
+      return getRecords('payment')
+        .map(payment => ({ payment, sale: salesById[payment.sale_id] || null }))
+        .filter(({ payment }) => matchesReportPeriodDate(payment.date))
+        .filter(({ payment, sale }) => {
+          if (!reportSearch) return true;
+          return (payment.client_name || sale?.client_name || '').toLowerCase().includes(reportSearch) ||
+            (payment.invoice_number || sale?.invoice_number || '').toLowerCase().includes(reportSearch) ||
+            (payment.method || '').toLowerCase().includes(reportSearch) ||
+            (payment.notes || '').toLowerCase().includes(reportSearch) ||
+            (sale?.vehicle_plate || '').toLowerCase().includes(reportSearch) ||
+            (sale?.material_name || '').toLowerCase().includes(reportSearch);
+        });
+    }
+
+    function renderReports(container) {
+      const filteredSales = getFilteredReportSales();
+      const filteredPayments = getFilteredReportPayments();
 
       const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
+      const totalPayments = filteredPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0);
+      const fullPayments = filteredPayments.filter(item => item.payment.is_full_payment);
+      const partialPayments = filteredPayments.filter(item => !item.payment.is_full_payment);
+      const paymentsByMethod = filteredPayments.reduce((acc, { payment }) => {
+        const method = payment.method || 'sin metodo';
+        acc[method] = (acc[method] || 0) + (toFiniteNumber(payment.amount, 0) || 0);
+        return acc;
+      }, {});
+      const topPaymentMethod = Object.entries(paymentsByMethod).sort((a, b) => b[1] - a[1])[0];
       const totalTransactions = filteredSales.length;
       const avgTicket = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
       const cashSales = filteredSales.filter(s => s.payment_type !== 'credito');
@@ -6316,6 +6351,29 @@
             </div>
           </div>
 
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Pagos recibidos</div>
+              <div class="text-2xl font-bold text-emerald-400 font-mono">${fmt.currency(totalPayments)}</div>
+              <div class="text-xs text-slate-500 mt-1">${filteredPayments.length} pago(s) en el periodo</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-sky-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Pagos completos</div>
+              <div class="text-2xl font-bold text-sky-400 font-mono">${fullPayments.length}</div>
+              <div class="text-xs text-slate-500 mt-1">${fmt.currency(fullPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0))}</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-orange-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Abonos</div>
+              <div class="text-2xl font-bold text-orange-400 font-mono">${partialPayments.length}</div>
+              <div class="text-xs text-slate-500 mt-1">${fmt.currency(partialPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0))}</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-violet-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Metodo principal</div>
+              <div class="text-2xl font-bold text-violet-400 font-mono truncate">${topPaymentMethod ? topPaymentMethod[0] : '-'}</div>
+              <div class="text-xs text-slate-500 mt-1">${topPaymentMethod ? fmt.currency(topPaymentMethod[1]) : 'Sin pagos'}</div>
+            </div>
+          </div>
+
           <div class="glass rounded-xl p-6">
             <h3 class="font-semibold text-slate-200 mb-4 flex items-center gap-2">
               <i data-lucide="bar-chart-2" class="w-5 h-5 text-primary-400"></i> Ventas por Dia
@@ -6373,6 +6431,47 @@
                 </div>
               `}
             </div>
+          </div>
+
+          <div class="glass rounded-xl p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-semibold text-slate-200 flex items-center gap-2">
+                <i data-lucide="wallet-cards" class="w-5 h-5 text-emerald-400"></i> Pagos del Periodo
+              </h3>
+              <span class="text-xs text-slate-500">${Math.min(filteredPayments.length, 8)} de ${filteredPayments.length} pagos</span>
+            </div>
+            ${filteredPayments.length === 0 ? '<p class="text-slate-500 text-sm">Sin pagos para mostrar</p>' : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs uppercase text-slate-500 border-b border-slate-800">
+                      <th class="py-2 pr-3">Fecha</th>
+                      <th class="py-2 pr-3">Factura</th>
+                      <th class="py-2 pr-3">Cliente</th>
+                      <th class="py-2 pr-3">Metodo</th>
+                      <th class="py-2 pr-3">Tipo</th>
+                      <th class="py-2 text-right">Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${filteredPayments.slice().sort((a, b) => new Date(b.payment.date) - new Date(a.payment.date)).slice(0, 8).map(({ payment, sale }) => `
+                      <tr class="border-b border-slate-800/70">
+                        <td class="py-3 pr-3 text-slate-300 font-medium">${fmt.date(payment.date)}</td>
+                        <td class="py-3 pr-3 text-slate-400">${payment.invoice_number || sale?.invoice_number || 'S/F'}</td>
+                        <td class="py-3 pr-3 text-slate-400">${payment.client_name || sale?.client_name || 'Sin cliente'}</td>
+                        <td class="py-3 pr-3 text-slate-400">${payment.method || '-'}</td>
+                        <td class="py-3 pr-3">
+                          <span class="text-xs px-2 py-1 rounded-full ${payment.is_full_payment ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}">
+                            ${payment.is_full_payment ? 'Pago total' : 'Abono'}
+                          </span>
+                        </td>
+                        <td class="py-3 text-right font-mono text-emerald-400">${fmt.currency(payment.amount || 0)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
           </div>
 
           <div class="glass rounded-xl p-6">
@@ -6509,49 +6608,8 @@
         return;
       }
 
-      const allSales = getRecords('sale');
-      const now = new Date();
-      let sales = [...allSales];
-
-      if (AppState.reportFilters.dateFrom || AppState.reportFilters.dateTo) {
-        sales = allSales.filter(s => matchesDateFilter(s.date, AppState.reportFilters.dateFrom, AppState.reportFilters.dateTo));
-      } else {
-        switch(AppState.reportFilters.period) {
-          case 'today': {
-            const today = now.toISOString().split('T')[0];
-            sales = allSales.filter(s => s.date?.startsWith(today));
-            break;
-          }
-          case 'week': {
-            const weekAgo = new Date(now - 7 * 86400000).toISOString().split('T')[0];
-            sales = allSales.filter(s => s.date?.split('T')[0] >= weekAgo);
-            break;
-          }
-          case 'month': {
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            sales = allSales.filter(s => s.date?.split('T')[0] >= monthStart);
-            break;
-          }
-          case 'year': {
-            const yearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-            sales = allSales.filter(s => s.date?.split('T')[0] >= yearStart);
-            break;
-          }
-        }
-      }
-
-      const reportSearch = (AppState.reportFilters.search || '').toLowerCase().trim();
-      if (reportSearch) {
-        sales = sales.filter(s => {
-          const itemNames = Array.isArray(s.items) ? s.items.map(i => i.material_name).join(' ') : '';
-          return (s.client_name || '').toLowerCase().includes(reportSearch) ||
-            (s.invoice_number || '').toLowerCase().includes(reportSearch) ||
-            (s.material_name || '').toLowerCase().includes(reportSearch) ||
-            itemNames.toLowerCase().includes(reportSearch) ||
-            (s.note || '').toLowerCase().includes(reportSearch) ||
-            (s.vehicle_plate || '').toLowerCase().includes(reportSearch);
-        });
-      }
+      const sales = getFilteredReportSales();
+      const paymentEntries = getFilteredReportPayments();
 
       const saleRows = sales.flatMap(s => {
         const saleDate = new Date(s.date);
@@ -6582,11 +6640,50 @@
         ]);
       });
 
+      const paymentRows = paymentEntries.map(({ payment, sale }) => {
+        const paymentDate = new Date(payment.date);
+        const fecha = Number.isNaN(paymentDate.getTime()) ? (payment.date || '') : paymentDate.toLocaleDateString('es-DO');
+        const hora = Number.isNaN(paymentDate.getTime()) ? '' : paymentDate.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const saleTotal = toFiniteNumber(sale?.sale_total, 0);
+        const amount = toFiniteNumber(payment.amount, 0);
+        const paidAfterPayment = sale
+          ? getRecords('payment')
+              .filter(p => p.sale_id === sale.__backendId && new Date(p.date) <= paymentDate)
+              .reduce((sum, p) => sum + toFiniteNumber(p.amount, 0), 0)
+          : '';
+        const balanceAfterPayment = sale && paidAfterPayment !== '' ? Math.max(0, saleTotal - paidAfterPayment) : '';
+
+        return [
+          fecha,
+          hora,
+          payment.invoice_number || sale?.invoice_number || '',
+          payment.client_name || sale?.client_name || '',
+          sale?.vehicle_plate || '',
+          payment.method || '',
+          payment.is_full_payment ? 'PAGO TOTAL' : 'ABONO',
+          amount,
+          saleTotal || '',
+          paidAfterPayment,
+          balanceAfterPayment,
+          payment.notes || ''
+        ];
+      });
+
       const contadoSales = sales.filter(s => s.payment_type !== 'credito');
       const creditoSales = sales.filter(s => s.payment_type === 'credito');
       const totalContado = contadoSales.reduce((a, s) => a + (Number(s.sale_total) || 0), 0);
       const totalCredito = creditoSales.reduce((a, s) => a + (Number(s.sale_total) || 0), 0);
       const totalGeneral = totalContado + totalCredito;
+      const totalPayments = paymentEntries.reduce((a, { payment }) => a + toFiniteNumber(payment.amount, 0), 0);
+      const fullPaymentEntries = paymentEntries.filter(({ payment }) => payment.is_full_payment);
+      const partialPaymentEntries = paymentEntries.filter(({ payment }) => !payment.is_full_payment);
+      const paymentMethodTotals = paymentEntries.reduce((acc, { payment }) => {
+        const method = payment.method || 'SIN METODO';
+        acc[method] = acc[method] || { count: 0, total: 0 };
+        acc[method].count += 1;
+        acc[method].total += toFiniteNumber(payment.amount, 0);
+        return acc;
+      }, {});
       const rows = [
         ['Fecha', 'Hora', 'Factura', 'Cliente', 'Placa', 'Material', 'Cantidad', 'Precio Unitario', 'Subtotal', 'IVA', 'Total', 'Nota', 'Tipo de Pago', 'Estado'],
         ...saleRows,
@@ -6683,8 +6780,37 @@
       sheet['!rows'] = [{ hpt: 24 }];
 
       XLSX.utils.book_append_sheet(workbook, sheet, 'Reporte ventas');
+      
+      const paymentsSheetRows = [
+        ['Fecha', 'Hora', 'Factura', 'Cliente', 'Placa', 'Metodo', 'Tipo', 'Monto', 'Total Venta', 'Pagado Acumulado', 'Saldo Despues', 'Notas'],
+        ...paymentRows
+      ];
+      const paymentsSheet = XLSX.utils.aoa_to_sheet(paymentsSheetRows);
+      paymentsSheet['!cols'] = [
+        { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 16 },
+        { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 30 }
+      ];
+      paymentsSheet['!autofilter'] = { ref: `A1:L${Math.max(paymentRows.length + 1, 1)}` };
+      XLSX.utils.book_append_sheet(workbook, paymentsSheet, 'Reporte pagos');
+
+      const paymentSummaryRows = [
+        ['RESUMEN DE PAGOS'],
+        ['CONCEPTO', 'CANTIDAD', 'MONTO'],
+        ['PAGOS TOTALES', fullPaymentEntries.length, fullPaymentEntries.reduce((a, { payment }) => a + toFiniteNumber(payment.amount, 0), 0)],
+        ['ABONOS', partialPaymentEntries.length, partialPaymentEntries.reduce((a, { payment }) => a + toFiniteNumber(payment.amount, 0), 0)],
+        ['TOTAL PAGOS', paymentEntries.length, totalPayments],
+        [],
+        ['METODO', 'CANTIDAD', 'MONTO'],
+        ...Object.entries(paymentMethodTotals)
+          .sort((a, b) => b[1].total - a[1].total)
+          .map(([method, data]) => [method.toUpperCase(), data.count, data.total])
+      ];
+      const paymentSummarySheet = XLSX.utils.aoa_to_sheet(paymentSummaryRows);
+      paymentSummarySheet['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(workbook, paymentSummarySheet, 'Resumen pagos');
+
       XLSX.writeFile(workbook, `reporte_ventas_${new Date().toISOString().split('T')[0]}.xlsx`);
-      showToast(`Reporte Excel exportado: ${sales.length} ventas - Contado: ${fmt.currency(totalContado)} | Credito: ${fmt.currency(totalCredito)}`);
+      showToast(`Reporte Excel exportado: ${sales.length} ventas y ${paymentEntries.length} pagos`);
     }
     
 
