@@ -2085,6 +2085,7 @@
       creditFilters: { client: '', dateFrom: '', dateTo: '', status: 'all' },
       invoiceFilters: { client: '', dateFrom: '', dateTo: '' },
       reportFilters: { period: '', dateFrom: '', dateTo: '' },
+      pendingClientReportFilters: { dateFrom: '', dateTo: '' },
       dailyMetersFilters: { search: '', dateFrom: '', dateTo: '', quickPeriod: '' },
       directTripFilters: { search: '', company: '', dateFrom: '', dateTo: '', status: 'all', quickPeriod: '' },
       fuelFilters: { search: '', dateFrom: '', dateTo: '' },
@@ -6328,10 +6329,163 @@
       };
     }
 
+    function getPendingClientReportFilters() {
+      const filters = AppState.pendingClientReportFilters || {};
+      const today = getLocalDateKey(new Date().toISOString());
+      const currentMonthStart = today ? `${today.slice(0, 7)}-01` : '';
+      return {
+        dateFrom: filters.dateFrom || currentMonthStart,
+        dateTo: filters.dateTo || today
+      };
+    }
+
+    function getPendingClientPaymentReport() {
+      const filters = getPendingClientReportFilters();
+      const payments = getRecords('payment');
+      const clientMap = new Map();
+
+      getRecords('sale')
+        .filter(sale => sale.payment_type === 'credito')
+        .filter(sale => matchesDateFilter(sale.date, filters.dateFrom, filters.dateTo))
+        .forEach(sale => {
+          const saleTotal = toFiniteNumber(sale.sale_total, 0);
+          const paidAmount = payments
+            .filter(payment => payment.sale_id === sale.__backendId)
+            .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
+          const pendingAmount = Math.max(0, toFiniteNumber(sale.remaining_balance, saleTotal - paidAmount));
+
+          if (pendingAmount <= 0.01) return;
+
+          const clientName = sale.client_name || 'Sin cliente';
+          if (!clientMap.has(clientName)) {
+            clientMap.set(clientName, {
+              clientName,
+              totalAmount: 0,
+              paidAmount: 0,
+              pendingAmount: 0,
+              invoiceCount: 0,
+              invoices: []
+            });
+          }
+
+          const client = clientMap.get(clientName);
+          client.totalAmount += saleTotal;
+          client.paidAmount += Math.min(saleTotal, paidAmount);
+          client.pendingAmount += pendingAmount;
+          client.invoiceCount += 1;
+          client.invoices.push(sale.invoice_number || 'S/F');
+        });
+
+      const clients = Array.from(clientMap.values())
+        .sort((a, b) => b.pendingAmount - a.pendingAmount || a.clientName.localeCompare(b.clientName));
+
+      return {
+        filters,
+        clients,
+        totalSales: clients.reduce((sum, client) => sum + client.totalAmount, 0),
+        totalPaid: clients.reduce((sum, client) => sum + client.paidAmount, 0),
+        totalPending: clients.reduce((sum, client) => sum + client.pendingAmount, 0)
+      };
+    }
+
+    function renderPendingClientPaymentReportCard(report) {
+      const periodText = `${formatDateKey(report.filters.dateFrom)} - ${formatDateKey(report.filters.dateTo)}`;
+
+      return `
+        <div class="glass rounded-xl p-6 border border-slate-700/50">
+          <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-5">
+            <div class="flex items-start gap-4">
+              <div class="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="file-text" class="w-7 h-7 text-blue-400"></i>
+              </div>
+              <div>
+                <h3 class="text-xl font-bold text-slate-100">Reporte: Clientes Pendientes por Pagar</h3>
+                <p class="text-slate-500 text-sm mt-1">Muestra los clientes con saldo pendiente en el periodo seleccionado.</p>
+              </div>
+            </div>
+            <div class="text-xs text-slate-500 lg:text-right">Periodo: ${periodText}</div>
+          </div>
+
+          <div class="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4 mb-5">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Fecha inicial</label>
+                <input type="date" id="pendingClientDateFrom" value="${report.filters.dateFrom}"
+                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Fecha final</label>
+                <input type="date" id="pendingClientDateTo" value="${report.filters.dateTo}"
+                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+              </div>
+              <button onclick="updatePendingClientReportDates()" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg transition-colors text-sm font-semibold">
+                <i data-lucide="search" class="w-4 h-4"></i> Buscar
+              </button>
+              <button onclick="exportPendingClientReportExcel()" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors text-sm font-semibold">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Excel
+              </button>
+              <button onclick="printPendingClientReport()" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors text-sm font-semibold border border-slate-700">
+                <i data-lucide="printer" class="w-4 h-4"></i> Imprimir
+              </button>
+            </div>
+          </div>
+
+          ${report.clients.length === 0 ? `
+            <div class="rounded-lg border border-slate-800 p-6 text-center text-slate-500 text-sm">
+              No hay clientes con saldo pendiente en este periodo.
+            </div>
+          ` : `
+            <div class="overflow-x-auto rounded-xl border border-slate-700/60 mb-5">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-950/70">
+                  <tr class="text-left text-xs uppercase text-slate-400">
+                    <th class="py-3 px-4">Cliente</th>
+                    <th class="py-3 px-4 text-right">Total</th>
+                    <th class="py-3 px-4 text-right">Abonado</th>
+                    <th class="py-3 px-4 text-right">Saldo pendiente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${report.clients.map(client => `
+                    <tr class="border-t border-slate-800/80">
+                      <td class="py-3 px-4 text-slate-200 font-medium">${escapeHtml(client.clientName)}</td>
+                      <td class="py-3 px-4 text-right font-mono text-slate-300">${fmt.currency(client.totalAmount)}</td>
+                      <td class="py-3 px-4 text-right font-mono text-slate-300">${fmt.currency(client.paidAmount)}</td>
+                      <td class="py-3 px-4 text-right font-mono text-rose-400 font-semibold">${fmt.currency(client.pendingAmount)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="rounded-xl border border-slate-700/60 overflow-hidden">
+              <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-slate-800">
+                <span class="text-slate-300">Total de ventas del periodo:</span>
+                <span class="font-mono font-bold text-slate-100">${fmt.currency(report.totalSales)}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-slate-800">
+                <span class="text-slate-300">Total abonado:</span>
+                <span class="font-mono font-bold text-slate-100">${fmt.currency(report.totalPaid)}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-slate-800">
+                <span class="text-rose-400 font-semibold">Total pendiente por cobrar:</span>
+                <span class="font-mono font-bold text-rose-400">${fmt.currency(report.totalPending)}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4 px-4 py-3">
+                <span class="text-slate-300">Cantidad de clientes con saldo pendiente:</span>
+                <span class="font-mono font-bold text-slate-100">${report.clients.length}</span>
+              </div>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
     function renderReports(container) {
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
       const customerPaymentStatus = getReportCustomerPaymentStatus(filteredSales);
+      const pendingClientPaymentReport = getPendingClientPaymentReport();
 
       const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const totalPayments = filteredPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0);
@@ -6453,6 +6607,8 @@
               <span>Mostrando ${filteredSales.length} transacciones</span>
             </div>
           </div>
+
+          ${renderPendingClientPaymentReportCard(pendingClientPaymentReport)}
 
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
@@ -6773,6 +6929,155 @@
     function updateReportSearch() {
       AppState.reportFilters.search = document.getElementById('reportFilterSearch')?.value || '';
       renderFilterPage('reportFilterSearch');
+    }
+
+    function updatePendingClientReportDates() {
+      const dateFrom = document.getElementById('pendingClientDateFrom')?.value || '';
+      const dateTo = document.getElementById('pendingClientDateTo')?.value || '';
+
+      if (dateFrom && dateTo && dateFrom > dateTo) {
+        showToast('La fecha inicial no puede ser mayor que la fecha final.', 'warning');
+        return;
+      }
+
+      AppState.pendingClientReportFilters = { dateFrom, dateTo };
+      renderPage();
+    }
+
+    function exportPendingClientReportExcel() {
+      if (!window.XLSX) {
+        showExcelLibraryError();
+        return;
+      }
+
+      const report = getPendingClientPaymentReport();
+      const rows = [
+        ['REPORTE: CLIENTES PENDIENTES POR PAGAR'],
+        ['PERIODO', `${formatDateKey(report.filters.dateFrom)} - ${formatDateKey(report.filters.dateTo)}`],
+        [],
+        ['Cliente', 'Total', 'Abonado', 'Saldo pendiente', 'Facturas pendientes'],
+        ...report.clients.map(client => [
+          client.clientName,
+          client.totalAmount,
+          client.paidAmount,
+          client.pendingAmount,
+          client.invoices.join(', ')
+        ]),
+        [],
+        ['Total de ventas del periodo', report.totalSales],
+        ['Total abonado', report.totalPaid],
+        ['Total pendiente por cobrar', report.totalPending],
+        ['Cantidad de clientes con saldo pendiente', report.clients.length]
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      sheet['!cols'] = [{ wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 36 }];
+      sheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
+
+      const titleStyle = {
+        font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 14 },
+        fill: { fgColor: { rgb: '0B2E6F' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+      const headerStyle = {
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '0B2E6F' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+      const moneyStyle = { numFmt: '#,##0.00' };
+      if (sheet.A1) sheet.A1.s = titleStyle;
+      ['A4', 'B4', 'C4', 'D4', 'E4'].forEach(addr => {
+        if (sheet[addr]) sheet[addr].s = headerStyle;
+      });
+      for (let row = 5; row < 5 + report.clients.length; row++) {
+        ['B', 'C', 'D'].forEach(col => {
+          const cell = sheet[`${col}${row}`];
+          if (cell) cell.s = moneyStyle;
+        });
+      }
+      sheet['!autofilter'] = { ref: `A4:E${Math.max(4 + report.clients.length, 4)}` };
+
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Clientes pendientes');
+      XLSX.writeFile(workbook, `clientes_pendientes_por_pagar_${report.filters.dateFrom}_a_${report.filters.dateTo}.xlsx`);
+      showToast(`Reporte exportado: ${report.clients.length} cliente(s) pendiente(s)`);
+    }
+
+    function printPendingClientReport() {
+      const report = getPendingClientPaymentReport();
+      const periodText = `${formatDateKey(report.filters.dateFrom)} - ${formatDateKey(report.filters.dateTo)}`;
+      const rows = report.clients.map(client => `
+        <tr>
+          <td>${escapeHtml(client.clientName)}</td>
+          <td class="money">${fmt.currency(client.totalAmount)}</td>
+          <td class="money">${fmt.currency(client.paidAmount)}</td>
+          <td class="money pending">${fmt.currency(client.pendingAmount)}</td>
+        </tr>
+      `).join('');
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showToast('No se pudo abrir la ventana de impresion.', 'error');
+        return;
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Clientes Pendientes por Pagar</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
+            .header { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 24px; }
+            .icon { width: 48px; height: 48px; border: 3px solid #1267b2; border-radius: 8px; color: #1267b2; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; }
+            h1 { font-size: 26px; margin: 0 0 8px; }
+            p { margin: 0; color: #475569; font-size: 15px; line-height: 1.4; }
+            .period { border: 1px solid #d1d5db; border-radius: 8px; padding: 14px 18px; margin-bottom: 18px; font-weight: bold; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+            th { background: #102a4d; color: white; padding: 12px; font-size: 14px; }
+            td { border: 1px solid #d9dee7; padding: 12px; font-size: 14px; }
+            .money { text-align: right; white-space: nowrap; }
+            .pending { color: #dc2626; font-weight: bold; }
+            .totals { border: 1px solid #d9dee7; border-radius: 8px; overflow: hidden; }
+            .total-row { display: flex; justify-content: space-between; padding: 11px 16px; border-bottom: 1px solid #d9dee7; font-size: 15px; }
+            .total-row:last-child { border-bottom: 0; }
+            .strong { font-weight: bold; }
+            .danger { color: #dc2626; }
+            @media print { body { margin: 12mm; } }
+          </style>
+        </head>
+        <body onload="window.print();">
+          <div class="header">
+            <div class="icon">≡</div>
+            <div>
+              <h1>Reporte: Clientes Pendientes por Pagar</h1>
+              <p>Muestra todos los clientes que tienen saldo pendiente por pagar<br>en el periodo seleccionado.</p>
+            </div>
+          </div>
+          <div class="period">Periodo: ${periodText}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Total</th>
+                <th>Abonado</th>
+                <th>Saldo pendiente</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="4" style="text-align:center;color:#64748b;">No hay clientes con saldo pendiente en este periodo.</td></tr>'}
+            </tbody>
+          </table>
+          <div class="totals">
+            <div class="total-row"><span>Total de ventas del periodo:</span><span class="strong">${fmt.currency(report.totalSales)}</span></div>
+            <div class="total-row"><span>Total abonado:</span><span class="strong">${fmt.currency(report.totalPaid)}</span></div>
+            <div class="total-row"><span class="danger">Total pendiente por cobrar:</span><span class="strong danger">${fmt.currency(report.totalPending)}</span></div>
+            <div class="total-row"><span>Cantidad de clientes con saldo pendiente:</span><span class="strong">${report.clients.length}</span></div>
+          </div>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
     }
 
     function initReportChart(salesByDay) {
