@@ -10089,6 +10089,12 @@
             </div>
 
             <div class="text-center sm:text-left">
+              <label class="block text-sm font-medium text-slate-400 mb-2">Fecha de Factura</label>
+              <input type="datetime-local" id="editInvDate" value="${escapeAttr(toDateTimeLocalValue(invoice.date))}" required
+                class="w-full max-w-full px-3 sm:px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
+            </div>
+
+            <div class="text-center sm:text-left">
               <label class="block text-sm font-medium text-slate-400 mb-2">Cliente</label>
               <input type="text" id="editInvClient" value="${invoice.client_name}" required
                 class="w-full max-w-full px-3 sm:px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus">
@@ -10171,6 +10177,7 @@
       if (!invoice) return;
 
       const clientName = safeText(document.getElementById('editInvClient').value);
+      const invoiceDateValue = document.getElementById('editInvDate')?.value;
       const items = (AppState.editInvoiceItems || []).map(item => ({
         material_name: item.material_name,
         quantity: toFiniteNumber(item.quantity, 0),
@@ -10180,6 +10187,18 @@
 
       if (!clientName) {
         showToast('El cliente es requerido.', 'warning');
+        return;
+      }
+
+      const updatedDate = invoiceDateValue ? new Date(invoiceDateValue).toISOString() : '';
+      if (!invoiceDateValue || isNaN(new Date(updatedDate).getTime())) {
+        showToast('Selecciona una fecha de factura valida.', 'warning');
+        return;
+      }
+
+      const todayKey = getLocalDateKey(new Date().toISOString());
+      if (getLocalDateKey(updatedDate) > todayKey) {
+        showToast('La fecha de factura no puede ser futura.', 'warning');
         return;
       }
 
@@ -10217,6 +10236,7 @@
       try {
         // Actualizar factura
         invoice.client_name = clientName;
+        invoice.date = updatedDate;
         invoice.vehicle_plate = safeText(document.getElementById('editInvPlate').value).toUpperCase();
         invoice.material_name = materialLabel;
         invoice.quantity = quantityTotal;
@@ -10230,6 +10250,7 @@
         const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
         if (sale) {
           sale.client_name = invoice.client_name;
+          sale.date = invoice.date;
           sale.vehicle_plate = invoice.vehicle_plate;
           sale.material_name = invoice.material_name;
           sale.sale_quantity = quantityTotal;
