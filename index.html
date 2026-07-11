@@ -2343,6 +2343,10 @@
       number: (n, d = 1) => (n || 0).toLocaleString('es-MX', {
         minimumFractionDigits: d, maximumFractionDigits: d
       }),
+      quantity: (n, max = 6) => (Number(n) || 0).toLocaleString('es-MX', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: max
+      }),
       date: (iso) => iso ? new Date(iso).toLocaleDateString('es-MX', {
         day: '2-digit', month: 'short', year: 'numeric'
       }) : '-',
@@ -4070,7 +4074,7 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div class="min-w-0">
                         <label class="block text-xs text-slate-500 mb-1">Cantidad</label>
-                        <input type="number" id="saleQty" step="0.1" min="0.1" inputmode="decimal" oninput="updateSaleTotal()"
+                        <input type="number" id="saleQty" step="any" min="0.01" inputmode="decimal" oninput="updateSaleTotal()"
                           class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus transition-all">
                       </div>
                       <div class="min-w-0">
@@ -4344,7 +4348,7 @@
         <div class="flex items-center justify-between gap-3 p-3 bg-slate-900/40 border border-slate-700/50 rounded-lg">
           <div class="min-w-0">
             <div class="font-medium text-slate-200 truncate">${escapeHtml(item.material_name)}</div>
-            <div class="text-xs text-slate-500 font-mono">${fmt.number(item.quantity)} x ${fmt.currency(item.price)}</div>
+            <div class="text-xs text-slate-500 font-mono">${fmt.quantity(item.quantity)} x ${fmt.currency(item.price)}</div>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0">
             <span class="font-mono text-emerald-400">${fmt.currency(item.subtotal)}</span>
@@ -5199,7 +5203,7 @@
                           </div>
 
                           <div class="text-sm text-slate-400 mb-2">
-                            ${t.material_name} - ${fmt.number(t.sale_quantity)} ${t.iva_enabled ? '- IVA ' + t.iva_rate + '%' : ''}
+                            ${t.material_name} - ${fmt.quantity(t.sale_quantity)} ${t.iva_enabled ? '- IVA ' + t.iva_rate + '%' : ''}
                           </div>
 
                           ${t.payments.length > 0 && AppState.creditFilters.status !== 'pending' ? `
@@ -6003,7 +6007,7 @@
                     <i data-lucide="box" class="w-4 h-4 text-slate-500"></i>
                     <span class="text-slate-400">${inv.material_name}</span>
                     <span class="text-slate-600">-</span>
-                    <span class="text-slate-400 font-mono">${fmt.number(inv.quantity)}</span>
+                    <span class="text-slate-400 font-mono">${fmt.quantity(inv.quantity)}</span>
                   </div>
                   <div class="flex items-center gap-2 text-sm">
                     <i data-lucide="calendar" class="w-4 h-4 text-slate-500"></i>
@@ -8407,7 +8411,7 @@
         const itemRows = invoiceItems.flatMap((saleItem, index) => [
           index > 0 ? line : '',
           '\x1bE\x01' + (saleItem.material_name || '').toUpperCase() + '\x1bE\x00',
-          item('Cantidad:', fmt.number(saleItem.quantity)),
+          item('Cantidad:', fmt.quantity(saleItem.quantity)),
           item('Precio:', fmt.currency(saleItem.price)),
           item('Importe:', fmt.currency(saleItem.subtotal || ((saleItem.quantity || 0) * (saleItem.price || 0))))
         ]).filter(Boolean);
@@ -9060,7 +9064,7 @@
           }
           doc.text(`${(item.material_name || '').toUpperCase()}`, margin, yPos);
           yPos += 4;
-          doc.text(`${fmt.number(item.quantity)} x ${fmt.currency(item.price)}`, margin, yPos);
+          doc.text(`${fmt.quantity(item.quantity)} x ${fmt.currency(item.price)}`, margin, yPos);
           yPos += 4;
         });
         doc.setFont(undefined, 'normal');
@@ -9423,14 +9427,14 @@
       const thermalItemRows = invoiceItems.map(item => `
         <div class="item product-highlight">
           <span>${item.material_name}</span>
-          <span>${fmt.number(item.quantity)} x ${fmt.currency(item.price)}</span>
+          <span>${fmt.quantity(item.quantity)} x ${fmt.currency(item.price)}</span>
         </div>
       `).join('');
 
       const standardItemRows = invoiceItems.map(item => `
         <tr class="product-highlight">
           <td>${item.material_name}</td>
-          <td style="text-align: center;">${fmt.number(item.quantity)}</td>
+          <td style="text-align: center;">${fmt.quantity(item.quantity)}</td>
           <td style="text-align: right;">${fmt.currency(item.price)}</td>
           <td style="text-align: right;">${fmt.currency(item.subtotal || ((item.quantity || 0) * (item.price || 0)))}</td>
         </tr>
@@ -9701,7 +9705,7 @@
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="block text-sm font-medium text-slate-400 mb-2">Cantidad</label>
-                <input type="number" id="entryQty" step="0.1" min="0.1" required value="${existing ? escapeAttr(existing.quantity) : ''}"
+                <input type="number" id="entryQty" step="any" min="0.01" inputmode="decimal" required value="${existing ? escapeAttr(existing.quantity) : ''}"
                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
               </div>
               <div>
@@ -9988,7 +9992,7 @@
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-slate-900/40 border border-slate-700/50 rounded-lg">
           <div class="min-w-0 text-center sm:text-left">
             <div class="font-medium text-slate-200 break-words">${escapeHtml(item.material_name)}</div>
-            <div class="text-xs text-slate-500 font-mono">${fmt.number(item.quantity)} x ${fmt.currency(item.price)}</div>
+            <div class="text-xs text-slate-500 font-mono">${fmt.quantity(item.quantity)} x ${fmt.currency(item.price)}</div>
           </div>
           <div class="flex items-center justify-center sm:justify-end gap-2 flex-shrink-0">
             <span class="font-mono text-emerald-400">${fmt.currency(item.subtotal)}</span>
@@ -10123,7 +10127,7 @@
               </div>
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Cantidad</label>
-                <input type="number" id="editInvNewQty" step="0.1" min="0.1"
+                <input type="number" id="editInvNewQty" step="any" min="0.01" inputmode="decimal"
                   class="w-full max-w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
               </div>
               <div>
@@ -10580,7 +10584,7 @@
                 <tr>
                   <td>${item.invoice_number || ''}</td>
                   <td><strong>${item.material_name || ''}</strong></td>
-                  <td class="center">${fmt.number(item.quantity)}</td>
+                  <td class="center">${fmt.quantity(item.quantity)}</td>
                   <td class="right">${fmt.currency(item.price)}</td>
                   <td class="right">${fmt.currency(item.subtotal)}</td>
                 </tr>
@@ -10631,7 +10635,7 @@
           h.line,
           item.invoice_number || '',
           ...h.wordWrap(item.material_name || ''),
-          h.item('Cant:', fmt.number(item.quantity)),
+          h.item('Cant:', fmt.quantity(item.quantity)),
           h.item('Precio:', fmt.currency(item.price)),
           h.item('Total:', fmt.currency(item.subtotal))
         ]),
