@@ -10665,7 +10665,15 @@
         }
       });
 
-      openCombinedCreditPrint('Facturas seleccionadas', [buildConsolidatedCreditInvoicePrintSection(invoices)], buildConsolidatedCreditInvoiceThermalText(invoices));
+      if (!invoices.length) {
+        showToast('No se encontraron las facturas seleccionadas', 'error');
+        return;
+      }
+
+      showToast(`Imprimiendo ${invoices.length} factura(s) con el formato configurado`);
+      for (const invoice of invoices) {
+        await printInvoiceById(invoice.__backendId);
+      }
     }
 
     function selectVisibleCreditPayments(select) {
