@@ -10649,6 +10649,253 @@
       ].filter(Boolean).join('\n');
     }
 
+    function generateConsolidatedCreditInvoicePDF(invoices) {
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const printerType = getEffectivePrinterType();
+      let format, pageWidth, pageHeight, isThermal, is58mm, formatLabel;
+
+      switch (printerType) {
+        case 'thermal_58':
+          format = [58, 200];
+          pageWidth = 58;
+          pageHeight = 200;
+          isThermal = true;
+          is58mm = true;
+          formatLabel = 'Termica 58mm';
+          break;
+        case 'thermal_80':
+          format = [80, 200];
+          pageWidth = 80;
+          pageHeight = 200;
+          isThermal = true;
+          is58mm = false;
+          formatLabel = 'Termica 80mm';
+          break;
+        case 'pdf':
+        case 'standard':
+        default:
+          if (AppState.config.paper_size === 'a4') {
+            format = 'a4';
+            pageWidth = 210;
+            pageHeight = 297;
+          } else {
+            format = 'letter';
+            pageWidth = 216;
+            pageHeight = 279;
+          }
+          isThermal = false;
+          is58mm = false;
+          formatLabel = AppState.config.paper_size === 'a4' ? 'A4' : 'Carta';
+          break;
+      }
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
+      const margin = isThermal ? 3 : 20;
+      const contentWidth = pageWidth - (margin * 2);
+      const lineHeight = isThermal ? 4 : 6;
+      const payments = getRecords('payment');
+      const firstInvoice = invoices[0] || {};
+      const rows = invoices.flatMap(invoice => getInvoiceItems(invoice).map(item => ({
+        invoice_number: invoice.invoice_number,
+        client_name: invoice.client_name,
+        material_name: item.material_name,
+        quantity: item.quantity,
+        price: item.price,
+        subtotal: item.subtotal || ((item.quantity || 0) * (item.price || 0))
+      })));
+      const subtotal = invoices.reduce((sum, inv) => sum + (inv.subtotal || ((inv.sale_total || 0) - (inv.tax || 0))), 0);
+      const tax = invoices.reduce((sum, inv) => sum + (inv.tax || 0), 0);
+      const total = invoices.reduce((sum, inv) => sum + (inv.sale_total || 0), 0);
+      const totalPaid = invoices.reduce((sum, invoice) => {
+        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        if (!sale) return sum;
+        return sum + payments
+          .filter(payment => payment.sale_id === sale.__backendId)
+          .reduce((paymentSum, payment) => paymentSum + (payment.amount || 0), 0);
+      }, 0);
+      const totalPending = Math.max(0, total - totalPaid);
+      let yPos = margin + 2;
+
+      const addPageIfNeeded = (needed = lineHeight) => {
+        if (yPos + needed <= pageHeight - margin) return;
+        doc.addPage();
+        yPos = margin + 2;
+      };
+      const drawLine = (thick = false) => {
+        addPageIfNeeded(3);
+        doc.setDrawColor(isThermal ? 0 : 200, isThermal ? 0 : 200, isThermal ? 0 : 200);
+        doc.setLineWidth(thick ? 0.5 : 0.2);
+        doc.line(margin, yPos, pageWidth - margin, yPos);
+        yPos += isThermal ? 3 : 5;
+      };
+      const writeText = (text, x, options = {}) => {
+        addPageIfNeeded(lineHeight);
+        doc.text(String(text || ''), x, yPos, options);
+      };
+
+      if (AppState.config.company_logo) {
+        try {
+          const logoWidth = isThermal ? (is58mm ? 25 : 35) : 40;
+          const logoHeight = logoWidth * 0.5;
+          doc.addImage(AppState.config.company_logo, 'JPEG', pageWidth / 2 - logoWidth / 2, yPos, logoWidth, logoHeight);
+          yPos += logoHeight + (isThermal ? 2 : 5);
+        } catch (e) {}
+      }
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(isThermal ? 10 : 20);
+      writeText(isThermal ? String(AppState.config.company_name || '').toUpperCase() : AppState.config.company_name, pageWidth / 2, { align: 'center' });
+      yPos += isThermal ? 4 : 8;
+
+      doc.setFont(undefined, isThermal ? 'bold' : 'normal');
+      doc.setFontSize(isThermal ? 7 : 10);
+      writeText(AppState.config.company_slogan || '', pageWidth / 2, { align: 'center' });
+      yPos += isThermal ? 3 : 5;
+
+      if (AppState.config.company_rfc) {
+        doc.setFontSize(isThermal ? 6 : 8);
+        writeText('RNC: ' + AppState.config.company_rfc, pageWidth / 2, { align: 'center' });
+        yPos += isThermal ? 3 : 4;
+      }
+
+      yPos += 2;
+      drawLine(true);
+
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(isThermal ? 10 : 16);
+      doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
+      writeText('FACTURAS SELECCIONADAS', pageWidth / 2, { align: 'center' });
+      yPos += isThermal ? 4 : 6;
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(isThermal ? 8 : 10);
+      doc.setFont(undefined, isThermal ? 'bold' : 'normal');
+      writeText('Fecha: ' + fmt.dateTime(new Date().toISOString()), margin);
+      yPos += lineHeight;
+      writeText('Cliente: ' + (firstInvoice.client_name || ''), margin);
+      yPos += lineHeight;
+      if (firstInvoice.vehicle_plate) {
+        writeText('Placa: ' + firstInvoice.vehicle_plate, margin);
+        yPos += lineHeight;
+      }
+      const paidInvoices = invoices.filter(invoice => {
+        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const paid = sale ? payments
+          .filter(payment => payment.sale_id === sale.__backendId)
+          .reduce((paymentSum, payment) => paymentSum + (payment.amount || 0), 0) : 0;
+        return invoice.payment_status === 'pagada' || paid >= (sale?.sale_total || invoice.sale_total || 0);
+      }).length;
+      const consolidatedStatus = paidInvoices === invoices.length ? 'Facturas pagadas' : 'Facturas seleccionadas';
+      writeText(invoices.length + ' factura(s) - ' + consolidatedStatus, margin);
+      yPos += lineHeight;
+      drawLine();
+
+      if (isThermal) {
+        doc.setFontSize(8);
+        rows.forEach(item => {
+          addPageIfNeeded(22);
+          doc.setFont(undefined, 'bold');
+          doc.text(item.invoice_number || '', margin, yPos);
+          yPos += 4;
+          const materialLines = doc.splitTextToSize(String(item.material_name || '').toUpperCase(), contentWidth);
+          materialLines.forEach(line => {
+            addPageIfNeeded(4);
+            doc.text(line, margin, yPos);
+            yPos += 4;
+          });
+          doc.text('Cant: ' + fmt.quantity(item.quantity), margin, yPos);
+          yPos += 4;
+          doc.text('Precio: ' + fmt.currency(item.price), margin, yPos);
+          yPos += 4;
+          doc.text('Total: ' + fmt.currency(item.subtotal), margin, yPos);
+          yPos += 4;
+          drawLine();
+        });
+      } else {
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'bold');
+        doc.setFillColor(240, 240, 240);
+        doc.rect(margin, yPos - 4, contentWidth, 8, 'F');
+        doc.text('Factura', margin + 2, yPos);
+        doc.text('Descripcion', margin + 35, yPos);
+        doc.text('Cant.', pageWidth - margin - 65, yPos);
+        doc.text('Precio', pageWidth - margin - 42, yPos);
+        doc.text('Total', pageWidth - margin, yPos, { align: 'right' });
+        yPos += 8;
+        doc.setFont(undefined, 'normal');
+        rows.forEach(item => {
+          addPageIfNeeded(10);
+          const material = doc.splitTextToSize(String(item.material_name || ''), 70)[0] || '';
+          doc.text(String(item.invoice_number || ''), margin + 2, yPos);
+          doc.text(material, margin + 35, yPos);
+          doc.text(fmt.quantity(item.quantity), pageWidth - margin - 65, yPos);
+          doc.text(fmt.currency(item.price), pageWidth - margin - 42, yPos);
+          doc.text(fmt.currency(item.subtotal), pageWidth - margin, yPos, { align: 'right' });
+          yPos += 7;
+        });
+        drawLine();
+      }
+
+      addPageIfNeeded(isThermal ? 28 : 35);
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(isThermal ? 8 : 10);
+      if (!isThermal) {
+        doc.text('Subtotal:', pageWidth - margin - 55, yPos);
+        doc.text(fmt.currency(subtotal), pageWidth - margin, yPos, { align: 'right' });
+        yPos += 6;
+        doc.text('IVA:', pageWidth - margin - 55, yPos);
+        doc.text(fmt.currency(tax), pageWidth - margin, yPos, { align: 'right' });
+        yPos += 8;
+      } else {
+        doc.text('Subtotal: ' + fmt.currency(subtotal), margin, yPos);
+        yPos += 4;
+        doc.text('IVA: ' + fmt.currency(tax), margin, yPos);
+        yPos += 4;
+      }
+
+      doc.setFontSize(isThermal ? 12 : 14);
+      doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
+      doc.text('TOTAL:', isThermal ? margin : pageWidth - margin - 55, yPos);
+      doc.text(fmt.currency(total), pageWidth - margin, yPos, { align: 'right' });
+      yPos += isThermal ? 5 : 7;
+
+      doc.setFontSize(isThermal ? 8 : 10);
+      doc.setTextColor(5, 150, 105);
+      doc.text('Abonado:', isThermal ? margin : pageWidth - margin - 55, yPos);
+      doc.text(fmt.currency(totalPaid), pageWidth - margin, yPos, { align: 'right' });
+      yPos += isThermal ? 4 : 6;
+      doc.setTextColor(217, 119, 6);
+      doc.text('Falta por pagar:', isThermal ? margin : pageWidth - margin - 55, yPos);
+      doc.text(fmt.currency(totalPending), pageWidth - margin, yPos, { align: 'right' });
+
+      doc.setTextColor(0, 0, 0);
+      if (isThermal) {
+        yPos += 8;
+        drawLine(true);
+        doc.setFontSize(8);
+        doc.text('IMPRESION CONSOLIDADA', pageWidth / 2, yPos, { align: 'center' });
+      } else {
+        yPos += 15;
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(0.5);
+        doc.line(margin, yPos, pageWidth - margin, yPos);
+        yPos += 8;
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.text('Documento generado por ERP Materiales del Norte', pageWidth / 2, yPos, { align: 'center' });
+      }
+
+      const fileName = 'facturas_credito_seleccionadas_' + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
+      doc.save(fileName);
+      showToast('PDF descargado: Facturas seleccionadas (' + formatLabel + ')');
+    }
+
     async function printSelectedCreditInvoices(safeClientName) {
       const selectedIds = Array.from(document.querySelectorAll(`.credit_invoice_${safeClientName}:checked`)).map(cb => cb.id.replace('chk_', ''));
       if (selectedIds.length === 0) {
@@ -10670,10 +10917,24 @@
         return;
       }
 
-      showToast(`Imprimiendo ${invoices.length} factura(s) con el formato configurado`);
-      for (const invoice of invoices) {
-        await printInvoiceById(invoice.__backendId);
+      if (isBluetoothPrinterSelected()) {
+        try {
+          await BluetoothPrinter.printText(buildConsolidatedCreditInvoiceThermalText(invoices));
+          showToast('Facturas seleccionadas enviadas por Bluetooth', 'success');
+        } catch (err) {
+          showToast('No se pudo imprimir directo por Bluetooth. Se abrira impresion normal.', 'warning');
+          openCombinedCreditPrint('Facturas seleccionadas', [buildConsolidatedCreditInvoicePrintSection(invoices)], buildConsolidatedCreditInvoiceThermalText(invoices));
+        }
+        return;
       }
+
+      const printerType = getEffectivePrinterType();
+      if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
+        generateConsolidatedCreditInvoicePDF(invoices);
+        return;
+      }
+
+      openCombinedCreditPrint('Facturas seleccionadas', [buildConsolidatedCreditInvoicePrintSection(invoices)], buildConsolidatedCreditInvoiceThermalText(invoices));
     }
 
     function selectVisibleCreditPayments(select) {
@@ -10841,6 +11102,185 @@
       ].filter(Boolean).join('\n');
     }
 
+    function generateConsolidatedCreditPaymentPDF(paymentsSelected) {
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const printerType = getEffectivePrinterType();
+      let format, pageWidth, pageHeight, isThermal, is58mm, formatLabel;
+
+      switch (printerType) {
+        case 'thermal_58':
+          format = [58, 200]; pageWidth = 58; pageHeight = 200;
+          isThermal = true; is58mm = true; formatLabel = 'Termica 58mm';
+          break;
+        case 'thermal_80':
+          format = [80, 200]; pageWidth = 80; pageHeight = 200;
+          isThermal = true; is58mm = false; formatLabel = 'Termica 80mm';
+          break;
+        case 'pdf':
+        case 'standard':
+        default:
+          if (AppState.config.paper_size === 'a4') {
+            format = 'a4'; pageWidth = 210; pageHeight = 297; formatLabel = 'A4';
+          } else {
+            format = 'letter'; pageWidth = 216; pageHeight = 279; formatLabel = 'Carta';
+          }
+          isThermal = false; is58mm = false;
+          break;
+      }
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
+      const margin = isThermal ? 3 : 20;
+      const contentWidth = pageWidth - (margin * 2);
+      const firstPayment = paymentsSelected[0] || {};
+      const total = paymentsSelected.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+      const clientSales = getRecords('sale').filter(s => s.payment_type === 'credito' && s.client_name === firstPayment.client_name);
+      const allPayments = getRecords('payment');
+      const clientPending = clientSales.reduce((sum, sale) => {
+        const paid = allPayments
+          .filter(payment => payment.sale_id === sale.__backendId)
+          .reduce((paymentSum, payment) => paymentSum + (payment.amount || 0), 0);
+        return sum + Math.max(0, (sale.sale_total || 0) - paid);
+      }, 0);
+      let yPos = margin + 2;
+
+      const addPageIfNeeded = (needed = 6) => {
+        if (yPos + needed <= pageHeight - margin) return;
+        doc.addPage();
+        yPos = margin + 2;
+      };
+      const drawLine = (thick = false) => {
+        addPageIfNeeded(4);
+        doc.setDrawColor(isThermal ? 0 : 200, isThermal ? 0 : 200, isThermal ? 0 : 200);
+        doc.setLineWidth(thick ? 0.5 : 0.2);
+        doc.line(margin, yPos, pageWidth - margin, yPos);
+        yPos += isThermal ? 3 : 5;
+      };
+
+      if (AppState.config.company_logo) {
+        try {
+          const logoWidth = isThermal ? (is58mm ? 25 : 35) : 40;
+          const logoHeight = logoWidth * 0.5;
+          doc.addImage(AppState.config.company_logo, 'JPEG', pageWidth / 2 - logoWidth / 2, yPos, logoWidth, logoHeight);
+          yPos += logoHeight + (isThermal ? 2 : 5);
+        } catch (e) {}
+      }
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(isThermal ? 10 : 20);
+      doc.text(isThermal ? String(AppState.config.company_name || '').toUpperCase() : AppState.config.company_name, pageWidth / 2, yPos, { align: 'center' });
+      yPos += isThermal ? 4 : 8;
+
+      doc.setFont(undefined, isThermal ? 'bold' : 'normal');
+      doc.setFontSize(isThermal ? 7 : 10);
+      doc.text(AppState.config.company_slogan || '', pageWidth / 2, yPos, { align: 'center' });
+      yPos += isThermal ? 3 : 5;
+
+      if (AppState.config.company_rfc) {
+        doc.setFontSize(isThermal ? 6 : 8);
+        doc.text('RNC: ' + AppState.config.company_rfc, pageWidth / 2, yPos, { align: 'center' });
+        yPos += isThermal ? 3 : 4;
+      }
+
+      yPos += 2;
+      drawLine(true);
+
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(isThermal ? 10 : 16);
+      doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
+      doc.text('ABONOS SELECCIONADOS', pageWidth / 2, yPos, { align: 'center' });
+      yPos += isThermal ? 5 : 8;
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(isThermal ? 8 : 10);
+      doc.setFont(undefined, isThermal ? 'bold' : 'normal');
+      doc.text('Fecha: ' + fmt.dateTime(new Date().toISOString()), margin, yPos);
+      yPos += isThermal ? 4 : 6;
+      doc.text('Cliente: ' + (firstPayment.client_name || ''), margin, yPos);
+      yPos += isThermal ? 4 : 6;
+      doc.text(paymentsSelected.length + ' abono(s) seleccionado(s)', margin, yPos);
+      yPos += isThermal ? 4 : 6;
+      drawLine();
+
+      if (isThermal) {
+        doc.setFontSize(8);
+        paymentsSelected.forEach(payment => {
+          const sale = AppState.data.find(r => r.__backendId === payment.sale_id);
+          const salePayments = getRecords('payment').filter(p => p.sale_id === payment.sale_id);
+          const paidUntilThis = salePayments
+            .filter(p => p.date <= payment.date)
+            .reduce((sum, p) => sum + (p.amount || 0), 0);
+          const remaining = Math.max(0, (sale?.sale_total || 0) - paidUntilThis);
+          addPageIfNeeded(24);
+          doc.setFont(undefined, 'bold');
+          doc.text('Factura: ' + (payment.invoice_number || ''), margin, yPos);
+          yPos += 4;
+          doc.text('Fecha: ' + fmt.dateTime(payment.date), margin, yPos);
+          yPos += 4;
+          doc.splitTextToSize(String(sale?.material_name || '').toUpperCase(), contentWidth).forEach(line => {
+            addPageIfNeeded(4);
+            doc.text(line, margin, yPos);
+            yPos += 4;
+          });
+          doc.text('Abono: ' + fmt.currency(payment.amount || 0), margin, yPos);
+          yPos += 4;
+          doc.text('Falta: ' + fmt.currency(remaining), margin, yPos);
+          yPos += 4;
+          drawLine();
+        });
+      } else {
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'bold');
+        doc.setFillColor(240, 240, 240);
+        doc.rect(margin, yPos - 4, contentWidth, 8, 'F');
+        doc.text('Factura', margin + 2, yPos);
+        doc.text('Fecha', margin + 35, yPos);
+        doc.text('Material', margin + 75, yPos);
+        doc.text('Abono', pageWidth - margin, yPos, { align: 'right' });
+        yPos += 8;
+        doc.setFont(undefined, 'normal');
+        paymentsSelected.forEach(payment => {
+          const sale = AppState.data.find(r => r.__backendId === payment.sale_id);
+          addPageIfNeeded(10);
+          const material = doc.splitTextToSize(String(sale?.material_name || ''), 55)[0] || '';
+          doc.text(String(payment.invoice_number || ''), margin + 2, yPos);
+          doc.text(fmt.dateTime(payment.date), margin + 35, yPos);
+          doc.text(material, margin + 75, yPos);
+          doc.text(fmt.currency(payment.amount || 0), pageWidth - margin, yPos, { align: 'right' });
+          yPos += 7;
+        });
+        drawLine();
+      }
+
+      addPageIfNeeded(isThermal ? 24 : 30);
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(isThermal ? 12 : 14);
+      doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
+      doc.text('TOTAL ABONADO:', isThermal ? margin : pageWidth - margin - 65, yPos);
+      doc.text(fmt.currency(total), pageWidth - margin, yPos, { align: 'right' });
+      yPos += isThermal ? 5 : 8;
+      doc.setFontSize(isThermal ? 8 : 11);
+      doc.setTextColor(217, 119, 6);
+      doc.text('Falta por pagar cliente:', isThermal ? margin : pageWidth - margin - 65, yPos);
+      doc.text(fmt.currency(clientPending), pageWidth - margin, yPos, { align: 'right' });
+
+      doc.setTextColor(0, 0, 0);
+      yPos += isThermal ? 8 : 15;
+      drawLine(true);
+      doc.setFontSize(isThermal ? 8 : 9);
+      doc.setTextColor(isThermal ? 0 : 100, isThermal ? 0 : 100, isThermal ? 0 : 100);
+      doc.text('COMPROBANTE CONSOLIDADO', pageWidth / 2, yPos, { align: 'center' });
+
+      const fileName = 'abonos_credito_seleccionados_' + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
+      doc.save(fileName);
+      showToast('PDF descargado: Abonos seleccionados (' + formatLabel + ')');
+    }
+
     function printSelectedCreditPayments() {
       const selectedIds = Array.from(document.querySelectorAll('.credit-payment-check:checked')).map(cb => cb.id.replace('paychk_', ''));
       if (selectedIds.length === 0) {
@@ -10851,6 +11291,22 @@
       const selectedPayments = selectedIds
         .map(id => AppState.data.find(r => r.__backendId === id))
         .filter(Boolean);
+
+      if (isBluetoothPrinterSelected()) {
+        BluetoothPrinter.printText(buildConsolidatedCreditPaymentThermalText(selectedPayments))
+          .then(() => showToast('Abonos seleccionados enviados por Bluetooth', 'success'))
+          .catch(err => {
+            console.error(err);
+            showToast('No se pudo imprimir por Bluetooth', 'error');
+          });
+        return;
+      }
+
+      const printerType = getEffectivePrinterType();
+      if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
+        generateConsolidatedCreditPaymentPDF(selectedPayments);
+        return;
+      }
 
       openCombinedCreditPrint('Abonos seleccionados', [buildConsolidatedCreditPaymentPrintSection(selectedPayments)], buildConsolidatedCreditPaymentThermalText(selectedPayments));
     }
