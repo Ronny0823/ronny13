@@ -8421,7 +8421,7 @@
             this.encodeBluetoothText('\x1ba\x01'),
             new Uint8Array([0x1d, 0x76, 0x30, 0x00, bytesPerRow & 0xff, (bytesPerRow >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff]),
             raster,
-            this.encodeBluetoothText('\n')
+            this.encodeBluetoothText('\n\n')
           ]);
         } catch (error) {
           console.warn('No se pudo preparar el logo para Bluetooth:', error);
@@ -8431,7 +8431,10 @@
 
       async buildInvoiceBytes(invoice) {
         const logoBytes = await this.logoImageBytes();
-        const text = this.buildInvoiceText(invoice, { skipInit: logoBytes.length > 0 });
+        const text = this.buildInvoiceText(invoice, {
+          logoPrinted: logoBytes.length > 0,
+          skipInit: logoBytes.length > 0
+        });
         if (!logoBytes.length) return this.encodeBluetoothText(text);
 
         return this.concatBytes([
@@ -8533,16 +8536,19 @@
           '\x1b@',
           this.charsetCommand()
         ];
+        const headerRows = [
+          '\x1ba\x01',
+          '\x1b!\x00',
+          options.logoPrinted ? '' : '\x1d!\x01',
+          options.logoPrinted ? '' : '\x1bE\x01' + center(AppState.config.company_name || '') + '\x1bE\x00',
+          options.logoPrinted ? '' : '\x1d!\x00',
+          AppState.config.company_slogan ? center(AppState.config.company_slogan) : '',
+          AppState.config.company_rfc ? center('RNC: ' + AppState.config.company_rfc) : ''
+        ].filter(Boolean);
 
         const rows = [
           ...initRows,
-          '\x1ba\x01',
-          '\x1b!\x00',
-          '\x1d!\x01',
-          '\x1bE\x01' + center(AppState.config.company_name || '') + '\x1bE\x00',
-          '\x1d!\x00',
-          center(AppState.config.company_slogan || ''),
-      AppState.config.company_rfc ? center('RNC: ' + AppState.config.company_rfc) : '',
+          ...headerRows,
           thickLine,
           '\x1bE\x01FACTURA\x1bE\x00',
           center(invoice.invoice_number || ''),
