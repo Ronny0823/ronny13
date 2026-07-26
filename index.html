@@ -8421,7 +8421,7 @@
             this.encodeBluetoothText('\x1ba\x01'),
             new Uint8Array([0x1d, 0x76, 0x30, 0x00, bytesPerRow & 0xff, (bytesPerRow >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff]),
             raster,
-            this.encodeBluetoothText('\n\n')
+            this.encodeBluetoothText('\n')
           ]);
         } catch (error) {
           console.warn('No se pudo preparar el logo para Bluetooth:', error);
