@@ -8358,7 +8358,90 @@
         return '';
       },
 
-      buildInvoiceText(invoice) {
+      concatBytes(parts) {
+        const totalLength = parts.reduce((sum, part) => sum + (part?.length || 0), 0);
+        const output = new Uint8Array(totalLength);
+        let offset = 0;
+        parts.forEach(part => {
+          if (!part?.length) return;
+          output.set(part, offset);
+          offset += part.length;
+        });
+        return output;
+      },
+
+      async logoImageBytes() {
+        const logo = AppState.config.company_logo;
+        if (!logo) return new Uint8Array();
+
+        try {
+          const img = new Image();
+          img.decoding = 'async';
+          img.src = logo;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+
+          const bluetoothMode = AppState.config.bluetooth_print_mode || 'thermal_80';
+          const maxWidth = bluetoothMode === 'thermal_58' ? 288 : 384;
+          const targetWidth = Math.min(maxWidth, bluetoothMode === 'thermal_58' ? 220 : 300);
+          const scale = Math.min(1, targetWidth / Math.max(1, img.naturalWidth || img.width));
+          const width = Math.max(8, Math.floor((img.naturalWidth || img.width) * scale));
+          const height = Math.max(8, Math.floor((img.naturalHeight || img.height) * scale));
+          const bytesPerRow = Math.ceil(width / 8);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = bytesPerRow * 8;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) return new Uint8Array();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, Math.floor((canvas.width - width) / 2), 0, width, height);
+
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          const raster = new Uint8Array(bytesPerRow * height);
+          for (let y = 0; y < height; y++) {
+            for (let xByte = 0; xByte < bytesPerRow; xByte++) {
+              let value = 0;
+              for (let bit = 0; bit < 8; bit++) {
+                const x = xByte * 8 + bit;
+                const idx = (y * canvas.width + x) * 4;
+                const alpha = pixels[idx + 3];
+                const luminance = (pixels[idx] * 0.299) + (pixels[idx + 1] * 0.587) + (pixels[idx + 2] * 0.114);
+                if (alpha > 40 && luminance < 180) value |= 0x80 >> bit;
+              }
+              raster[y * bytesPerRow + xByte] = value;
+            }
+          }
+
+          return this.concatBytes([
+            this.encodeBluetoothText('\x1ba\x01'),
+            new Uint8Array([0x1d, 0x76, 0x30, 0x00, bytesPerRow & 0xff, (bytesPerRow >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff]),
+            raster,
+            this.encodeBluetoothText('\n')
+          ]);
+        } catch (error) {
+          console.warn('No se pudo preparar el logo para Bluetooth:', error);
+          return new Uint8Array();
+        }
+      },
+
+      async buildInvoiceBytes(invoice) {
+        const logoBytes = await this.logoImageBytes();
+        const text = this.buildInvoiceText(invoice, { skipInit: logoBytes.length > 0 });
+        if (!logoBytes.length) return this.encodeBluetoothText(text);
+
+        return this.concatBytes([
+          this.encodeBluetoothText('\x1b@' + this.charsetCommand() + '\x1ba\x01'),
+          logoBytes,
+          this.encodeBluetoothText(text)
+        ]);
+      },
+
+      buildInvoiceText(invoice, options = {}) {
         const bluetoothMode = AppState.config.bluetooth_print_mode || 'thermal_80';
         const lineWidth = bluetoothMode === 'thermal_58' ? 32 : 42;
         const line = '-'.repeat(lineWidth);
@@ -8446,9 +8529,13 @@
           item('Subtotal:', fmt.currency(invoice.sale_total))
         ];
 
-        const rows = [
+        const initRows = options.skipInit ? [] : [
           '\x1b@',
-          this.charsetCommand(),
+          this.charsetCommand()
+        ];
+
+        const rows = [
+          ...initRows,
           '\x1ba\x01',
           '\x1b!\x00',
           '\x1d!\x01',
@@ -8741,7 +8828,7 @@
       },
 
       async printInvoice(invoice) {
-        await this.printText(this.buildInvoiceText(invoice));
+        await this.writeBytes(await this.buildInvoiceBytes(invoice));
       }
     };
 
