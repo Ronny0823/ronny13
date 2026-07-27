@@ -8322,33 +8322,42 @@
         return new Uint8Array(bytes);
       },
 
-      stripSpanishMarks(text) {
+      sanitizeBluetoothText(text) {
         return String(text || '')
+          .replace(/[\u00a0\u1680\u180e\u2000-\u200d\u202f\u205f\u2060\u3000\ufeff]/g, ' ')
+          .replace(/[^\S\r\n\t ]+/g, ' ')
+          .replace(/RD\$\s+/g, 'RD$')
+          .replace(/\$\s+/g, '$');
+      },
+
+      stripSpanishMarks(text) {
+        return this.sanitizeBluetoothText(text)
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '');
       },
 
       encodeBluetoothText(text) {
         const charset = AppState.config.bluetooth_charset || 'cp850';
+        const cleanText = this.sanitizeBluetoothText(text);
 
         if (charset === 'utf8') {
-          return new TextEncoder().encode(String(text || ''));
+          return new TextEncoder().encode(cleanText);
         }
 
         if (charset === 'ascii') {
-          return new TextEncoder().encode(this.stripSpanishMarks(text));
+          return new TextEncoder().encode(this.stripSpanishMarks(cleanText));
         }
 
         if (charset === 'cp1252') {
           const bytes = [];
-          for (const char of String(text || '')) {
+          for (const char of cleanText) {
             const code = char.charCodeAt(0);
             bytes.push(code <= 255 ? code : 63);
           }
           return new Uint8Array(bytes);
         }
 
-        return this.encodeSpanishEscPos(text);
+        return this.encodeSpanishEscPos(cleanText);
       },
 
       charsetCommand() {
@@ -8420,13 +8429,23 @@
           return this.concatBytes([
             this.encodeBluetoothText('\x1ba\x01'),
             new Uint8Array([0x1d, 0x76, 0x30, 0x00, bytesPerRow & 0xff, (bytesPerRow >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff]),
-            raster,
-            this.encodeBluetoothText('\n')
+            raster
           ]);
         } catch (error) {
           console.warn('No se pudo preparar el logo para Bluetooth:', error);
           return new Uint8Array();
         }
+      },
+
+      async buildThermalBytes(text) {
+        const logoBytes = await this.logoImageBytes();
+        if (!logoBytes.length) return this.encodeBluetoothText(text);
+
+        return this.concatBytes([
+          this.encodeBluetoothText('\x1b@' + this.charsetCommand() + '\x1ba\x01'),
+          logoBytes,
+          this.encodeBluetoothText(String(text || ''))
+        ]);
       },
 
       async buildInvoiceBytes(invoice) {
@@ -8641,14 +8660,15 @@
 
       thermalHeader(title, subtitle = '') {
         const h = this.helpers();
+        const hasLogo = !!AppState.config.company_logo;
         return [
           '\x1b@',
           this.charsetCommand(),
           '\x1ba\x01',
           '\x1b!\x00',
-          '\x1d!\x01',
-          '\x1bE\x01' + h.center(AppState.config.company_name || '') + '\x1bE\x00',
-          '\x1d!\x00',
+          hasLogo ? '' : '\x1d!\x01',
+          hasLogo ? '' : '\x1bE\x01' + h.center(AppState.config.company_name || '') + '\x1bE\x00',
+          hasLogo ? '' : '\x1d!\x00',
           h.center(AppState.config.company_slogan || ''),
       AppState.config.company_rfc ? h.center('RNC: ' + AppState.config.company_rfc) : '',
           h.thickLine,
@@ -8830,7 +8850,7 @@
       },
 
       async printText(text) {
-        await this.writeBytes(this.encodeBluetoothText(text));
+        await this.writeBytes(await this.buildThermalBytes(text));
       },
 
       async printInvoice(invoice) {
