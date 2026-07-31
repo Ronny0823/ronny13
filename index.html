@@ -2221,7 +2221,7 @@
       document.body.style.overflow = 'hidden';
     }
 
-    function closeSidebar() {
+    function closeSidebar(instant = false) {
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('mobileOverlay');
       
@@ -2230,17 +2230,40 @@
       overlay.classList.add('opacity-0');
       AppState.sidebarOpen = false;
       document.body.style.overflow = '';
+
+      if (instant) {
+        overlay.classList.add('hidden');
+        return;
+      }
       
       setTimeout(() => {
         overlay.classList.add('hidden');
       }, 300);
     }
 
-    async function navigate(page) {
+    let navigationSyncTimer = null;
+    let lastNavigationSyncAt = 0;
+
+    function scheduleNavigationSync(page) {
+      clearTimeout(navigationSyncTimer);
+      const elapsed = Date.now() - lastNavigationSyncAt;
+      const delay = elapsed > 30000 ? 1200 : 30000 - elapsed;
+
+      navigationSyncTimer = setTimeout(() => {
+        lastNavigationSyncAt = Date.now();
+        syncCurrentUserFromCloud({ silent: true }).then((changed) => {
+          if (changed && AppState.currentPage === page) {
+            renderPageQuietly();
+          }
+        });
+      }, delay);
+    }
+
+    function navigate(page) {
       AppState.currentPage = page;
       
       if (window.innerWidth <= 900) {
-        closeSidebar();
+        closeSidebar(true);
       }
       
       document.querySelectorAll('.nav-item').forEach(item => {
@@ -2265,13 +2288,7 @@
       document.getElementById('page-title').textContent = titles[page] || page;
       
       renderPage();
-      lucide.createIcons();
-
-      syncCurrentUserFromCloud({ silent: true }).then((changed) => {
-        if (changed && AppState.currentPage === page) {
-          renderPageQuietly();
-        }
-      });
+      scheduleNavigationSync(page);
     }
 
     document.addEventListener('keydown', (e) => {
