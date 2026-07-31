@@ -937,6 +937,20 @@
       const date = new Date(`${value}T12:00:00`);
       return !Number.isNaN(date.getTime());
     };
+    const buildSaleDateTime = (dateKey) => {
+      const createdAt = new Date();
+      if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return createdAt.toISOString();
+      const [year, month, day] = dateKey.split('-').map(Number);
+      return new Date(
+        year,
+        month - 1,
+        day,
+        createdAt.getHours(),
+        createdAt.getMinutes(),
+        createdAt.getSeconds(),
+        createdAt.getMilliseconds()
+      ).toISOString();
+    };
     const showExcelLibraryError = () => {
       showToast('No se pudo cargar la libreria de Excel. Revisa tu conexion e intenta de nuevo.', 'error');
     };
@@ -2250,9 +2264,14 @@
       };
       document.getElementById('page-title').textContent = titles[page] || page;
       
-      await syncCurrentUserFromCloud({ silent: true });
       renderPage();
       lucide.createIcons();
+
+      syncCurrentUserFromCloud({ silent: true }).then((changed) => {
+        if (changed && AppState.currentPage === page) {
+          renderPageQuietly();
+        }
+      });
     }
 
     document.addEventListener('keydown', (e) => {
@@ -4580,7 +4599,7 @@
       const materialLabel = saleItems.length === 1 ? firstItem.material_name : 'Varios productos';
       const quantityTotal = saleItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
       const invNum = generateInvoiceNum();
-      const now = saleDate ? new Date(`${saleDate}T12:00:00`).toISOString() : new Date().toISOString();
+      const now = buildSaleDateTime(saleDate);
       
       AppState.saleSaving = true;
       btn.disabled = true;
