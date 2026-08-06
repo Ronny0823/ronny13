@@ -13217,10 +13217,6 @@
             showToast('Viaje directo actualizado correctamente');
           }
         } else {
-          if (AppState.data.length >= 999) {
-            showToast('Limite de registros alcanzado', 'error');
-            return;
-          }
           data.__backendId = 'dtrip_' + Date.now();
           AppState.data.push(data);
           AppState.saveUserData();
