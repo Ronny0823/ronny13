@@ -6746,25 +6746,32 @@
               <span class="text-xs text-slate-500">${filteredPayments.length} en el cuadre</span>
             </div>
             ${filteredPayments.length === 0 ? '<p class="text-slate-500 text-sm">No hay pagos ni abonos en este periodo</p>' : `
-              <div class="overflow-x-auto">
+              <div class="overflow-x-auto rounded-xl border border-slate-700/70 bg-slate-950/30">
                 <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-xs uppercase text-slate-500 border-b border-slate-800">
-                      <th class="py-2 pr-3">Persona</th>
-                      <th class="py-2 pr-3">Factura</th>
-                      <th class="py-2 pr-3">Tipo</th>
-                      <th class="py-2 pr-3">Metodo</th>
-                      <th class="py-2 text-right">Monto</th>
+                  <thead class="bg-slate-900/90">
+                    <tr class="text-left text-xs uppercase text-slate-400 border-b border-slate-700">
+                      <th class="py-3 px-4">Persona</th>
+                      <th class="py-3 px-4">Factura</th>
+                      <th class="py-3 px-4">Tipo</th>
+                      <th class="py-3 px-4">Por donde pago</th>
+                      <th class="py-3 px-4 text-right">Monto</th>
                     </tr>
                   </thead>
                   <tbody>
                     ${filteredPayments.slice().sort((a, b) => new Date(b.payment.date) - new Date(a.payment.date)).slice(0, 10).map(({ payment, sale }) => `
-                      <tr class="border-b border-slate-800/70">
-                        <td class="py-3 pr-3 text-slate-300 font-medium">${escapeHtml(payment.client_name || sale?.client_name || 'Sin cliente')}</td>
-                        <td class="py-3 pr-3 text-slate-400">${escapeHtml(payment.invoice_number || sale?.invoice_number || 'S/F')}</td>
-                        <td class="py-3 pr-3 text-slate-400">${payment.is_full_payment ? 'Pago total' : 'Abono'}</td>
-                        <td class="py-3 pr-3 text-slate-400">${escapeHtml(payment.method || '-')}</td>
-                        <td class="py-3 text-right font-mono text-emerald-400">${fmt.currency(payment.amount || 0)}</td>
+                      <tr class="border-b border-slate-800/70 hover:bg-slate-800/35 transition-colors">
+                        <td class="py-3 px-4 text-slate-200 font-semibold">${escapeHtml(payment.client_name || sale?.client_name || 'Sin cliente')}</td>
+                        <td class="py-3 px-4 text-slate-400 font-mono">${escapeHtml(payment.invoice_number || sale?.invoice_number || 'S/F')}</td>
+                        <td class="py-3 px-4">
+                          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${payment.is_full_payment ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'}">
+                            ${payment.is_full_payment ? 'Pago total' : 'Abono'}
+                          </span>
+                        </td>
+                        <td class="py-3 px-4">
+                          <div class="text-slate-200 font-medium">${escapeHtml(payment.notes || payment.method || '-')}</div>
+                          <div class="text-xs text-slate-500 mt-0.5">${escapeHtml(payment.method || '')}</div>
+                        </td>
+                        <td class="py-3 px-4 text-right font-mono text-emerald-400 font-bold">${fmt.currency(payment.amount || 0)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -7277,7 +7284,7 @@
           payment.invoice_number || sale?.invoice_number || '',
           payment.client_name || sale?.client_name || '',
           sale?.vehicle_plate || '',
-          payment.method || '',
+          payment.notes || payment.method || '',
           payment.is_full_payment ? 'PAGO TOTAL' : 'ABONO',
           amount,
           saleTotal || '',
@@ -7321,12 +7328,12 @@
         ['TOTAL CUADRE DEL PERIODO', contadoSales.length + paymentEntries.length, periodCashTotal],
         [],
         ['DETALLE DE PAGOS/ABONOS DEL CUADRE'],
-        ['PERSONA', 'FACTURA', 'TIPO', 'METODO', 'MONTO'],
+        ['PERSONA', 'FACTURA', 'TIPO', 'POR DONDE PAGO', 'MONTO'],
         ...paymentEntries.map(({ payment, sale }) => [
           payment.client_name || sale?.client_name || 'Sin cliente',
           payment.invoice_number || sale?.invoice_number || 'S/F',
           payment.is_full_payment ? 'PAGO TOTAL' : 'ABONO',
-          payment.method || '',
+          payment.notes || payment.method || '',
           toFiniteNumber(payment.amount, 0)
         ])
       ];
