@@ -6209,11 +6209,20 @@
         });
     }
 
-    function getReportCustomerPaymentStatus(sales) {
+    function getReportCustomerPaymentStatus(sales, paymentEntries = []) {
       const payments = getRecords('payment');
       const clientMap = new Map();
+      const reportSalesById = new Map();
 
       sales.forEach(sale => {
+        if (sale?.__backendId) reportSalesById.set(sale.__backendId, sale);
+      });
+
+      paymentEntries.forEach(({ sale }) => {
+        if (sale?.__backendId) reportSalesById.set(sale.__backendId, sale);
+      });
+
+      Array.from(reportSalesById.values()).forEach(sale => {
         const clientName = sale.client_name || 'Sin cliente';
         const saleTotal = toFiniteNumber(sale.sale_total, 0);
         const paidAmount = sale.payment_type === 'credito'
@@ -6260,7 +6269,7 @@
         clients,
         paidClients,
         pendingClients,
-        paidInvoices: sales.filter(sale => {
+          paidInvoices: Array.from(reportSalesById.values()).filter(sale => {
           const saleTotal = toFiniteNumber(sale.sale_total, 0);
           const paid = sale.payment_type === 'credito'
             ? payments.filter(payment => payment.sale_id === sale.__backendId).reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0)
@@ -6270,7 +6279,7 @@
             : 0;
           return pending <= 0.01;
         }).length,
-        pendingInvoices: sales.filter(sale => {
+        pendingInvoices: Array.from(reportSalesById.values()).filter(sale => {
           const saleTotal = toFiniteNumber(sale.sale_total, 0);
           const paid = payments.filter(payment => payment.sale_id === sale.__backendId).reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
           const pending = sale.payment_type === 'credito'
@@ -6522,7 +6531,7 @@
     function renderReports(container) {
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
-      const customerPaymentStatus = getReportCustomerPaymentStatus(filteredSales);
+      const customerPaymentStatus = getReportCustomerPaymentStatus(filteredSales, filteredPayments);
       const pendingClientPaymentReport = getPendingClientPaymentReport();
 
       const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
@@ -6755,7 +6764,7 @@
               <div class="rounded-lg border border-sky-500/20 bg-sky-500/5 p-4">
                 <div class="text-xs uppercase text-slate-500 font-semibold">Monto pagado</div>
                 <div class="text-2xl font-bold text-sky-400 font-mono mt-1">${fmt.currency(customerPaymentStatus.totalPaidAmount)}</div>
-                <div class="text-xs text-slate-500 mt-1">Segun ventas del filtro</div>
+                <div class="text-xs text-slate-500 mt-1">Segun ventas, pagos y abonos del filtro</div>
               </div>
               <div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
                 <div class="text-xs uppercase text-slate-500 font-semibold">Monto pendiente</div>
@@ -7182,7 +7191,7 @@
 
       const sales = getFilteredReportSales();
       const paymentEntries = getFilteredReportPayments();
-      const customerPaymentStatus = getReportCustomerPaymentStatus(sales);
+      const customerPaymentStatus = getReportCustomerPaymentStatus(sales, paymentEntries);
 
       const saleRows = sales.flatMap(s => {
         const saleDate = new Date(s.date);
