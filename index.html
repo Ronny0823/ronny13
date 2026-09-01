@@ -6549,6 +6549,7 @@
       const cashSales = filteredSales.filter(s => s.payment_type !== 'credito');
       const creditSales = filteredSales.filter(s => s.payment_type === 'credito');
       const cashRevenue = cashSales.reduce((a, s) => a + (s.sale_total || 0), 0);
+      const periodCashTotal = cashRevenue + totalPayments;
       const creditRevenue = creditSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const pendingCredit = creditSales.reduce((a, s) => a + Math.max(0, s.remaining_balance ?? ((s.sale_total || 0) - (s.amount_paid || 0))), 0);
       const paidCredit = Math.max(0, creditRevenue - pendingCredit);
@@ -6651,7 +6652,7 @@
             
             <div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
               <i data-lucide="info" class="w-3 h-3"></i>
-              <span>Mostrando ${filteredSales.length} transacciones</span>
+              <span>Mostrando ${filteredSales.length} venta(s) y ${filteredPayments.length} pago(s)/abono(s)</span>
             </div>
           </div>
 
@@ -6659,9 +6660,9 @@
 
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ingresos del Periodo</div>
-              <div class="text-2xl font-bold text-emerald-400 font-mono">${fmt.currency(totalRevenue)}</div>
-              <div class="text-xs text-slate-500 mt-1">${totalTransactions} ventas</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Cuadre del Periodo</div>
+              <div class="text-2xl font-bold text-emerald-400 font-mono">${fmt.currency(periodCashTotal)}</div>
+              <div class="text-xs text-slate-500 mt-1">Contado ${fmt.currency(cashRevenue)} + pagos/abonos ${fmt.currency(totalPayments)}</div>
             </div>
             <div class="glass rounded-xl p-5 border-l-4 border-blue-500">
               <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ticket Promedio</div>
@@ -6669,9 +6670,9 @@
               <div class="text-xs text-slate-500 mt-1">Promedio diario: ${fmt.currency(dailyAverage)}</div>
             </div>
             <div class="glass rounded-xl p-5 border-l-4 border-primary-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Contado</div>
-              <div class="text-2xl font-bold text-primary-400 font-mono">${fmt.currency(cashRevenue)}</div>
-              <div class="text-xs text-slate-500 mt-1">${cashSales.length} ventas pagadas</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ventas facturadas</div>
+              <div class="text-2xl font-bold text-primary-400 font-mono">${fmt.currency(totalRevenue)}</div>
+              <div class="text-xs text-slate-500 mt-1">${totalTransactions} venta(s) en el periodo</div>
             </div>
             <div class="glass rounded-xl p-5 border-l-4 border-purple-500">
               <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Credito pendiente</div>
@@ -7257,6 +7258,7 @@
       const totalCredito = creditoSales.reduce((a, s) => a + (Number(s.sale_total) || 0), 0);
       const totalGeneral = totalContado + totalCredito;
       const totalPayments = paymentEntries.reduce((a, { payment }) => a + toFiniteNumber(payment.amount, 0), 0);
+      const periodCashTotal = totalContado + totalPayments;
       const fullPaymentEntries = paymentEntries.filter(({ payment }) => payment.is_full_payment);
       const partialPaymentEntries = paymentEntries.filter(({ payment }) => !payment.is_full_payment);
       const paymentMethodTotals = paymentEntries.reduce((acc, { payment }) => {
@@ -7275,7 +7277,13 @@
         ['TIPO DE PAGO', 'CANTIDAD TBA', 'MONTO TOTAL'],
         ['CONTADO', contadoSales.length, totalContado],
         ['CREDITO', creditoSales.length, totalCredito],
-        ['TOTAL GENERAL', sales.length, totalGeneral]
+        ['TOTAL FACTURADO', sales.length, totalGeneral],
+        [],
+        ['RESUMEN DE CUADRE'],
+        ['CONCEPTO', 'CANTIDAD', 'MONTO'],
+        ['VENTAS DE CONTADO', contadoSales.length, totalContado],
+        ['PAGOS/ABONOS RECIBIDOS', paymentEntries.length, totalPayments],
+        ['TOTAL CUADRE DEL PERIODO', contadoSales.length + paymentEntries.length, periodCashTotal]
       ];
 
       const workbook = XLSX.utils.book_new();
@@ -7289,8 +7297,12 @@
       const summaryTitleRow = saleRows.length + 4;
       const summaryHeaderRow = saleRows.length + 5;
       const summaryTotalRow = saleRows.length + 8;
+      const cashSummaryTitleRow = saleRows.length + 10;
+      const cashSummaryHeaderRow = saleRows.length + 11;
+      const cashSummaryTotalRow = saleRows.length + 14;
       sheet['!merges'] = [
-        { s: { r: summaryTitleRow - 1, c: 0 }, e: { r: summaryTitleRow - 1, c: 2 } }
+        { s: { r: summaryTitleRow - 1, c: 0 }, e: { r: summaryTitleRow - 1, c: 2 } },
+        { s: { r: cashSummaryTitleRow - 1, c: 0 }, e: { r: cashSummaryTitleRow - 1, c: 2 } }
       ];
 
       const darkBlue = '0B2E6F';
@@ -7354,7 +7366,12 @@
       rangeStyle(`A${summaryHeaderRow + 1}:C${summaryTotalRow - 1}`, bodyStyle);
       rangeStyle(`A${summaryTotalRow}:C${summaryTotalRow}`, summaryTotalStyle);
       rangeStyle(`C${summaryHeaderRow + 1}:C${summaryTotalRow}`, summaryTotalStyle);
-      rangeStyle(`O1:O${summaryTotalRow}`, {
+      rangeStyle(`A${cashSummaryTitleRow}:C${cashSummaryTitleRow}`, summaryTitleStyle);
+      rangeStyle(`A${cashSummaryHeaderRow}:C${cashSummaryHeaderRow}`, headerStyle);
+      rangeStyle(`A${cashSummaryHeaderRow + 1}:C${cashSummaryTotalRow - 1}`, bodyStyle);
+      rangeStyle(`A${cashSummaryTotalRow}:C${cashSummaryTotalRow}`, summaryTotalStyle);
+      rangeStyle(`C${cashSummaryHeaderRow + 1}:C${cashSummaryTotalRow}`, summaryTotalStyle);
+      rangeStyle(`O1:O${cashSummaryTotalRow}`, {
         fill: { fgColor: { rgb: gridBlack } },
         border: baseBorder
       });
