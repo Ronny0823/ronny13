@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es" class="h-full">
 <head>
   <meta charset="UTF-8">
@@ -8626,6 +8626,11 @@
           ];
         };
         const invoiceItems = getInvoiceItems(invoice);
+        const invoiceNote = getInvoiceNote(invoice);
+        const noteRows = invoiceNote ? [
+          line,
+          ...labelBlock('NOTA', invoiceNote)
+        ] : [];
         const itemRows = invoiceItems.flatMap((saleItem, index) => [
           index > 0 ? line : '',
           '\x1bE\x01' + (saleItem.material_name || '').toUpperCase() + '\x1bE\x00',
@@ -8690,6 +8695,7 @@
           '\x1ba\x00',
           ...labelBlock('CLIENTE', invoice.client_name || ''),
           invoice.vehicle_plate ? item('Placa:', invoice.vehicle_plate) : '',
+          ...noteRows,
           line,
           '\x1bE\x01DETALLE\x1bE\x00',
           ...itemRows,
@@ -9110,6 +9116,18 @@
       }];
     }
 
+    function getInvoiceNote(inv) {
+      const invoiceNote = safeText(inv?.note || '');
+      if (invoiceNote) return invoiceNote;
+
+      const relatedSale = AppState.data.find(r =>
+        r.type === 'sale' &&
+        r.invoice_number === inv?.invoice_number &&
+        safeText(r.note || '')
+      );
+      return safeText(relatedSale?.note || '');
+    }
+
     function generateInvoicePDF(inv) {
       if (!window.jspdf?.jsPDF) {
         showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
@@ -9117,6 +9135,7 @@
       }
       const { jsPDF } = window.jspdf;
       const invoiceItems = getInvoiceItems(inv);
+      const invoiceNote = getInvoiceNote(inv);
       const isCreditoInvoice = inv.payment_type === 'credito';
       const creditSale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === inv.invoice_number);
       const creditPayments = creditSale ? getRecords('payment').filter(payment => payment.sale_id === creditSale.__backendId) : [];
@@ -9266,6 +9285,13 @@
           yPos += 4;
         }
 
+        if (invoiceNote) {
+          const noteLines = doc.splitTextToSize(`NOTA: ${invoiceNote}`, contentWidth);
+          doc.setFontSize(7);
+          doc.text(noteLines, margin, yPos);
+          yPos += (noteLines.length * 3) + 2;
+        }
+
         if (inv.iva_enabled) {
           doc.setFontSize(7);
           doc.text(`* INCLUYE IVA ${inv.iva_rate}%`, margin, yPos);
@@ -9351,6 +9377,13 @@
         if (inv.vehicle_plate) {
           doc.text(`Placa: ${inv.vehicle_plate}`, margin, yPos);
           yPos += 5;
+        }
+
+        if (invoiceNote) {
+          const noteLines = doc.splitTextToSize(`Nota: ${invoiceNote}`, contentWidth);
+          doc.setFontSize(9);
+          doc.text(noteLines, margin, yPos);
+          yPos += (noteLines.length * 4) + 2;
         }
 
         if (inv.iva_enabled) {
@@ -9553,6 +9586,7 @@
     function printInvoice(invoice, isTest = false) {
       const printerType = isBluetoothPrinterSelected() ? 'standard' : getEffectivePrinterType();
       const invoiceItems = getInvoiceItems(invoice);
+      const invoiceNote = getInvoiceNote(invoice);
 
       // Si es PDF o termica: generar PDF descargable (funciona en CUALQUIER navegador incluido moviles)
       if ((printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') && !isTest) {
@@ -9647,6 +9681,14 @@
         </div>
       ` : '';
 
+      const noteSection = invoiceNote ? `
+        <div class="line"></div>
+        <div style="margin: 5px 0;">
+          <div class="bold">Nota:</div>
+          <div style="white-space: pre-wrap; word-break: break-word;">${escapeHtml(invoiceNote)}</div>
+        </div>
+      ` : '';
+
       const logoSection = AppState.config.company_logo ? 
         `<div class="center"><img src="${AppState.config.company_logo}" class="logo" alt="Logo"></div>` : '';
 
@@ -9687,6 +9729,7 @@
         <div>Fecha: ${fmt.dateTime(invoice.date)}</div>
         <div>Cliente: ${invoice.client_name}</div>
         ${plateSection}
+        ${noteSection}
         <div class="line"></div>
         ${thermalItemRows}
         ${ivaSection}
@@ -9727,6 +9770,7 @@
             <div style="font-size: 11px; color: #6b7280;">FACTURAR A:</div>
             <div style="font-weight: bold; font-size: 14px;">${invoice.client_name}</div>
             ${invoice.vehicle_plate ? `<div style="margin-top: 5px;"><span class="plate-badge">${invoice.vehicle_plate}</span></div>` : ''}
+            ${invoiceNote ? `<div style="margin-top: 10px; max-width: 360px;"><div style="font-size: 11px; color: #6b7280;">NOTA:</div><div style="white-space: pre-wrap; word-break: break-word;">${escapeHtml(invoiceNote)}</div></div>` : ''}
           </div>
           <div style="text-align: right;">
             <div style="font-size: 24px; font-weight: bold; color: #f59e0b;">${invoice.invoice_number}</div>
