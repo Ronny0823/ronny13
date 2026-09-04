@@ -2098,7 +2098,7 @@
       supplierFilters: { search: '', material: '', status: '', dateFrom: '', dateTo: '' },
       creditFilters: { client: '', dateFrom: '', dateTo: '', status: 'all' },
       invoiceFilters: { client: '', dateFrom: '', dateTo: '' },
-      reportFilters: { period: '', dateFrom: '', dateTo: '' },
+      reportFilters: { period: '', dateFrom: '', dateTo: '', search: '', tab: 'resumen' },
       pendingClientReportFilters: { dateFrom: '', dateTo: '' },
       dailyMetersFilters: { search: '', dateFrom: '', dateTo: '', quickPeriod: '' },
       directTripFilters: { search: '', company: '', dateFrom: '', dateTo: '', status: 'all', quickPeriod: '' },
@@ -6533,6 +6533,20 @@
       const filteredPayments = getFilteredReportPayments();
       const customerPaymentStatus = getReportCustomerPaymentStatus(filteredSales, filteredPayments);
       const pendingClientPaymentReport = getPendingClientPaymentReport();
+      const activeReportTab = AppState.reportFilters.tab || 'resumen';
+      const reportTabs = [
+        { id: 'resumen', label: 'Resumen', icon: 'layout-dashboard' },
+        { id: 'cobranza', label: 'Cobranza', icon: 'wallet-cards' },
+        { id: 'ventas', label: 'Ventas', icon: 'receipt-text' },
+        { id: 'graficas', label: 'Graficas', icon: 'bar-chart-3' }
+      ];
+      const reportTabButton = tab => `
+        <button type="button" onclick="setReportTab('${tab.id}')"
+          class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${activeReportTab === tab.id ? 'bg-primary-500 text-slate-950' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700'}">
+          <i data-lucide="${tab.icon}" class="w-4 h-4"></i>
+          <span>${tab.label}</span>
+        </button>
+      `;
 
       const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const totalPayments = filteredPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0);
@@ -6656,8 +6670,15 @@
             </div>
           </div>
 
-          ${renderPendingClientPaymentReportCard(pendingClientPaymentReport)}
+          <div class="glass rounded-xl p-3 border border-slate-700/50">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              ${reportTabs.map(reportTabButton).join('')}
+            </div>
+          </div>
 
+          ${activeReportTab === 'cobranza' ? renderPendingClientPaymentReportCard(pendingClientPaymentReport) : ''}
+
+          <div class="${activeReportTab === 'resumen' ? 'space-y-4' : 'hidden'}">
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
               <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Cuadre del Periodo</div>
@@ -6738,6 +6759,9 @@
             </div>
           </div>
 
+          </div>
+
+          <div class="${activeReportTab === 'cobranza' ? 'space-y-6' : 'hidden'}">
           <div class="glass rounded-xl p-6">
             <div class="flex items-center justify-between mb-4">
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
@@ -6852,6 +6876,9 @@
             `}
           </div>
 
+          </div>
+
+          <div class="${activeReportTab === 'graficas' ? 'space-y-6' : 'hidden'}">
           <div class="glass rounded-xl p-6">
             <h3 class="font-semibold text-slate-200 mb-4 flex items-center gap-2">
               <i data-lucide="bar-chart-2" class="w-5 h-5 text-primary-400"></i> Ventas por Dia
@@ -6911,6 +6938,9 @@
             </div>
           </div>
 
+          </div>
+
+          <div class="${activeReportTab === 'cobranza' ? 'space-y-6' : 'hidden'}">
           <div class="glass rounded-xl p-6">
             <div class="flex items-center justify-between mb-4">
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
@@ -6952,6 +6982,9 @@
             `}
           </div>
 
+          </div>
+
+          <div class="${activeReportTab === 'ventas' ? 'space-y-6' : 'hidden'}">
           <div class="glass rounded-xl p-6">
             <div class="flex items-center justify-between mb-4">
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
@@ -6992,10 +7025,13 @@
               </div>
             `}
           </div>
+          </div>
         </div>
       `;
 
-      setTimeout(() => initReportChart(salesByDay), 100);
+      if (activeReportTab === 'graficas') {
+        setTimeout(() => initReportChart(salesByDay), 100);
+      }
     }
 
     function setReportPeriod(period) {
@@ -7019,6 +7055,11 @@
     function updateReportSearch() {
       AppState.reportFilters.search = document.getElementById('reportFilterSearch')?.value || '';
       renderFilterPage('reportFilterSearch');
+    }
+
+    function setReportTab(tab) {
+      AppState.reportFilters.tab = tab || 'resumen';
+      renderPage();
     }
 
     function updatePendingClientReportDates() {
