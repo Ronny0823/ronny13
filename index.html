@@ -955,6 +955,18 @@
       showToast('No se pudo cargar la libreria de Excel. Revisa tu conexion e intenta de nuevo.', 'error');
     };
 
+    // Evita recorrer todo el documento varias veces cuando una vista crea muchos iconos.
+    const nativeLucideCreateIcons = window.lucide?.createIcons?.bind(window.lucide);
+    let lucideRenderFrame = null;
+    function queueLucideIcons() {
+      if (!nativeLucideCreateIcons || lucideRenderFrame) return;
+      lucideRenderFrame = requestAnimationFrame(() => {
+        lucideRenderFrame = null;
+        nativeLucideCreateIcons();
+      });
+    }
+    if (nativeLucideCreateIcons) window.lucide.createIcons = queueLucideIcons;
+
     const SupabaseSync = {
       client: null,
       enabled: false,
@@ -1603,10 +1615,10 @@
       startCloudSync() {
         if (this.cloudSyncTimer) return;
         this.cloudSyncTimer = setInterval(async () => {
-          if (!this.currentUser?.username || this.recoveryMode) return;
+          if (!this.currentUser?.username || this.recoveryMode || document.hidden) return;
           const changed = await syncCurrentUserFromCloud({ silent: true });
           if (changed) renderPage();
-        }, 15000);
+        }, 60000);
       },
 
       stopCloudSync() {
@@ -1793,6 +1805,8 @@
     const DataBackup = {
       prefix: 'erp_',
       safetyPrefix: 'erp_safety_',
+      lastSavedAt: 0,
+      saveTimer: null,
 
       snapshot() {
         const keys = {};
@@ -1810,11 +1824,22 @@
         };
       },
 
-      saveSafetyBackup(username) {
+      saveSafetyBackup(username, { force = false } = {}) {
         if (!username) return;
+        const elapsed = Date.now() - this.lastSavedAt;
+        if (!force && elapsed < 5000) {
+          if (!this.saveTimer) {
+            this.saveTimer = setTimeout(() => {
+              this.saveTimer = null;
+              this.saveSafetyBackup(username, { force: true });
+            }, 5000 - elapsed);
+          }
+          return;
+        }
         try {
           const backup = this.snapshot();
           localStorage.setItem(`${this.safetyPrefix}${username}`, JSON.stringify(backup));
+          this.lastSavedAt = Date.now();
         } catch (error) {
           console.warn('No se pudo crear respaldo local', error);
         }
@@ -2104,6 +2129,13 @@
       directTripFilters: { search: '', company: '', dateFrom: '', dateTo: '', status: 'all', quickPeriod: '' },
       fuelFilters: { search: '', dateFrom: '', dateTo: '' },
       currentUser: null,
+      recordCache: null,
+      inventoryCache: null,
+
+      invalidateDataCache() {
+        this.recordCache = null;
+        this.inventoryCache = null;
+      },
 
       async loadUserData(username) {
         this.currentUser = username;
@@ -2122,6 +2154,7 @@
         } else {
           this.data = [];
         }
+        this.invalidateDataCache();
         
         const savedConfig = localStorage.getItem(`erp_config_${username}`);
         if (savedConfig) {
@@ -2146,9 +2179,10 @@
 
       saveUserData() {
         if (!this.currentUser) return;
-        DataBackup.saveSafetyBackup(this.currentUser);
+        this.invalidateDataCache();
         localStorage.setItem(`erp_data_${this.currentUser}`, JSON.stringify(this.data));
         localStorage.setItem(`erp_config_${this.currentUser}`, JSON.stringify(this.config));
+        DataBackup.saveSafetyBackup(this.currentUser);
         return SupabaseSync.flush();
       }
     };
@@ -2161,6 +2195,10 @@
       if (document.hidden || !AuthSystem.currentUser?.username) return;
       const synced = await syncCurrentUserFromCloud({ silent: true });
       if (synced) renderPage();
+    });
+
+    window.addEventListener('pagehide', () => {
+      if (AppState.currentUser) DataBackup.saveSafetyBackup(AppState.currentUser, { force: true });
     });
 
     function getEffectivePrinterType() {
@@ -2297,7 +2335,11 @@
       }
     });
 
+    let viewportUpdateFrame = null;
     window.addEventListener('resize', () => {
+      if (viewportUpdateFrame) return;
+      viewportUpdateFrame = requestAnimationFrame(() => {
+        viewportUpdateFrame = null;
       const mobileToggle = document.getElementById('mobileToggle');
       
       if (window.innerWidth > 900) {
@@ -2307,13 +2349,26 @@
       } else {
         mobileToggle.classList.remove('hidden');
       }
+      });
     });
 
     function getRecords(type) {
-      return AppState.data.filter(r => r.type === type);
+      const cache = AppState.recordCache;
+      if (cache?.data === AppState.data && cache.size === AppState.data.length) {
+        return cache.byType[type] || [];
+      }
+
+      const byType = Object.create(null);
+      AppState.data.forEach(record => {
+        const bucket = byType[record.type] || (byType[record.type] = []);
+        bucket.push(record);
+      });
+      AppState.recordCache = { data: AppState.data, size: AppState.data.length, byType };
+      return byType[type] || [];
     }
 
     function calcInventory() {
+      if (AppState.inventoryCache) return AppState.inventoryCache;
       const materials = getRecords('material');
       const entries = getRecords('entry');
       const sales = getRecords('sale');
@@ -2340,6 +2395,7 @@
         }
       });
       
+      AppState.inventoryCache = inv;
       return inv;
     }
 
@@ -2352,44 +2408,71 @@
     const CURRENCY_SYMBOL_OVERRIDES = {
       DOP: 'RD$'
     };
+    const numberFormatterCache = new Map();
+    const dateFormatterCache = new Map();
+    const currencyFormatterCache = new Map();
+    const currencySymbolCache = new Map();
+
+    function getNumberFormatter(locale, options) {
+      const key = `${locale}:${JSON.stringify(options)}`;
+      if (!numberFormatterCache.has(key)) {
+        numberFormatterCache.set(key, new Intl.NumberFormat(locale, options));
+      }
+      return numberFormatterCache.get(key);
+    }
+
+    function getCurrencyFormatter(code) {
+      if (!currencyFormatterCache.has(code)) {
+        currencyFormatterCache.set(code, new Intl.NumberFormat('es-DO', {
+          style: 'currency', currency: code, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2
+        }));
+      }
+      return currencyFormatterCache.get(code);
+    }
+
+    function getDateFormatter(locale, options) {
+      const key = `${locale}:${JSON.stringify(options)}`;
+      if (!dateFormatterCache.has(key)) {
+        dateFormatterCache.set(key, new Intl.DateTimeFormat(locale, options));
+      }
+      return dateFormatterCache.get(key);
+    }
 
     function formatCurrencyValue(value) {
       const code = AppState.config.currency || 'MXN';
       const amount = Number(value || 0);
 
       try {
-        const parts = new Intl.NumberFormat('es-DO', {
-          style: 'currency',
-          currency: code,
-          currencyDisplay: 'narrowSymbol',
-          minimumFractionDigits: 2
-        }).formatToParts(amount);
-
-        return parts.map(part => part.type === 'currency' ? getCurrencySymbol(code) : part.value).join('');
+        const formatter = getCurrencyFormatter(code);
+        if (!currencySymbolCache.has(code)) {
+          currencySymbolCache.set(code, formatter.formatToParts(0).find(part => part.type === 'currency')?.value || '');
+        }
+        const nativeSymbol = currencySymbolCache.get(code);
+        return formatter.format(amount).replace(nativeSymbol, getCurrencySymbol(code));
       } catch (error) {
-        return `${getCurrencySymbol(code)} ${amount.toLocaleString('es-DO', {
+        return `${getCurrencySymbol(code)} ${getNumberFormatter('es-DO', {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2
-        })}`;
+        }).format(amount)}`;
       }
     }
 
     const fmt = {
       currency: (n) => formatCurrencyValue(n),
-      number: (n, d = 1) => (n || 0).toLocaleString('es-MX', {
+      number: (n, d = 1) => getNumberFormatter('es-MX', {
         minimumFractionDigits: d, maximumFractionDigits: d
-      }),
-      quantity: (n, max = 6) => (Number(n) || 0).toLocaleString('es-MX', {
+      }).format(n || 0),
+      quantity: (n, max = 6) => getNumberFormatter('es-MX', {
         minimumFractionDigits: 0,
         maximumFractionDigits: max
-      }),
-      date: (iso) => iso ? new Date(iso).toLocaleDateString('es-MX', {
+      }).format(Number(n) || 0),
+      date: (iso) => iso ? getDateFormatter('es-MX', {
         day: '2-digit', month: 'short', year: 'numeric'
-      }) : '-',
-      dateTime: (iso) => iso ? new Date(iso).toLocaleString('es-MX', {
+      }).format(new Date(iso)) : '-',
+      dateTime: (iso) => iso ? getDateFormatter('es-MX', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit'
-      }) : '-',
+      }).format(new Date(iso)) : '-',
       dateInput: (iso) => iso ? iso.split('T')[0] : ''
     };
 
@@ -2398,9 +2481,9 @@
       const match = String(dateKey).match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (!match) return fmt.date(dateKey);
       const [, year, month, day] = match;
-      return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('es-MX', {
+      return getDateFormatter('es-MX', {
         day: '2-digit', month: 'short', year: 'numeric'
-      });
+      }).format(new Date(Number(year), Number(month) - 1, Number(day)));
     }
 
     function getLocalDateKey(value) {
@@ -2695,23 +2778,34 @@
       }
     }
 
+    let currentCloudSyncPromise = null;
     async function syncCurrentUserFromCloud({ silent = false } = {}) {
       if (!AuthSystem.currentUser?.username || !SupabaseSync.client) return false;
+      if (currentCloudSyncPromise) return currentCloudSyncPromise;
+
+      currentCloudSyncPromise = (async () => {
+        try {
+          const username = AuthSystem.currentUser.username;
+          const beforeData = localStorage.getItem(`erp_data_${username}`) || '';
+          const beforeConfig = localStorage.getItem(`erp_config_${username}`) || '';
+          await SupabaseSync.flush();
+          await AppState.loadUserData(username);
+          const afterData = localStorage.getItem(`erp_data_${username}`) || '';
+          const afterConfig = localStorage.getItem(`erp_config_${username}`) || '';
+          const changed = beforeData !== afterData || beforeConfig !== afterConfig;
+          if (changed && !silent) showToast('Datos y configuracion actualizados desde la nube', 'success');
+          return changed;
+        } catch (error) {
+          console.warn('No se pudo sincronizar desde Supabase:', error.message || error);
+          if (!silent) showToast('No se pudo leer la nube. Revisa la conexion o Supabase.', 'error');
+          return false;
+        }
+      })();
+
       try {
-        const username = AuthSystem.currentUser.username;
-        const beforeData = localStorage.getItem(`erp_data_${username}`) || '';
-        const beforeConfig = localStorage.getItem(`erp_config_${username}`) || '';
-        await SupabaseSync.flush();
-        await AppState.loadUserData(username);
-        const afterData = localStorage.getItem(`erp_data_${username}`) || '';
-        const afterConfig = localStorage.getItem(`erp_config_${username}`) || '';
-        const changed = beforeData !== afterData || beforeConfig !== afterConfig;
-        if (changed && !silent) showToast('Datos y configuracion actualizados desde la nube', 'success');
-        return changed;
-      } catch (error) {
-        console.warn('No se pudo sincronizar desde Supabase:', error.message || error);
-        if (!silent) showToast('No se pudo leer la nube. Revisa la conexion o Supabase.', 'error');
-        return false;
+        return await currentCloudSyncPromise;
+      } finally {
+        currentCloudSyncPromise = null;
       }
     }
 
