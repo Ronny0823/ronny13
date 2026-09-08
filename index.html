@@ -6537,11 +6537,14 @@
     }
 
     function renderReports(container) {
+      const activeReportTab = AppState.reportFilters.tab || 'resumen';
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
-      const customerPaymentStatus = getReportCustomerPaymentStatus(filteredSales, filteredPayments);
-      const pendingClientPaymentReport = getPendingClientPaymentReport();
-      const activeReportTab = AppState.reportFilters.tab || 'resumen';
+      const emptyCustomerPaymentStatus = { clients: [], paidClients: [], pendingClients: [], paidInvoices: 0, pendingInvoices: 0, totalPaidAmount: 0, totalPendingAmount: 0 };
+      const customerPaymentStatus = activeReportTab === 'cobranza'
+        ? getReportCustomerPaymentStatus(filteredSales, filteredPayments)
+        : emptyCustomerPaymentStatus;
+      const pendingClientPaymentReport = activeReportTab === 'cobranza' ? getPendingClientPaymentReport() : null;
       const reportTabs = [
         { id: 'resumen', label: 'Resumen', icon: 'layout-dashboard' },
         { id: 'cobranza', label: 'Cobranza', icon: 'wallet-cards' },
@@ -6556,6 +6559,12 @@
         </button>
       `;
 
+      const recentPayments = activeReportTab === 'cobranza'
+        ? filteredPayments.slice().sort((a, b) => new Date(b.payment.date) - new Date(a.payment.date))
+        : [];
+      const recentSales = activeReportTab === 'ventas'
+        ? filteredSales.slice().sort((a, b) => new Date(b.date) - new Date(a.date))
+        : [];
       const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const totalPayments = filteredPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0);
       const fullPayments = filteredPayments.filter(item => item.payment.is_full_payment);
@@ -6790,7 +6799,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                    ${filteredPayments.slice().sort((a, b) => new Date(b.payment.date) - new Date(a.payment.date)).slice(0, 10).map(({ payment, sale }) => `
+                    ${recentPayments.slice(0, 10).map(({ payment, sale }) => `
                       <tr class="border-b border-slate-800/70 hover:bg-slate-800/35 transition-colors">
                         <td class="py-3 px-4 text-slate-200 font-semibold">${escapeHtml(payment.client_name || sale?.client_name || 'Sin cliente')}</td>
                         <td class="py-3 px-4 text-slate-400 font-mono">${escapeHtml(payment.invoice_number || sale?.invoice_number || 'S/F')}</td>
@@ -6970,7 +6979,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                    ${filteredPayments.slice().sort((a, b) => new Date(b.payment.date) - new Date(a.payment.date)).slice(0, 8).map(({ payment, sale }) => `
+                    ${recentPayments.slice(0, 8).map(({ payment, sale }) => `
                       <tr class="border-b border-slate-800/70">
                         <td class="py-3 pr-3 text-slate-300 font-medium">${fmt.date(payment.date)}</td>
                         <td class="py-3 pr-3 text-slate-400">${payment.invoice_number || sale?.invoice_number || 'S/F'}</td>
@@ -7014,7 +7023,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                    ${filteredSales.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8).map(s => `
+                    ${recentSales.slice(0, 8).map(s => `
                       <tr class="border-b border-slate-800/70">
                         <td class="py-3 pr-3 text-slate-300 font-medium">${s.invoice_number || 'S/F'}<div class="text-xs text-slate-600">${fmt.date(s.date)}</div></td>
                         <td class="py-3 pr-3 text-slate-400">${s.client_name || 'Sin cliente'}</td>
