@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es" class="h-full">
 <head>
   <meta charset="UTF-8">
@@ -2421,6 +2421,7 @@
     }
 
     let filterRenderTimer = null;
+    let reportSearchTimer = null;
     let isFilterRendering = false;
     let isTextComposing = false;
 
@@ -2460,7 +2461,14 @@
       const scrollState = { x: window.scrollX, y: window.scrollY };
 
       isFilterRendering = true;
-      renderPage();
+      if (AppState.currentPage === 'reports') {
+        const container = document.getElementById('content-area');
+        renderReports(container);
+        lucide.createIcons();
+        enhanceSearchInputs(container);
+      } else {
+        renderPage();
+      }
       isFilterRendering = false;
 
       if (focusState) {
@@ -7053,13 +7061,23 @@
     }
 
     function updateReportSearch() {
-      AppState.reportFilters.search = document.getElementById('reportFilterSearch')?.value || '';
-      renderFilterPage('reportFilterSearch');
+      const search = document.getElementById('reportFilterSearch')?.value || '';
+      clearTimeout(reportSearchTimer);
+      reportSearchTimer = setTimeout(() => {
+        AppState.reportFilters.search = search;
+        reportSearchTimer = null;
+        renderFilterPage('reportFilterSearch');
+      }, Math.max(250, getFilterRenderDelay()));
     }
 
     function setReportTab(tab) {
-      AppState.reportFilters.tab = tab || 'resumen';
-      renderPage();
+      const nextTab = tab || 'resumen';
+      if (AppState.reportFilters.tab === nextTab) return;
+      AppState.reportFilters.tab = nextTab;
+      const container = document.getElementById('content-area');
+      renderReports(container);
+      lucide.createIcons();
+      enhanceSearchInputs(container);
     }
 
     function updatePendingClientReportDates() {
