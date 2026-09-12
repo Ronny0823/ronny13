@@ -1113,6 +1113,7 @@
         }
 
         if (key.startsWith('erp_data_')) {
+          if (Array.isArray(remoteParsed) && !this.getDirtyKeys().has(key)) return remoteParsed;
           const records = new Map();
           [...(Array.isArray(remoteParsed) ? remoteParsed : []), ...(Array.isArray(localValue) ? localValue : [])].forEach(record => {
             if (!record) return;
@@ -1231,9 +1232,20 @@
 
         this.flushing = (async () => {
           while (this.pending.size) {
-            const rows = Array.from(this.pending.values());
+            let rows = Array.from(this.pending.values());
             this.pending.clear();
             try {
+              const remoteResponse = await this.client
+                .from(SUPABASE_CONFIG.table)
+                .select('key,value')
+                .in('key', rows.map(row => row.key));
+              if (remoteResponse.error) throw remoteResponse.error;
+              const remoteByKey = new Map((remoteResponse.data || []).map(row => [row.key, row.value]));
+              rows = rows.map(row => ({
+                ...row,
+                value: this.mergeValue(row.key, this.stringifyValue(row.value), remoteByKey.get(row.key))
+              }));
+              rows.forEach(row => this.setLocalOnly(row.key, this.stringifyValue(row.value)));
               const { error } = await this.client.from(SUPABASE_CONFIG.table).upsert(rows, { onConflict: 'key' });
               if (error) {
                 rows.forEach(row => this.pending.set(row.key, row));
@@ -1669,7 +1681,7 @@
           if (!this.currentUser?.username || this.recoveryMode || document.hidden) return;
           const changed = await syncCurrentUserFromCloud({ silent: true });
           if (changed) renderPage();
-        }, 60000);
+        }, 5000);
       },
 
       stopCloudSync() {
@@ -2246,6 +2258,13 @@
       if (document.hidden || !AuthSystem.currentUser?.username) return;
       const synced = await syncCurrentUserFromCloud({ silent: true });
       if (synced) renderPage();
+    });
+
+    window.addEventListener('online', async () => {
+      if (!AuthSystem.currentUser?.username) return;
+      const synced = await syncCurrentUserFromCloud({ silent: true });
+      if (synced) renderPageQuietly();
+      showToast('Conexión recuperada: aplicación y web sincronizadas', 'success');
     });
 
     window.addEventListener('pagehide', () => {
@@ -15965,7 +15984,6 @@
   </script>
 </body>
 </html>
-
 
 
 
