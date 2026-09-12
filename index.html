@@ -1021,7 +1021,11 @@
         if (this.hooksInstalled) return;
         const sync = this;
         localStorage.setItem = function(key, value) {
+          const previousValue = localStorage.getItem(key);
           sync.originalSetItem(key, value);
+          if (typeof key === 'string' && key.startsWith('erp_data_')) {
+            sync.trackRecordChanges(key, previousValue, value);
+          }
           if (sync.shouldSyncKey(key)) sync.queueUpsert(key, value);
         };
 
@@ -1100,6 +1104,41 @@
         return typeof value === 'string' ? value : JSON.stringify(value);
       },
 
+      getRecordId(record) {
+        return record && (record.__backendId || record.id || null);
+      },
+
+      getTombstoneKey(dataKey) {
+        return `erp_tombstones_${String(dataKey || '').replace(/^erp_data_/, '')}`;
+      },
+
+      trackRecordChanges(dataKey, previousRaw, nextRaw) {
+        const previous = this.parseStoredValue(previousRaw, []);
+        const next = this.parseStoredValue(nextRaw, []);
+        if (!Array.isArray(previous) || !Array.isArray(next)) return;
+        const previousIds = new Set(previous.map(record => this.getRecordId(record)).filter(Boolean));
+        const nextIds = new Set(next.map(record => this.getRecordId(record)).filter(Boolean));
+        const tombstoneKey = this.getTombstoneKey(dataKey);
+        const tombstones = this.parseStoredValue(localStorage.getItem(tombstoneKey), {});
+        let changed = false;
+        previousIds.forEach(id => {
+          if (!nextIds.has(id)) {
+            tombstones[id] = Date.now();
+            changed = true;
+          }
+        });
+        nextIds.forEach(id => {
+          if (!previousIds.has(id) && tombstones[id]) {
+            delete tombstones[id];
+            changed = true;
+          }
+        });
+        if (!changed) return;
+        const raw = JSON.stringify(tombstones);
+        this.originalSetItem(tombstoneKey, raw);
+        this.queueUpsert(tombstoneKey, raw);
+      },
+
       mergeValue(key, localRaw, remoteValue) {
         const localValue = this.parseStoredValue(localRaw, key.startsWith('erp_data_') || key === 'erp_users' ? [] : {});
         const remoteParsed = typeof remoteValue === 'string' ? this.parseStoredValue(remoteValue, remoteValue) : remoteValue;
@@ -1112,12 +1151,24 @@
           return Array.from(users.values());
         }
 
+        if (key.startsWith('erp_tombstones_')) {
+          const merged = { ...(remoteParsed || {}) };
+          Object.entries(localValue || {}).forEach(([id, deletedAt]) => {
+            merged[id] = Math.max(Number(merged[id] || 0), Number(deletedAt || 0));
+          });
+          return merged;
+        }
+
         if (key.startsWith('erp_data_')) {
-          if (Array.isArray(remoteParsed) && !this.getDirtyKeys().has(key)) return remoteParsed;
+          const tombstones = this.parseStoredValue(localStorage.getItem(this.getTombstoneKey(key)), {});
+          if (Array.isArray(remoteParsed) && !this.getDirtyKeys().has(key)) {
+            return remoteParsed.filter(record => !tombstones[this.getRecordId(record)]);
+          }
           const records = new Map();
           [...(Array.isArray(remoteParsed) ? remoteParsed : []), ...(Array.isArray(localValue) ? localValue : [])].forEach(record => {
             if (!record) return;
             const id = record.__backendId || record.id || JSON.stringify(record);
+            if (tombstones[id]) return;
             records.set(id, { ...(records.get(id) || {}), ...record });
           });
           return Array.from(records.values());
@@ -1160,7 +1211,7 @@
 
       async pullUser(username) {
         if (!this.client || !username) return;
-        const keys = ['erp_users', `erp_data_${username}`, `erp_config_${username}`];
+        const keys = ['erp_users', `erp_tombstones_${username}`, `erp_data_${username}`, `erp_config_${username}`];
         try {
           const { data, error } = await this.client
             .from(SUPABASE_CONFIG.table)
@@ -1172,7 +1223,7 @@
             return;
           }
 
-          (data || []).forEach(row => {
+          (data || []).sort((a, b) => Number(b.key.startsWith('erp_tombstones_')) - Number(a.key.startsWith('erp_tombstones_'))).forEach(row => {
             if (!this.shouldSyncKey(row.key)) return;
             const merged = this.mergeValue(row.key, localStorage.getItem(row.key), row.value);
             this.originalSetItem(row.key, this.stringifyValue(merged));
@@ -15984,7 +16035,5 @@
   </script>
 </body>
 </html>
-
-
 
 
