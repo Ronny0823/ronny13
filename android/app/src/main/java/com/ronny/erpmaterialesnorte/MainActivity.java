@@ -150,12 +150,15 @@ public class MainActivity extends Activity {
     }
 
     private boolean hasBluetoothPermission() {
-        return Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+        return Build.VERSION.SDK_INT < 31 || (
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+        );
     }
 
     private void requestBluetoothPermission() {
         if (Build.VERSION.SDK_INT >= 31 && !hasBluetoothPermission()) {
-            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, BLUETOOTH_PERMISSION);
+            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, BLUETOOTH_PERMISSION);
         }
     }
 
