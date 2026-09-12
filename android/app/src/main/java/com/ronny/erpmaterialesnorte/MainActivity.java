@@ -63,7 +63,7 @@ public class MainActivity extends Activity {
     private final Runnable autoSyncRetry = new Runnable() {
         @Override public void run() {
             if (networkValidated) notifyWebNetwork(true);
-            autoSyncHandler.postDelayed(this, 15000);
+            autoSyncHandler.postDelayed(this, 5000);
         }
     };
     private WebView activePrintWebView;
@@ -154,7 +154,7 @@ public class MainActivity extends Activity {
         });
         webView.loadUrl("file:///android_asset/index.html");
         startNetworkMonitoring();
-        autoSyncHandler.postDelayed(autoSyncRetry, 15000);
+        autoSyncHandler.postDelayed(autoSyncRetry, 5000);
         requestBluetoothPermission();
     }
 
