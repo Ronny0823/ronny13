@@ -106,6 +106,7 @@ public class MainActivity extends Activity {
                     "BluetoothPrinter.connect=async function(){return true;};" +
                     "BluetoothPrinter.writeBytes=async function(bytes){let s='';for(let i=0;i<bytes.length;i+=8192){s+=String.fromCharCode.apply(null,bytes.slice(i,i+8192));}let result=AndroidBluetooth.printBase64(btoa(s));if(result!=='ok')throw new Error(result||'No se pudo imprimir');};" +
                     "window.searchBluetoothPrinter=async function(){AndroidBluetooth.selectPrinter();let t=document.getElementById('configPrinterType');let m=document.getElementById('configBluetoothPrintMode');if(t)t.value='bluetooth';if(m&&!m.value)m.value='thermal_80';if(window.updatePrinterOptions)updatePrinterOptions();showToast('Selecciona una impresora emparejada');};" +
+                    "if(typeof printInvoiceById==='function'){printInvoiceById=async function(id){let inv=AppState.data.find(r=>r.__backendId===id);if(!inv)return;try{await BluetoothPrinter.printInvoice(inv);showToast('Factura impresa por Bluetooth','success');}catch(err){showToast(err&&err.message?err.message:'Falló Bluetooth directo','error');}};}" +
                     "})();";
                 view.evaluateJavascript(js, null);
             }
@@ -257,6 +258,26 @@ public class MainActivity extends Activity {
                     else if (newState == BluetoothProfile.STATE_DISCONNECTED) ready.countDown();
                 }
                 @Override public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                    String[] preferred = {
+                        "0000ffe1-0000-1000-8000-00805f9b34fb",
+                        "0000ff02-0000-1000-8000-00805f9b34fb",
+                        "0000fff2-0000-1000-8000-00805f9b34fb",
+                        "49535343-8841-43f4-a8d4-ecbe34729bb3"
+                    };
+                    for (String wanted : preferred) {
+                        for (BluetoothGattService service : gatt.getServices()) {
+                            for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
+                                if (wanted.equalsIgnoreCase(characteristic.getUuid().toString())) {
+                                    int properties = characteristic.getProperties();
+                                    if ((properties & (BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) != 0) {
+                                        writable.set(characteristic);
+                                        ready.countDown();
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     for (BluetoothGattService service : gatt.getServices()) {
                         for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
                             int properties = characteristic.getProperties();
