@@ -4,6 +4,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.app.AlertDialog;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
@@ -40,6 +42,7 @@ public class MainActivity extends Activity {
     private static final int BLUETOOTH_PERMISSION = 102;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private volatile boolean trustedContent = false;
+    private WebView activePrintWebView;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override public void onCreate(Bundle state) {
@@ -63,6 +66,7 @@ public class MainActivity extends Activity {
         s.setUserAgentString(s.getUserAgentString() + " ERP-Materiales-Android/1.1");
 
         webView.addJavascriptInterface(new BluetoothBridge(), "AndroidBluetooth");
+        webView.addJavascriptInterface(new PrintBridge(), "AndroidPrint");
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 trustedContent = url != null && url.startsWith("file:///android_asset/");
@@ -87,7 +91,9 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (!url.startsWith("file:///android_asset/")) return;
-                String js = "(function(){if(!window.AndroidBluetooth||typeof BluetoothPrinter==='undefined')return;" +
+                String js = "(function(){" +
+                    "if(window.AndroidPrint){window.open=function(){let html='',sent=false;const send=function(){if(sent)return;sent=true;AndroidPrint.printHtml(btoa(unescape(encodeURIComponent(html))));};let w={document:{readyState:'complete',images:[],open:function(){html='';sent=false;},write:function(v){html+=String(v||'');},close:function(){if(html.indexOf('window.print()')>=0)setTimeout(send,250);}},focus:function(){},print:send,close:function(){},addEventListener:function(e,f){if(e==='load')setTimeout(f,0);}};return w;};}" +
+                    "if(!window.AndroidBluetooth||typeof BluetoothPrinter==='undefined')return;" +
                     "BluetoothPrinter.selectDevice=async function(){AndroidBluetooth.selectPrinter();return{name:'Impresora Android'};};" +
                     "BluetoothPrinter.connect=async function(){return true;};" +
                     "BluetoothPrinter.writeBytes=async function(bytes){let s='';for(let i=0;i<bytes.length;i+=8192){s+=String.fromCharCode.apply(null,bytes.slice(i,i+8192));}let result=AndroidBluetooth.printBase64(btoa(s));if(result!=='ok')throw new Error(result||'No se pudo imprimir');};" +
@@ -225,6 +231,31 @@ public class MainActivity extends Activity {
                 return "No se pudo conectar con RPP300. Apágala, enciéndela y vuelve a emparejarla";
             } finally {
                 if (socket != null) try { socket.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    public class PrintBridge {
+        @JavascriptInterface public void printHtml(String encodedHtml) {
+            if (!trustedPage()) return;
+            try {
+                String html = new String(android.util.Base64.decode(encodedHtml, android.util.Base64.DEFAULT), java.nio.charset.StandardCharsets.UTF_8);
+                runOnUiThread(() -> {
+                    activePrintWebView = new WebView(MainActivity.this);
+                    WebSettings settings = activePrintWebView.getSettings();
+                    settings.setJavaScriptEnabled(true);
+                    settings.setAllowFileAccess(true);
+                    activePrintWebView.setWebViewClient(new WebViewClient() {
+                        @Override public void onPageFinished(WebView view, String url) {
+                            PrintManager manager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+                            PrintDocumentAdapter adapter = view.createPrintDocumentAdapter("Recibo ERP Materiales");
+                            manager.print("Recibo ERP Materiales", adapter, null);
+                        }
+                    });
+                    activePrintWebView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
+                });
+            } catch (Exception error) {
+                jsToast("No se pudo preparar el documento para imprimir", "error");
             }
         }
     }
