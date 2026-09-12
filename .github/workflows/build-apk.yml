@@ -23,6 +23,19 @@ jobs:
         run: |
           mkdir -p android/app/src/main/assets
           cp index.html android/app/src/main/assets/index.html
+          mkdir -p android/app/src/main/assets/vendor
+          curl -fsSL --retry 3 https://cdn.tailwindcss.com -o android/app/src/main/assets/vendor/tailwindcss.js
+          curl -fsSL --retry 3 https://unpkg.com/lucide@latest -o android/app/src/main/assets/vendor/lucide.js
+          curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/chart.js -o android/app/src/main/assets/vendor/chart.js
+          curl -fsSL --retry 3 https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js -o android/app/src/main/assets/vendor/jspdf.umd.min.js
+          curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js -o android/app/src/main/assets/vendor/xlsx.bundle.js
+          curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2 -o android/app/src/main/assets/vendor/supabase.js
+          sed -i 's#https://cdn.tailwindcss.com#vendor/tailwindcss.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://unpkg.com/lucide@latest#vendor/lucide.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://cdn.jsdelivr.net/npm/chart.js#vendor/chart.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js#vendor/jspdf.umd.min.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js#vendor/xlsx.bundle.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2#vendor/supabase.js#g' android/app/src/main/assets/index.html
       - name: Compilar APK
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
