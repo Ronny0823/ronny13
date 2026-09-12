@@ -977,6 +977,7 @@
       flushing: null,
       hooksInstalled: false,
       passwordRecoveryDetected: false,
+      dirtyStorageKey: 'erp_local_dirty_keys',
 
       async init() {
         if (this.hooksInstalled) return;
@@ -1007,6 +1008,7 @@
             }
           });
           this.installLocalStorageSync();
+          this.restorePendingWrites();
           console.info('Supabase conectado y sincronizado.');
         } catch (error) {
           this.client = null;
@@ -1035,7 +1037,46 @@
           key.startsWith('erp_') &&
           key !== 'erp_users' &&
           key !== 'erp_session' &&
+          key !== this.dirtyStorageKey &&
           !key.startsWith('erp_safety_');
+      },
+
+      getDirtyKeys() {
+        try {
+          const parsed = JSON.parse(this.originalSetItem ? localStorage.getItem(this.dirtyStorageKey) || '[]' : '[]');
+          return new Set(Array.isArray(parsed) ? parsed : []);
+        } catch (error) {
+          return new Set();
+        }
+      },
+
+      saveDirtyKeys(keys) {
+        this.originalSetItem(this.dirtyStorageKey, JSON.stringify(Array.from(keys)));
+      },
+
+      markDirty(key) {
+        const keys = this.getDirtyKeys();
+        keys.add(key);
+        this.saveDirtyKeys(keys);
+      },
+
+      clearDirty(keysToClear) {
+        const keys = this.getDirtyKeys();
+        keysToClear.forEach(key => keys.delete(key));
+        this.saveDirtyKeys(keys);
+      },
+
+      restorePendingWrites() {
+        this.getDirtyKeys().forEach(key => {
+          if (!this.shouldSyncKey(key)) return;
+          const raw = localStorage.getItem(key);
+          if (raw == null) return;
+          this.pending.set(key, {
+            key,
+            value: this.parseStoredValue(raw, null),
+            updated_at: new Date().toISOString()
+          });
+        });
       },
 
       setLocalOnly(key, value) {
@@ -1072,13 +1113,20 @@
         }
 
         if (key.startsWith('erp_data_')) {
-          if (Array.isArray(remoteParsed)) return remoteParsed;
-          return Array.isArray(localValue) ? localValue : [];
+          const records = new Map();
+          [...(Array.isArray(remoteParsed) ? remoteParsed : []), ...(Array.isArray(localValue) ? localValue : [])].forEach(record => {
+            if (!record) return;
+            const id = record.__backendId || record.id || JSON.stringify(record);
+            records.set(id, { ...(records.get(id) || {}), ...record });
+          });
+          return Array.from(records.values());
         }
 
         if (key.startsWith('erp_config_')) {
           if (remoteParsed && typeof remoteParsed === 'object') {
-            return { ...(localValue || {}), ...remoteParsed };
+            return this.getDirtyKeys().has(key)
+              ? { ...remoteParsed, ...(localValue || {}) }
+              : { ...(localValue || {}), ...remoteParsed };
           }
           return localValue || {};
         }
@@ -1155,12 +1203,13 @@
       },
 
       queueUpsert(key, rawValue) {
-        if (!this.client) return;
+        this.markDirty(key);
         this.pending.set(key, {
           key,
           value: this.parseStoredValue(rawValue, null),
           updated_at: new Date().toISOString()
         });
+        if (!this.client) return;
         clearTimeout(this.flushTimer);
         this.flushTimer = setTimeout(() => this.flush(), 500);
       },
@@ -1177,6 +1226,7 @@
 
       async flush() {
         if (!this.client) return;
+        if (!this.pending.size) this.restorePendingWrites();
         if (this.flushing) return this.flushing;
 
         this.flushing = (async () => {
@@ -1190,6 +1240,7 @@
                 console.warn('No se pudo sincronizar Supabase:', error.message);
                 break;
               }
+              this.clearDirty(rows.map(row => row.key));
             } catch (error) {
               rows.forEach(row => this.pending.set(row.key, row));
               console.warn('No se pudo sincronizar Supabase. Se reintentara luego:', error.message || error);
