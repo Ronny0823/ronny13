@@ -10,6 +10,10 @@ const edits = [
     `async init() {\n        await SupabaseSync.init();\n        const cachedOfflineUser = localStorage.getItem('erp_offline_user');\n        if (cachedOfflineUser) {\n          try {\n            this.currentUser = JSON.parse(cachedOfflineUser);\n            if (this.currentUser?.username) {\n              await this.showMainApp({ localFirst: true });\n              if (!navigator.onLine) showToast('Modo sin conexion: trabajando con datos guardados en el telefono', 'warning');\n              return;\n            }\n          } catch (error) {\n            console.warn('No se pudo abrir la sesion offline', error);\n          }\n        }\n        localStorage.removeItem('erp_session');`
   ],
   [
+    `const cachedOfflineUser = localStorage.getItem('erp_offline_user');\n        if (cachedOfflineUser) {`,
+    `const cachedOfflineUser = localStorage.getItem('erp_offline_user');\n        const hasRealInternet = window.AndroidNetwork ? AndroidNetwork.isOnline() : navigator.onLine;\n        if (!hasRealInternet && cachedOfflineUser) {`
+  ],
+  [
     `async showMainApp() {\n        document.getElementById('loginScreen').classList.add('hidden');`,
     `async showMainApp({ localFirst = false } = {}) {\n        if (this.currentUser?.username) {\n          localStorage.setItem('erp_offline_user', JSON.stringify(this.currentUser));\n        }\n        document.getElementById('loginScreen').classList.add('hidden');`
   ],
