@@ -1299,13 +1299,17 @@
               rows.forEach(row => this.setLocalOnly(row.key, this.stringifyValue(row.value)));
               const { error } = await this.client.from(SUPABASE_CONFIG.table).upsert(rows, { onConflict: 'key' });
               if (error) {
-                rows.forEach(row => this.pending.set(row.key, row));
+                rows.forEach(row => {
+                  if (!this.pending.has(row.key)) this.pending.set(row.key, row);
+                });
                 console.warn('No se pudo sincronizar Supabase:', error.message);
                 break;
               }
-              this.clearDirty(rows.map(row => row.key));
+              this.clearDirty(rows.map(row => row.key).filter(key => !this.pending.has(key)));
             } catch (error) {
-              rows.forEach(row => this.pending.set(row.key, row));
+              rows.forEach(row => {
+                if (!this.pending.has(row.key)) this.pending.set(row.key, row);
+              });
               console.warn('No se pudo sincronizar Supabase. Se reintentara luego:', error.message || error);
               break;
             }
@@ -16035,5 +16039,4 @@
   </script>
 </body>
 </html>
-
 
