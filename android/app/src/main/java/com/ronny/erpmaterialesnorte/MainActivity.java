@@ -31,6 +31,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.UUID;
+import java.lang.reflect.Method;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -89,7 +90,7 @@ public class MainActivity extends Activity {
                 String js = "(function(){if(!window.AndroidBluetooth||typeof BluetoothPrinter==='undefined')return;" +
                     "BluetoothPrinter.selectDevice=async function(){AndroidBluetooth.selectPrinter();return{name:'Impresora Android'};};" +
                     "BluetoothPrinter.connect=async function(){return true;};" +
-                    "BluetoothPrinter.writeBytes=async function(bytes){let s='';for(let i=0;i<bytes.length;i+=8192){s+=String.fromCharCode.apply(null,bytes.slice(i,i+8192));}AndroidBluetooth.printBase64(btoa(s));};" +
+                    "BluetoothPrinter.writeBytes=async function(bytes){let s='';for(let i=0;i<bytes.length;i+=8192){s+=String.fromCharCode.apply(null,bytes.slice(i,i+8192));}let result=AndroidBluetooth.printBase64(btoa(s));if(result!=='ok')throw new Error(result||'No se pudo imprimir');};" +
                     "window.searchBluetoothPrinter=async function(){AndroidBluetooth.selectPrinter();let t=document.getElementById('configPrinterType');let m=document.getElementById('configBluetoothPrintMode');if(t)t.value='bluetooth';if(m&&!m.value)m.value='thermal_80';if(window.updatePrinterOptions)updatePrinterOptions();showToast('Selecciona una impresora emparejada');};" +
                     "})();";
                 view.evaluateJavascript(js, null);
@@ -183,30 +184,48 @@ public class MainActivity extends Activity {
             });
         }
 
-        @JavascriptInterface public void printBase64(String encoded) {
-            if (!trustedPage()) return;
-            if (!hasBluetoothPermission()) { runOnUiThread(() -> requestBluetoothPermission()); return; }
+        @JavascriptInterface public String printBase64(String encoded) {
+            if (!trustedPage()) return "Página no autorizada";
+            if (!hasBluetoothPermission()) { runOnUiThread(() -> requestBluetoothPermission()); return "Acepta el permiso Bluetooth"; }
             String mac = getPreferences(MODE_PRIVATE).getString("printer_mac", "");
-            if (mac.isEmpty()) { jsToast("Primero pulsa Buscar Bluetooth y selecciona la impresora", "error"); return; }
-            new Thread(() -> {
-                BluetoothSocket socket = null;
+            if (mac.isEmpty()) return "Primero pulsa Buscar Bluetooth y selecciona la impresora";
+            BluetoothSocket socket = null;
+            try {
+                byte[] bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
+                BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                if (adapter == null || !adapter.isEnabled()) return "Enciende el Bluetooth";
+                adapter.cancelDiscovery();
+                BluetoothDevice device = adapter.getRemoteDevice(mac);
+
+                Exception lastError = null;
                 try {
-                    byte[] bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
-                    BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-                    adapter.cancelDiscovery();
-                    BluetoothDevice device = adapter.getRemoteDevice(mac);
-                    socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                    socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
                     socket.connect();
-                    OutputStream output = socket.getOutputStream();
-                    output.write(bytes);
-                    output.flush();
-                    jsToast("Impresión enviada", "success");
-                } catch (Exception error) {
-                    jsToast("No se pudo imprimir. Confirma que la impresora esté encendida y emparejada", "error");
-                } finally {
+                } catch (Exception first) {
+                    lastError = first;
                     if (socket != null) try { socket.close(); } catch (Exception ignored) {}
+                    try {
+                        socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                        socket.connect();
+                    } catch (Exception second) {
+                        lastError = second;
+                        if (socket != null) try { socket.close(); } catch (Exception ignored) {}
+                        Method method = device.getClass().getMethod("createRfcommSocket", int.class);
+                        socket = (BluetoothSocket) method.invoke(device, 1);
+                        socket.connect();
+                    }
                 }
-            }).start();
+
+                OutputStream output = socket.getOutputStream();
+                output.write(bytes);
+                output.flush();
+                try { Thread.sleep(250); } catch (InterruptedException ignored) {}
+                return "ok";
+            } catch (Exception error) {
+                return "No se pudo conectar con RPP300. Apágala, enciéndela y vuelve a emparejarla";
+            } finally {
+                if (socket != null) try { socket.close(); } catch (Exception ignored) {}
+            }
         }
     }
 
