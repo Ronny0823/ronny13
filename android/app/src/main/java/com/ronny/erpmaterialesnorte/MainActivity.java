@@ -26,6 +26,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.webkit.MimeTypeMap;
@@ -57,6 +59,13 @@ public class MainActivity extends Activity {
     private volatile boolean networkValidated = false;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
+    private final Handler autoSyncHandler = new Handler(Looper.getMainLooper());
+    private final Runnable autoSyncRetry = new Runnable() {
+        @Override public void run() {
+            if (networkValidated) notifyWebNetwork(true);
+            autoSyncHandler.postDelayed(this, 15000);
+        }
+    };
     private WebView activePrintWebView;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
@@ -116,7 +125,7 @@ public class MainActivity extends Activity {
                     "window.searchBluetoothPrinter=async function(){AndroidBluetooth.selectPrinter();let t=document.getElementById('configPrinterType');let m=document.getElementById('configBluetoothPrintMode');if(t)t.value='bluetooth';if(m&&!m.value)m.value='thermal_80';if(window.updatePrinterOptions)updatePrinterOptions();showToast('Selecciona una impresora emparejada');};" +
                     "if(typeof printInvoiceById==='function'){printInvoiceById=async function(id){let inv=AppState.data.find(r=>r.__backendId===id);if(!inv)return;try{await BluetoothPrinter.printInvoice(inv);showToast('Factura impresa por Bluetooth','success');}catch(err){showToast(err&&err.message?err.message:'Falló Bluetooth directo','error');}};}" +
                     "const setNetState=function(online){let badge=Array.from(document.querySelectorAll('span')).find(x=>x.textContent.trim()==='Online'||x.textContent.trim()==='Sin conexión');if(badge){badge.textContent=online?'Online':'Sin conexión';badge.className=online?'text-xs text-emerald-400 font-medium':'text-xs text-amber-400 font-medium';}};" +
-                    "window.erpNetworkChanged=async function(online){setNetState(online);if(!online){showToast('Sin internet: los cambios se guardarán en este teléfono','warning');return;}if(window.erpAutoSyncRunning)return;window.erpAutoSyncRunning=true;showToast('Internet disponible. Sincronizando datos...','info');try{if(typeof SupabaseSync!=='undefined')await SupabaseSync.flush();let changed=typeof syncCurrentUserFromCloud==='function'?await syncCurrentUserFromCloud({silent:true}):false;if(changed&&typeof renderPage==='function')renderPage();showToast('Datos sincronizados automáticamente','success');}catch(e){showToast('Datos guardados localmente; la sincronización se reintentará','warning');}finally{window.erpAutoSyncRunning=false;}};" +
+                    "window.erpNetworkChanged=async function(online){setNetState(online);if(!online){showToast('Sin internet: los cambios se guardarán en este teléfono','warning');return;}if(window.erpAutoSyncRunning)return;window.erpAutoSyncRunning=true;try{if(typeof SupabaseSync!=='undefined'&&SupabaseSync.client){SupabaseSync.restorePendingWrites();let dirty=Array.from(SupabaseSync.getDirtyKeys());if(dirty.length){showToast('Internet disponible. Subiendo cambios del teléfono...','info');let response=await SupabaseSync.client.from(SUPABASE_CONFIG.table).select('key,value').in('key',dirty);if(response.error)throw response.error;let remote=new Map((response.data||[]).map(r=>[r.key,r.value]));dirty.forEach(key=>{let localRaw=localStorage.getItem(key);if(localRaw==null)return;let merged=SupabaseSync.mergeValue(key,localRaw,remote.get(key));SupabaseSync.setLocalOnly(key,SupabaseSync.stringifyValue(merged));SupabaseSync.pending.set(key,{key:key,value:merged,updated_at:new Date().toISOString()});});await SupabaseSync.flush();if(SupabaseSync.getDirtyKeys().size)throw new Error('Cambios pendientes');}}let changed=typeof syncCurrentUserFromCloud==='function'?await syncCurrentUserFromCloud({silent:true}):false;if(changed&&typeof renderPage==='function')renderPage();if(!window.erpLastSyncOk||Date.now()-window.erpLastSyncOk>30000)showToast('Datos del teléfono enviados a la web','success');window.erpLastSyncOk=Date.now();}catch(e){console.warn('Sincronización automática pendiente',e);if(!window.erpLastSyncWarning||Date.now()-window.erpLastSyncWarning>30000)showToast('Los datos siguen guardados; se reintentará automáticamente','warning');window.erpLastSyncWarning=Date.now();}finally{window.erpAutoSyncRunning=false;}};" +
                     "window.addEventListener('offline',function(){window.erpNetworkChanged(false);});" +
                     "window.addEventListener('online',function(){window.erpNetworkChanged(true);});" +
                     "})();";
@@ -145,6 +154,7 @@ public class MainActivity extends Activity {
         });
         webView.loadUrl("file:///android_asset/index.html");
         startNetworkMonitoring();
+        autoSyncHandler.postDelayed(autoSyncRetry, 15000);
         requestBluetoothPermission();
     }
 
@@ -182,6 +192,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        autoSyncHandler.removeCallbacksAndMessages(null);
         if (connectivityManager != null && networkCallback != null) {
             try { connectivityManager.unregisterNetworkCallback(networkCallback); } catch (Exception ignored) {}
         }
