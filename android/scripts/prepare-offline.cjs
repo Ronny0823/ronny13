@@ -24,6 +24,22 @@ const edits = [
   [
     `async logout() {\n        if (SupabaseSync.client) await SupabaseSync.client.auth.signOut();`,
     `async logout() {\n        localStorage.removeItem('erp_offline_user');\n        if (SupabaseSync.client && navigator.onLine) await SupabaseSync.client.auth.signOut();`
+  ],
+  [
+    `let navigationSyncTimer = null;\n    let lastNavigationSyncAt = 0;`,
+    `let navigationSyncTimer = null;\n    let navigationRenderTimer = null;\n    let lastNavigationSyncAt = 0;`
+  ],
+  [
+    `renderPage();\n      scheduleNavigationSync(page);`,
+    `clearTimeout(navigationRenderTimer);\n      const contentArea = document.getElementById('content-area');\n      if (contentArea) contentArea.style.opacity = '0.82';\n      navigationRenderTimer = setTimeout(() => {\n        if (AppState.currentPage !== page) return;\n        renderPage();\n        if (contentArea) contentArea.style.opacity = '';\n        scheduleNavigationSync(page);\n      }, 0);`
+  ],
+  [
+    `lucide.createIcons();\n      enhanceSearchInputs(container);\n    }\n\n    function renderPageQuietly`,
+    `enhanceSearchInputs(container);\n      requestAnimationFrame(() => {\n        if (container.isConnected) lucide.createIcons();\n      });\n    }\n\n    function renderPageQuietly`
+  ],
+  [
+    `invoices.slice().reverse().map(inv =>`,
+    `invoices.slice().reverse().slice(0, 60).map(inv =>`
   ]
 ];
 
