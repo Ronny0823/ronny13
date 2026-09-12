@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (!url.startsWith("file:///android_asset/")) return;
-                String js = "(function(){if(!window.AndroidBluetooth||!window.BluetoothPrinter)return;" +
+                String js = "(function(){if(!window.AndroidBluetooth||typeof BluetoothPrinter==='undefined')return;" +
                     "BluetoothPrinter.selectDevice=async function(){AndroidBluetooth.selectPrinter();return{name:'Impresora Android'};};" +
                     "BluetoothPrinter.connect=async function(){return true;};" +
                     "BluetoothPrinter.writeBytes=async function(bytes){let s='';for(let i=0;i<bytes.length;i+=8192){s+=String.fromCharCode.apply(null,bytes.slice(i,i+8192));}AndroidBluetooth.printBase64(btoa(s));};" +
