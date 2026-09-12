@@ -19,6 +19,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -50,6 +53,10 @@ public class MainActivity extends Activity {
     private static final int BLUETOOTH_PERMISSION = 102;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private volatile boolean trustedContent = false;
+    private volatile boolean pageReady = false;
+    private volatile boolean networkValidated = false;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private WebView activePrintWebView;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
@@ -78,6 +85,7 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 trustedContent = url != null && url.startsWith("file:///android_asset/");
+                pageReady = false;
                 super.onPageStarted(view, url, favicon);
             }
 
@@ -108,11 +116,13 @@ public class MainActivity extends Activity {
                     "window.searchBluetoothPrinter=async function(){AndroidBluetooth.selectPrinter();let t=document.getElementById('configPrinterType');let m=document.getElementById('configBluetoothPrintMode');if(t)t.value='bluetooth';if(m&&!m.value)m.value='thermal_80';if(window.updatePrinterOptions)updatePrinterOptions();showToast('Selecciona una impresora emparejada');};" +
                     "if(typeof printInvoiceById==='function'){printInvoiceById=async function(id){let inv=AppState.data.find(r=>r.__backendId===id);if(!inv)return;try{await BluetoothPrinter.printInvoice(inv);showToast('Factura impresa por Bluetooth','success');}catch(err){showToast(err&&err.message?err.message:'Falló Bluetooth directo','error');}};}" +
                     "const setNetState=function(online){let badge=Array.from(document.querySelectorAll('span')).find(x=>x.textContent.trim()==='Online'||x.textContent.trim()==='Sin conexión');if(badge){badge.textContent=online?'Online':'Sin conexión';badge.className=online?'text-xs text-emerald-400 font-medium':'text-xs text-amber-400 font-medium';}};" +
-                    "setNetState(navigator.onLine);" +
-                    "window.addEventListener('offline',function(){setNetState(false);showToast('Sin internet: los cambios se guardarán en este teléfono','warning');});" +
-                    "window.addEventListener('online',async function(){setNetState(true);showToast('Internet disponible. Sincronizando datos...','info');try{if(typeof SupabaseSync!=='undefined')await SupabaseSync.flush();let changed=typeof syncCurrentUserFromCloud==='function'?await syncCurrentUserFromCloud({silent:true}):false;if(changed&&typeof renderPage==='function')renderPage();showToast('Datos sincronizados sin perder cambios','success');}catch(e){showToast('Datos guardados localmente; la sincronización se reintentará','warning');}});" +
+                    "window.erpNetworkChanged=async function(online){setNetState(online);if(!online){showToast('Sin internet: los cambios se guardarán en este teléfono','warning');return;}if(window.erpAutoSyncRunning)return;window.erpAutoSyncRunning=true;showToast('Internet disponible. Sincronizando datos...','info');try{if(typeof SupabaseSync!=='undefined')await SupabaseSync.flush();let changed=typeof syncCurrentUserFromCloud==='function'?await syncCurrentUserFromCloud({silent:true}):false;if(changed&&typeof renderPage==='function')renderPage();showToast('Datos sincronizados automáticamente','success');}catch(e){showToast('Datos guardados localmente; la sincronización se reintentará','warning');}finally{window.erpAutoSyncRunning=false;}};" +
+                    "window.addEventListener('offline',function(){window.erpNetworkChanged(false);});" +
+                    "window.addEventListener('online',function(){window.erpNetworkChanged(true);});" +
                     "})();";
                 view.evaluateJavascript(js, null);
+                pageReady = true;
+                notifyWebNetwork(networkValidated);
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
@@ -134,7 +144,48 @@ public class MainActivity extends Activity {
             }
         });
         webView.loadUrl("file:///android_asset/index.html");
+        startNetworkMonitoring();
         requestBluetoothPermission();
+    }
+
+    private void startNetworkMonitoring() {
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override public void onAvailable(Network network) { refreshNativeNetworkState(); }
+            @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+                updateNativeNetworkState(capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+            }
+            @Override public void onLost(Network network) { refreshNativeNetworkState(); }
+        };
+        connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        refreshNativeNetworkState();
+    }
+
+    private void refreshNativeNetworkState() {
+        if (connectivityManager == null) return;
+        Network active = connectivityManager.getActiveNetwork();
+        NetworkCapabilities caps = active == null ? null : connectivityManager.getNetworkCapabilities(active);
+        updateNativeNetworkState(caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+    }
+
+    private void updateNativeNetworkState(boolean online) {
+        boolean changed = networkValidated != online;
+        networkValidated = online;
+        if (changed || online) notifyWebNetwork(online);
+    }
+
+    private void notifyWebNetwork(boolean online) {
+        if (!pageReady || webView == null) return;
+        runOnUiThread(() -> webView.evaluateJavascript(
+            "if(window.erpNetworkChanged)window.erpNetworkChanged(" + (online ? "true" : "false") + ");", null));
+    }
+
+    @Override protected void onDestroy() {
+        if (connectivityManager != null && networkCallback != null) {
+            try { connectivityManager.unregisterNetworkCallback(networkCallback); } catch (Exception ignored) {}
+        }
+        super.onDestroy();
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
