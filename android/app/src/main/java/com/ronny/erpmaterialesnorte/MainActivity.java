@@ -91,6 +91,7 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new BluetoothBridge(), "AndroidBluetooth");
         webView.addJavascriptInterface(new PrintBridge(), "AndroidPrint");
+        webView.addJavascriptInterface(new NetworkBridge(), "AndroidNetwork");
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 trustedContent = url != null && url.startsWith("file:///android_asset/");
@@ -213,6 +214,16 @@ public class MainActivity extends Activity {
 
     private boolean trustedPage() {
         return trustedContent;
+    }
+
+    public class NetworkBridge {
+        @JavascriptInterface public boolean isOnline() {
+            ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null) return false;
+            Network active = manager.getActiveNetwork();
+            NetworkCapabilities caps = active == null ? null : manager.getNetworkCapabilities(active);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+        }
     }
 
     private boolean hasBluetoothPermission() {
