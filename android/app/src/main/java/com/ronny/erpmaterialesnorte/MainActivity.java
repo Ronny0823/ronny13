@@ -8,6 +8,11 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothSocket;
 import android.Manifest;
 import android.content.Context;
@@ -34,6 +39,9 @@ import java.util.ArrayList;
 import java.util.Set;
 import java.util.UUID;
 import java.lang.reflect.Method;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -202,35 +210,103 @@ public class MainActivity extends Activity {
                 if (adapter == null || !adapter.isEnabled()) return "Enciende el Bluetooth";
                 adapter.cancelDiscovery();
                 BluetoothDevice device = adapter.getRemoteDevice(mac);
-
-                Exception lastError = null;
-                try {
-                    socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
-                    socket.connect();
-                } catch (Exception first) {
-                    lastError = first;
-                    if (socket != null) try { socket.close(); } catch (Exception ignored) {}
-                    try {
-                        socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-                        socket.connect();
-                    } catch (Exception second) {
-                        lastError = second;
-                        if (socket != null) try { socket.close(); } catch (Exception ignored) {}
-                        Method method = device.getClass().getMethod("createRfcommSocket", int.class);
-                        socket = (BluetoothSocket) method.invoke(device, 1);
-                        socket.connect();
-                    }
+                socket = connectClassic(device);
+                if (socket != null) {
+                    OutputStream output = socket.getOutputStream();
+                    output.write(bytes);
+                    output.flush();
+                    try { Thread.sleep(350); } catch (InterruptedException ignored) {}
+                    return "ok";
                 }
-
-                OutputStream output = socket.getOutputStream();
-                output.write(bytes);
-                output.flush();
-                try { Thread.sleep(250); } catch (InterruptedException ignored) {}
-                return "ok";
+                return printBle(device, bytes) ? "ok" : "No se pudo abrir el canal SPP ni BLE de la impresora";
             } catch (Exception error) {
-                return "No se pudo conectar con RPP300. Apágala, enciéndela y vuelve a emparejarla";
+                return "No se pudo imprimir por Bluetooth directo: " + error.getClass().getSimpleName();
             } finally {
                 if (socket != null) try { socket.close(); } catch (Exception ignored) {}
+            }
+        }
+
+        private BluetoothSocket connectClassic(BluetoothDevice device) {
+            BluetoothSocket candidate = null;
+            try {
+                candidate = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+                candidate.connect();
+                return candidate;
+            } catch (Exception ignored) { if (candidate != null) try { candidate.close(); } catch (Exception closeIgnored) {} }
+            try {
+                candidate = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                candidate.connect();
+                return candidate;
+            } catch (Exception ignored) { if (candidate != null) try { candidate.close(); } catch (Exception closeIgnored) {} }
+            try {
+                Method method = device.getClass().getMethod("createRfcommSocket", int.class);
+                candidate = (BluetoothSocket) method.invoke(device, 1);
+                candidate.connect();
+                return candidate;
+            } catch (Exception ignored) { if (candidate != null) try { candidate.close(); } catch (Exception closeIgnored) {} }
+            return null;
+        }
+
+        private boolean printBle(BluetoothDevice device, byte[] bytes) {
+            CountDownLatch ready = new CountDownLatch(1);
+            AtomicReference<BluetoothGattCharacteristic> writable = new AtomicReference<>();
+            AtomicReference<CountDownLatch> writeDone = new AtomicReference<>();
+            BluetoothGattCallback callback = new BluetoothGattCallback() {
+                @Override public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+                    if (newState == BluetoothProfile.STATE_CONNECTED) gatt.discoverServices();
+                    else if (newState == BluetoothProfile.STATE_DISCONNECTED) ready.countDown();
+                }
+                @Override public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                    for (BluetoothGattService service : gatt.getServices()) {
+                        for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
+                            int properties = characteristic.getProperties();
+                            if ((properties & (BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) != 0) {
+                                writable.set(characteristic);
+                                ready.countDown();
+                                return;
+                            }
+                        }
+                    }
+                    ready.countDown();
+                }
+                @Override public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+                    CountDownLatch latch = writeDone.get();
+                    if (latch != null) latch.countDown();
+                }
+            };
+
+            BluetoothGatt gatt = null;
+            try {
+                gatt = Build.VERSION.SDK_INT >= 23
+                    ? device.connectGatt(MainActivity.this, false, callback, BluetoothDevice.TRANSPORT_LE)
+                    : device.connectGatt(MainActivity.this, false, callback);
+                if (!ready.await(12, TimeUnit.SECONDS) || writable.get() == null) return false;
+                BluetoothGattCharacteristic characteristic = writable.get();
+                int writeType = (characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0
+                    ? BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE : BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
+                characteristic.setWriteType(writeType);
+                for (int offset = 0; offset < bytes.length; offset += 180) {
+                    int length = Math.min(180, bytes.length - offset);
+                    byte[] chunk = new byte[length];
+                    System.arraycopy(bytes, offset, chunk, 0, length);
+                    CountDownLatch latch = new CountDownLatch(1);
+                    writeDone.set(latch);
+                    boolean started;
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        started = gatt.writeCharacteristic(characteristic, chunk, writeType) == android.bluetooth.BluetoothStatusCodes.SUCCESS;
+                    } else {
+                        characteristic.setValue(chunk);
+                        started = gatt.writeCharacteristic(characteristic);
+                    }
+                    if (!started) return false;
+                    latch.await(1500, TimeUnit.MILLISECONDS);
+                    try { Thread.sleep(35); } catch (InterruptedException ignored) {}
+                }
+                return true;
+            } catch (Exception ignored) {
+                return false;
+            } finally {
+                if (gatt != null) { try { gatt.disconnect(); } catch (Exception ignored) {} try { gatt.close(); } catch (Exception ignored) {} }
             }
         }
     }
