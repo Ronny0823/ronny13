@@ -3,10 +3,17 @@ package com.ronny.erpmaterialesnorte;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
+import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
@@ -20,11 +27,18 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.Set;
+import java.util.UUID;
 
 public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private static final int FILE_CHOOSER = 101;
+    private static final int BLUETOOTH_PERMISSION = 102;
+    private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private volatile boolean trustedContent = false;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override public void onCreate(Bundle state) {
@@ -45,9 +59,15 @@ public class MainActivity extends Activity {
         s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        s.setUserAgentString(s.getUserAgentString() + " ERP-Materiales-Android/1.0");
+        s.setUserAgentString(s.getUserAgentString() + " ERP-Materiales-Android/1.1");
 
+        webView.addJavascriptInterface(new BluetoothBridge(), "AndroidBluetooth");
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                trustedContent = url != null && url.startsWith("file:///android_asset/");
+                super.onPageStarted(view, url, favicon);
+            }
+
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri uri = req.getUrl();
                 String scheme = uri.getScheme();
@@ -61,6 +81,18 @@ public class MainActivity extends Activity {
                     return true;
                 }
                 return false;
+            }
+
+            @Override public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                if (!url.startsWith("file:///android_asset/")) return;
+                String js = "(function(){if(!window.AndroidBluetooth||!window.BluetoothPrinter)return;" +
+                    "BluetoothPrinter.selectDevice=async function(){AndroidBluetooth.selectPrinter();return{name:'Impresora Android'};};" +
+                    "BluetoothPrinter.connect=async function(){return true;};" +
+                    "BluetoothPrinter.writeBytes=async function(bytes){let s='';for(let i=0;i<bytes.length;i+=8192){s+=String.fromCharCode.apply(null,bytes.slice(i,i+8192));}AndroidBluetooth.printBase64(btoa(s));};" +
+                    "window.searchBluetoothPrinter=async function(){AndroidBluetooth.selectPrinter();let t=document.getElementById('configPrinterType');let m=document.getElementById('configBluetoothPrintMode');if(t)t.value='bluetooth';if(m&&!m.value)m.value='thermal_80';if(window.updatePrinterOptions)updatePrinterOptions();showToast('Selecciona una impresora emparejada');};" +
+                    "})();";
+                view.evaluateJavascript(js, null);
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
@@ -82,6 +114,7 @@ public class MainActivity extends Activity {
             }
         });
         webView.loadUrl("file:///android_asset/index.html");
+        requestBluetoothPermission();
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -94,6 +127,87 @@ public class MainActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (webView.canGoBack()) webView.goBack(); else super.onBackPressed();
+    }
+
+    private boolean trustedPage() {
+        return trustedContent;
+    }
+
+    private boolean hasBluetoothPermission() {
+        return Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestBluetoothPermission() {
+        if (Build.VERSION.SDK_INT >= 31 && !hasBluetoothPermission()) {
+            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, BLUETOOTH_PERMISSION);
+        }
+    }
+
+    private void jsToast(String message, String type) {
+        String safe = message.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ");
+        runOnUiThread(() -> webView.evaluateJavascript("if(window.showToast)showToast('" + safe + "','" + type + "');", null));
+    }
+
+    public class BluetoothBridge {
+        @JavascriptInterface public void selectPrinter() {
+            if (!trustedPage()) return;
+            runOnUiThread(() -> {
+                if (!hasBluetoothPermission()) {
+                    requestBluetoothPermission();
+                    Toast.makeText(MainActivity.this, "Acepta el permiso Bluetooth y vuelve a buscar", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                if (adapter == null) { jsToast("Este teléfono no tiene Bluetooth", "error"); return; }
+                if (!adapter.isEnabled()) {
+                    startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));
+                    Toast.makeText(MainActivity.this, "Enciende y empareja la impresora", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Set<BluetoothDevice> bonded = adapter.getBondedDevices();
+                if (bonded.isEmpty()) {
+                    startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));
+                    Toast.makeText(MainActivity.this, "Empareja primero la impresora", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                ArrayList<BluetoothDevice> devices = new ArrayList<>(bonded);
+                String[] names = new String[devices.size()];
+                for (int i = 0; i < devices.size(); i++) names[i] = devices.get(i).getName() + "\n" + devices.get(i).getAddress();
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("Selecciona la impresora")
+                    .setItems(names, (dialog, which) -> {
+                        BluetoothDevice chosen = devices.get(which);
+                        getPreferences(MODE_PRIVATE).edit().putString("printer_mac", chosen.getAddress()).apply();
+                        jsToast("Impresora seleccionada: " + chosen.getName(), "success");
+                    }).setNegativeButton("Cancelar", null).show();
+            });
+        }
+
+        @JavascriptInterface public void printBase64(String encoded) {
+            if (!trustedPage()) return;
+            if (!hasBluetoothPermission()) { runOnUiThread(() -> requestBluetoothPermission()); return; }
+            String mac = getPreferences(MODE_PRIVATE).getString("printer_mac", "");
+            if (mac.isEmpty()) { jsToast("Primero pulsa Buscar Bluetooth y selecciona la impresora", "error"); return; }
+            new Thread(() -> {
+                BluetoothSocket socket = null;
+                try {
+                    byte[] bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
+                    BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                    adapter.cancelDiscovery();
+                    BluetoothDevice device = adapter.getRemoteDevice(mac);
+                    socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                    socket.connect();
+                    OutputStream output = socket.getOutputStream();
+                    output.write(bytes);
+                    output.flush();
+                    jsToast("Impresión enviada", "success");
+                } catch (Exception error) {
+                    jsToast("No se pudo imprimir. Confirma que la impresora esté encendida y emparejada", "error");
+                } finally {
+                    if (socket != null) try { socket.close(); } catch (Exception ignored) {}
+                }
+            }).start();
+        }
     }
 
 }
