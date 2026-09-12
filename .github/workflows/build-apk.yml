@@ -23,6 +23,7 @@ jobs:
         run: |
           mkdir -p android/app/src/main/assets
           cp index.html android/app/src/main/assets/index.html
+          node android/scripts/prepare-offline.cjs android/app/src/main/assets/index.html
           mkdir -p android/app/src/main/assets/vendor
           curl -fsSL --retry 3 https://cdn.tailwindcss.com -o android/app/src/main/assets/vendor/tailwindcss.js
           curl -fsSL --retry 3 https://unpkg.com/lucide@latest -o android/app/src/main/assets/vendor/lucide.js
