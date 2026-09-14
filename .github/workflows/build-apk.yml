@@ -7,6 +7,9 @@ on:
       - 'android/**'
       - '.github/workflows/build-apk.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -43,8 +46,17 @@ jobs:
       - name: Compilar APK
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
+      - name: Preparar APK directo
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.24-Placa-Automatica.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ERP-Materiales-v1.24-Placa-Automatica.apk
+      - name: Publicar descarga directa
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.24
+          name: ERP Materiales v1.24
+          files: ERP-Materiales-v1.24-Placa-Automatica.apk
+          overwrite_files: true
