@@ -1,0 +1,25 @@
+name: Actualizar placa automática en web
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/update-web-plate.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aplicar placa automática
+        run: node tools/prepare-client-plate.cjs index.html
+      - name: Guardar cambio web
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Aplicar placa automática en la web"
+          git push
