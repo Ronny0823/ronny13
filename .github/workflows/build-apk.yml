@@ -24,6 +24,9 @@ jobs:
           mkdir -p android/app/src/main/assets
           cp index.html android/app/src/main/assets/index.html
           node android/scripts/prepare-offline.cjs android/app/src/main/assets/index.html
+          node tools/prepare-client-plate.cjs android/app/src/main/assets/index.html
+          sed -i "s/versionCode 24/versionCode 25/" android/app/build.gradle
+          sed -i "s/versionName '1.23.0'/versionName '1.24.0'/" android/app/build.gradle
           mkdir -p android/app/src/main/assets/vendor
           curl -fsSL --retry 3 https://cdn.tailwindcss.com -o android/app/src/main/assets/vendor/tailwindcss.js
           curl -fsSL --retry 3 https://unpkg.com/lucide@latest -o android/app/src/main/assets/vendor/lucide.js
