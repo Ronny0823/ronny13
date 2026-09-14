@@ -2542,7 +2542,6 @@
 
     function generateInvoiceNum() {
       AppState.invoiceCounter++;
-      AppState.saveUserData();
       return `FAC-${String(AppState.invoiceCounter).padStart(4, '0')}`;
     }
 
@@ -4895,8 +4894,8 @@
           payments: []
         };
         
-        saleData.__backendId = 'sale_' + Date.now();
-        AppState.data.push(saleData);
+        const saleRecordTimestamp = Date.now();
+        saleData.__backendId = 'sale_' + saleRecordTimestamp;
         
         const invoiceData = {
           type: 'invoice',
@@ -4919,10 +4918,21 @@
           iva_rate: ivaRate
         };
         
-        invoiceData.__backendId = 'inv_' + Date.now();
-        AppState.data.push(invoiceData);
+        invoiceData.__backendId = 'inv_' + saleRecordTimestamp;
+
+        // Guardar venta y factura juntas antes de iniciar cualquier impresion.
+        AppState.data.push(saleData, invoiceData);
         
         await AppState.saveUserData();
+
+        // Confirmar que ambos registros quedaron persistidos localmente.
+        const persistedRecords = JSON.parse(localStorage.getItem(`erp_data_${AppState.currentUser}`) || '[]');
+        const saleWasSaved = persistedRecords.some(record => record.__backendId === saleData.__backendId);
+        const invoiceWasSaved = persistedRecords.some(record => record.__backendId === invoiceData.__backendId);
+        if (!saleWasSaved || !invoiceWasSaved) {
+          localStorage.setItem(`erp_data_${AppState.currentUser}`, JSON.stringify(AppState.data));
+          await SupabaseSync.flush();
+        }
         
         showToast(`OK Venta registrada - Factura ${invNum}`, 'success');
         
