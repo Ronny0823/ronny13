@@ -3445,13 +3445,32 @@
       box.classList.remove('hidden');
     }
 
+    function getLastVehiclePlateForClient(name) {
+      const normalizedName = String(name || '').trim().toLowerCase();
+      if (!normalizedName) return '';
+
+      const registeredClient = getRecords('client').find(client =>
+        String(client.client_name || '').trim().toLowerCase() === normalizedName
+      );
+      if (registeredClient?.vehicle_plate) {
+        return String(registeredClient.vehicle_plate).toUpperCase();
+      }
+
+      return getRecords('sale')
+        .filter(sale =>
+          String(sale.client_name || '').trim().toLowerCase() === normalizedName &&
+          String(sale.vehicle_plate || '').trim()
+        )
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0]?.vehicle_plate?.toUpperCase() || '';
+    }
+
     function selectSaleClient(clientId) {
       const input = document.getElementById('saleClient');
       const plateInput = document.getElementById('saleVehiclePlate');
       const box = document.getElementById('saleClientSuggestions');
       const client = getRecords('client').find(c => c.__backendId === clientId);
       if (input && client) input.value = client.client_name || '';
-      if (plateInput && client) plateInput.value = String(client.vehicle_plate || '').toUpperCase();
+      if (plateInput && client) plateInput.value = getLastVehiclePlateForClient(client.client_name);
       if (box) box.classList.add('hidden');
     }
 
