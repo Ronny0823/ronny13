@@ -1,0 +1,17 @@
+SISTEMA DE VENTAS - VERSION ORGANIZADA
+
+Archivos:
+- index.html: estructura principal de la pagina.
+- css/estilos.css: colores, posiciones y apariencia.
+- js/app.js: funciones, ventas, clientes, sincronizacion e impresion.
+- js/logo.js: imagen del logo.
+- js/tailwind-config.js: configuracion de colores de Tailwind.
+
+IMPORTANTE
+Para subir la web, conserva las carpetas css y js exactamente como estan.
+No subas solamente index.html, porque necesita los otros archivos para funcionar.
+
+MEJORA INCLUIDA
+Cada cliente permite guardar su placa habitual. Al seleccionar ese cliente en
+Nueva Venta, la placa aparece automaticamente y se puede cambiar manualmente
+si ese dia llega en otro vehiculo.
