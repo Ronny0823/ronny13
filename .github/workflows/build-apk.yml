@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'organized/**'
       - '.github/workflows/build-apk.yml'
 
 permissions:
@@ -22,14 +23,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Preparar aplicación web
+      - name: Preparar aplicación web organizada
         run: |
           mkdir -p android/app/src/main/assets
-          cp index.html android/app/src/main/assets/index.html
-          node android/scripts/prepare-offline.cjs android/app/src/main/assets/index.html
-          node tools/prepare-client-plate.cjs android/app/src/main/assets/index.html
-          sed -i "s/versionCode 24/versionCode 25/" android/app/build.gradle
-          sed -i "s/versionName '1.23.0'/versionName '1.24.0'/" android/app/build.gradle
+          cp organized/index.html android/app/src/main/assets/index.html
+          cp -R organized/css android/app/src/main/assets/
+          cp -R organized/js android/app/src/main/assets/
+          node android/scripts/prepare-offline.cjs android/app/src/main/assets/js/app.js
+          sed -i "s/versionCode 24/versionCode 26/" android/app/build.gradle
+          sed -i "s/versionName '1.23.0'/versionName '1.25.0'/" android/app/build.gradle
           mkdir -p android/app/src/main/assets/vendor
           curl -fsSL --retry 3 https://cdn.tailwindcss.com -o android/app/src/main/assets/vendor/tailwindcss.js
           curl -fsSL --retry 3 https://unpkg.com/lucide@latest -o android/app/src/main/assets/vendor/lucide.js
@@ -47,16 +49,16 @@ jobs:
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
       - name: Preparar APK directo
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.24-Placa-Automatica.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.25-Placa-Automatica.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.24-Placa-Automatica.apk
+          path: ERP-Materiales-v1.25-Placa-Automatica.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.24
-          name: ERP Materiales v1.24
-          files: ERP-Materiales-v1.24-Placa-Automatica.apk
+          tag_name: v1.25
+          name: ERP Materiales v1.25
+          files: ERP-Materiales-v1.25-Placa-Automatica.apk
           overwrite_files: true
