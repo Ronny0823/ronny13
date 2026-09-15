@@ -1338,8 +1338,10 @@
     function openSidebar() {
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('mobileOverlay');
+      const mobileToggle = document.getElementById('mobileToggle');
       
       sidebar.classList.add('open');
+      mobileToggle?.classList.add('menu-open');
       overlay.classList.remove('hidden');
       void overlay.offsetWidth;
       overlay.classList.remove('opacity-0');
@@ -1351,8 +1353,10 @@
     function closeSidebar(instant = false) {
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('mobileOverlay');
+      const mobileToggle = document.getElementById('mobileToggle');
       
       sidebar.classList.remove('open');
+      mobileToggle?.classList.remove('menu-open');
       overlay.classList.remove('opacity-100');
       overlay.classList.add('opacity-0');
       AppState.sidebarOpen = false;
