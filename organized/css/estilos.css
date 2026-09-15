@@ -458,6 +458,10 @@
       }
       #mobileToggle {
         display: flex !important;
+        top: 3rem !important;
+      }
+      #mobileToggle.menu-open {
+        display: none !important;
       }
       #mobileOverlay:not(.hidden) {
         display: block !important;
