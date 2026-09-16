@@ -30,8 +30,8 @@ jobs:
           cp -R organized/css android/app/src/main/assets/
           cp -R organized/js android/app/src/main/assets/
           node android/scripts/prepare-offline.cjs android/app/src/main/assets/js/app.js
-          sed -i "s/versionCode 24/versionCode 27/" android/app/build.gradle
-          sed -i "s/versionName '1.23.0'/versionName '1.26.0'/" android/app/build.gradle
+          sed -i "s/versionCode 24/versionCode 28/" android/app/build.gradle
+          sed -i "s/versionName '1.23.0'/versionName '1.27.0'/" android/app/build.gradle
           mkdir -p android/app/src/main/assets/vendor
           curl -fsSL --retry 3 https://cdn.tailwindcss.com -o android/app/src/main/assets/vendor/tailwindcss.js
           curl -fsSL --retry 3 https://unpkg.com/lucide@latest -o android/app/src/main/assets/vendor/lucide.js
@@ -49,16 +49,16 @@ jobs:
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
       - name: Preparar APK directo
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.26-Menu-Alineado.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.27-Recibo-Pago-Completo.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.26-Menu-Alineado.apk
+          path: ERP-Materiales-v1.27-Recibo-Pago-Completo.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.26
-          name: ERP Materiales v1.26
-          files: ERP-Materiales-v1.26-Menu-Alineado.apk
+          tag_name: v1.27
+          name: ERP Materiales v1.27
+          files: ERP-Materiales-v1.27-Recibo-Pago-Completo.apk
           overwrite_files: true
