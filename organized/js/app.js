@@ -66,6 +66,10 @@
       flushing: null,
       hooksInstalled: false,
       passwordRecoveryDetected: false,
+      dirtyStorageKey: 'erp_local_dirty_keys',
+      retryTimer: null,
+      retryDelay: 5000,
+      onlineListenerInstalled: false,
 
       async init() {
         if (this.hooksInstalled) return;
@@ -96,6 +100,12 @@
             }
           });
           this.installLocalStorageSync();
+          this.restorePendingWrites();
+          this.installOnlineRetry();
+          if (this.pending.size) {
+            clearTimeout(this.flushTimer);
+            this.flushTimer = setTimeout(() => this.flush(), 250);
+          }
           console.info('Supabase conectado y sincronizado.');
         } catch (error) {
           this.client = null;
@@ -124,7 +134,122 @@
           key.startsWith('erp_') &&
           key !== 'erp_users' &&
           key !== 'erp_session' &&
+          key !== this.dirtyStorageKey &&
           !key.startsWith('erp_safety_');
+      },
+
+      installOnlineRetry() {
+        if (this.onlineListenerInstalled) return;
+        window.addEventListener('online', async () => {
+          this.restorePendingWrites();
+          const synced = await this.flush();
+          if (synced && AuthSystem.currentUser?.username) {
+            const changed = await syncCurrentUserFromCloud({ silent: true });
+            if (changed) renderPage();
+          }
+        });
+        this.onlineListenerInstalled = true;
+      },
+
+      getDirtyKeys() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(this.dirtyStorageKey) || '[]');
+          return new Set(Array.isArray(parsed) ? parsed.filter(key => typeof key === 'string') : []);
+        } catch (error) {
+          return new Set();
+        }
+      },
+
+      saveDirtyKeys(keys) {
+        try {
+          this.originalSetItem(this.dirtyStorageKey, JSON.stringify(Array.from(keys)));
+        } catch (error) {
+          console.warn('No se pudo guardar la cola local de sincronizacion:', error.message || error);
+        }
+      },
+
+      markDirty(key) {
+        if (!this.shouldSyncKey(key)) return;
+        const keys = this.getDirtyKeys();
+        keys.add(key);
+        this.saveDirtyKeys(keys);
+      },
+
+      clearDirty(keysToClear) {
+        const keys = this.getDirtyKeys();
+        keysToClear.forEach(key => keys.delete(key));
+        this.saveDirtyKeys(keys);
+      },
+
+      hasDirtyKey(key) {
+        return this.getDirtyKeys().has(key);
+      },
+
+      hasDirtyDataKey(username) {
+        return this.hasDirtyKey(`erp_data_${username}`);
+      },
+
+      getDeletedKey(username) {
+        return `erp_deleted_${username}`;
+      },
+
+      getUsernameFromDataKey(key) {
+        return String(key || '').startsWith('erp_data_') ? String(key).slice('erp_data_'.length) : '';
+      },
+
+      getDeletedIds(username) {
+        if (!username) return new Set();
+        const parsed = this.parseStoredValue(localStorage.getItem(this.getDeletedKey(username)), []);
+        return new Set(Array.isArray(parsed) ? parsed.filter(Boolean) : []);
+      },
+
+      markRecordsDeleted(username, recordIds) {
+        if (!username || !Array.isArray(recordIds) || !recordIds.length) return;
+        const deletedKey = this.getDeletedKey(username);
+        const deleted = this.getDeletedIds(username);
+        recordIds.filter(Boolean).forEach(id => deleted.add(id));
+        localStorage.setItem(deletedKey, JSON.stringify(Array.from(deleted)));
+      },
+
+      restorePendingWrites() {
+        this.getDirtyKeys().forEach(key => {
+          if (!this.shouldSyncKey(key)) return;
+          const raw = localStorage.getItem(key);
+          if (raw == null) return;
+          this.pending.set(key, {
+            key,
+            value: this.parseStoredValue(raw, null),
+            updated_at: new Date().toISOString()
+          });
+        });
+      },
+
+      recoverFromSafetyBackup(username) {
+        if (!username) return false;
+        const dataKey = `erp_data_${username}`;
+        const backupRaw = localStorage.getItem(`erp_safety_${username}`);
+        if (!backupRaw) return false;
+        try {
+          const backup = JSON.parse(backupRaw);
+          const backupDataRaw = backup?.keys?.[dataKey];
+          if (!backupDataRaw) return false;
+          const currentRaw = localStorage.getItem(dataKey) || '[]';
+          const merged = this.mergeValue(dataKey, currentRaw, this.parseStoredValue(backupDataRaw, []), { localWins: true });
+          const mergedRaw = this.stringifyValue(merged);
+          if (mergedRaw === currentRaw) return false;
+          this.originalSetItem(dataKey, mergedRaw);
+          this.markDirty(dataKey);
+          this.pending.set(dataKey, {
+            key: dataKey,
+            value: merged,
+            updated_at: new Date().toISOString()
+          });
+          console.info('Se recuperaron registros faltantes desde el respaldo local de seguridad.');
+          return true;
+        } catch (error) {
+          console.warn('No se pudo revisar el respaldo local de seguridad:', error.message || error);
+          return false;
+        }
       },
 
       setLocalOnly(key, value) {
@@ -148,8 +273,9 @@
         return typeof value === 'string' ? value : JSON.stringify(value);
       },
 
-      mergeValue(key, localRaw, remoteValue) {
-        const localValue = this.parseStoredValue(localRaw, key.startsWith('erp_data_') || key === 'erp_users' ? [] : {});
+      mergeValue(key, localRaw, remoteValue, { localWins = this.hasDirtyKey(key) } = {}) {
+        const isArrayValue = key.startsWith('erp_data_') || key.startsWith('erp_deleted_') || key === 'erp_users';
+        const localValue = this.parseStoredValue(localRaw, isArrayValue ? [] : {});
         const remoteParsed = typeof remoteValue === 'string' ? this.parseStoredValue(remoteValue, remoteValue) : remoteValue;
 
         if (key === 'erp_users') {
@@ -160,14 +286,40 @@
           return Array.from(users.values());
         }
 
+        if (key.startsWith('erp_deleted_')) {
+          return Array.from(new Set([
+            ...(Array.isArray(remoteParsed) ? remoteParsed : []),
+            ...(Array.isArray(localValue) ? localValue : [])
+          ].filter(Boolean)));
+        }
+
         if (key.startsWith('erp_data_')) {
-          if (Array.isArray(remoteParsed)) return remoteParsed;
-          return Array.isArray(localValue) ? localValue : [];
+          const records = new Map();
+          const addRecords = (items) => {
+            (Array.isArray(items) ? items : []).forEach(record => {
+              if (!record || typeof record !== 'object') return;
+              const id = record.__backendId || record.id;
+              if (!id) return;
+              records.set(id, { ...(records.get(id) || {}), ...record });
+            });
+          };
+          if (localWins) {
+            addRecords(remoteParsed);
+            addRecords(localValue);
+          } else {
+            addRecords(localValue);
+            addRecords(remoteParsed);
+          }
+          const username = this.getUsernameFromDataKey(key);
+          const deletedIds = this.getDeletedIds(username);
+          return Array.from(records.values()).filter(record => !deletedIds.has(record.__backendId || record.id));
         }
 
         if (key.startsWith('erp_config_')) {
           if (remoteParsed && typeof remoteParsed === 'object') {
-            return { ...(localValue || {}), ...remoteParsed };
+            return localWins
+              ? { ...(remoteParsed || {}), ...(localValue || {}) }
+              : { ...(localValue || {}), ...remoteParsed };
           }
           return localValue || {};
         }
@@ -199,8 +351,10 @@
       },
 
       async pullUser(username) {
-        if (!this.client || !username) return;
-        const keys = ['erp_users', `erp_data_${username}`, `erp_config_${username}`];
+        if (!this.client || !username) return false;
+        this.recoverFromSafetyBackup(username);
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+        const keys = [`erp_data_${username}`, `erp_config_${username}`, this.getDeletedKey(username)];
         try {
           const { data, error } = await this.client
             .from(SUPABASE_CONFIG.table)
@@ -209,16 +363,49 @@
 
           if (error) {
             console.warn('No se pudo leer el usuario desde Supabase:', error.message);
-            return;
+            return false;
           }
 
-          (data || []).forEach(row => {
+          const rows = data || [];
+          const deletedRow = rows.find(row => row.key === this.getDeletedKey(username));
+          if (deletedRow) {
+            const mergedDeleted = this.mergeValue(deletedRow.key, localStorage.getItem(deletedRow.key), deletedRow.value);
+            const mergedDeletedRaw = this.stringifyValue(mergedDeleted);
+            this.originalSetItem(deletedRow.key, mergedDeletedRaw);
+            if (mergedDeletedRaw !== this.stringifyValue(deletedRow.value)) {
+              this.markDirty(deletedRow.key);
+              this.pending.set(deletedRow.key, {
+                key: deletedRow.key,
+                value: mergedDeleted,
+                updated_at: new Date().toISOString()
+              });
+            }
+          }
+
+          rows.forEach(row => {
             if (!this.shouldSyncKey(row.key)) return;
+            if (row.key === this.getDeletedKey(username)) return;
             const merged = this.mergeValue(row.key, localStorage.getItem(row.key), row.value);
-            this.originalSetItem(row.key, this.stringifyValue(merged));
+            const mergedRaw = this.stringifyValue(merged);
+            this.originalSetItem(row.key, mergedRaw);
+            if (this.hasDirtyKey(row.key) || mergedRaw !== this.stringifyValue(row.value)) {
+              this.markDirty(row.key);
+              this.pending.set(row.key, {
+                key: row.key,
+                value: merged,
+                updated_at: new Date().toISOString()
+              });
+            }
           });
+          if (this.pending.size) {
+            clearTimeout(this.flushTimer);
+            this.flushTimer = setTimeout(() => this.flush(), 250);
+          }
+          return true;
         } catch (error) {
           console.warn('No se pudo leer el usuario desde Supabase. Se mantienen los datos locales:', error.message || error);
+          this.scheduleRetry();
+          return false;
         }
       },
 
@@ -244,14 +431,71 @@
       },
 
       queueUpsert(key, rawValue) {
-        if (!this.client) return;
+        if (!this.shouldSyncKey(key)) return;
+        this.markDirty(key);
         this.pending.set(key, {
           key,
           value: this.parseStoredValue(rawValue, null),
           updated_at: new Date().toISOString()
         });
+        if (!this.client) return;
         clearTimeout(this.flushTimer);
         this.flushTimer = setTimeout(() => this.flush(), 500);
+      },
+
+      scheduleRetry() {
+        if (this.retryTimer || !this.client) return;
+        this.retryTimer = setTimeout(async () => {
+          this.retryTimer = null;
+          this.restorePendingWrites();
+          await this.flush();
+        }, this.retryDelay);
+      },
+
+      queueLatestValue(key) {
+        const raw = localStorage.getItem(key);
+        if (raw == null || !this.shouldSyncKey(key)) return;
+        this.pending.set(key, {
+          key,
+          value: this.parseStoredValue(raw, null),
+          updated_at: new Date().toISOString()
+        });
+      },
+
+      async mergeRowsWithRemote(rows) {
+        if (!rows.length) return [];
+        const keys = new Set(rows.map(row => row.key));
+        rows.forEach(row => {
+          const username = this.getUsernameFromDataKey(row.key);
+          if (username) keys.add(this.getDeletedKey(username));
+        });
+
+        const { data, error } = await this.client
+          .from(SUPABASE_CONFIG.table)
+          .select('key,value')
+          .in('key', Array.from(keys));
+        if (error) throw error;
+
+        const remoteByKey = new Map((data || []).map(row => [row.key, row.value]));
+        Array.from(keys).filter(key => key.startsWith('erp_deleted_')).forEach(key => {
+          const merged = this.mergeValue(key, localStorage.getItem(key), remoteByKey.get(key) || []);
+          const raw = this.stringifyValue(merged);
+          this.originalSetItem(key, raw);
+          if (raw !== this.stringifyValue(remoteByKey.get(key) || [])) {
+            this.markDirty(key);
+            this.pending.set(key, { key, value: merged, updated_at: new Date().toISOString() });
+          }
+        });
+
+        return rows.map(row => {
+          const localRaw = localStorage.getItem(row.key);
+          const merged = remoteByKey.has(row.key)
+            ? this.mergeValue(row.key, localRaw, remoteByKey.get(row.key))
+            : this.parseStoredValue(localRaw, row.value);
+          const raw = this.stringifyValue(merged);
+          this.originalSetItem(row.key, raw);
+          return { key: row.key, value: merged, updated_at: new Date().toISOString(), raw };
+        });
       },
 
       async queueDelete(key) {
@@ -265,30 +509,54 @@
       },
 
       async flush() {
-        if (!this.client) return;
+        if (!this.client) return false;
+        this.restorePendingWrites();
+        if (!this.pending.size) return true;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
         if (this.flushing) return this.flushing;
 
         this.flushing = (async () => {
           while (this.pending.size) {
-            const rows = Array.from(this.pending.values());
-            this.pending.clear();
+            const keys = Array.from(this.pending.keys());
+            const queuedRows = keys.map(key => this.pending.get(key)).filter(Boolean);
+            keys.forEach(key => this.pending.delete(key));
             try {
-              const { error } = await this.client.from(SUPABASE_CONFIG.table).upsert(rows, { onConflict: 'key' });
+              const rows = await this.mergeRowsWithRemote(queuedRows);
+              const { data, error } = await this.client
+                .from(SUPABASE_CONFIG.table)
+                .upsert(rows.map(({ raw, ...row }) => row), { onConflict: 'key' })
+                .select('key');
               if (error) {
-                rows.forEach(row => this.pending.set(row.key, row));
-                console.warn('No se pudo sincronizar Supabase:', error.message);
-                break;
+                throw error;
               }
+              const savedKeys = new Set((data || []).map(row => row.key));
+              if (savedKeys.size !== rows.length || rows.some(row => !savedKeys.has(row.key))) {
+                throw new Error('Supabase no confirmo todos los datos enviados');
+              }
+              const cleanKeys = [];
+              rows.forEach(row => {
+                const currentRaw = localStorage.getItem(row.key);
+                if (currentRaw === row.raw && !this.pending.has(row.key)) {
+                  cleanKeys.push(row.key);
+                } else {
+                  this.queueLatestValue(row.key);
+                }
+              });
+              this.clearDirty(cleanKeys);
             } catch (error) {
-              rows.forEach(row => this.pending.set(row.key, row));
+              keys.forEach(key => {
+                if (!this.pending.has(key)) this.queueLatestValue(key);
+              });
               console.warn('No se pudo sincronizar Supabase. Se reintentara luego:', error.message || error);
-              break;
+              this.scheduleRetry();
+              return false;
             }
           }
+          return true;
         })();
 
         try {
-          await this.flushing;
+          return await this.flushing;
         } finally {
           this.flushing = null;
         }
@@ -987,7 +1255,14 @@
         }
 
         Object.entries(backup.keys).forEach(([key, value]) => {
+          if (!key.startsWith('erp_deleted_')) return;
+          const merged = SupabaseSync.mergeValue(key, localStorage.getItem(key), this.safeParse(value, []));
+          localStorage.setItem(key, JSON.stringify(merged));
+        });
+
+        Object.entries(backup.keys).forEach(([key, value]) => {
           if (!key.startsWith(this.prefix) || key === 'erp_session') return;
+          if (key.startsWith('erp_deleted_')) return;
 
           if (key === 'erp_users') {
             localStorage.setItem(key, JSON.stringify(this.mergeUsers(localStorage.getItem(key), value)));
@@ -995,7 +1270,8 @@
           }
 
           if (key.startsWith('erp_data_')) {
-            localStorage.setItem(key, JSON.stringify(this.mergeRecords(localStorage.getItem(key), value)));
+            const merged = SupabaseSync.mergeValue(key, localStorage.getItem(key), this.safeParse(value, []), { localWins: true });
+            localStorage.setItem(key, JSON.stringify(merged));
             return;
           }
 
@@ -1256,10 +1532,11 @@
         }
         
         // Update invoice counter from existing invoices
+        this.invoiceCounter = 1000;
         const invoices = this.data.filter(r => r.type === 'invoice');
         invoices.forEach(inv => {
           const num = parseInt((inv.invoice_number || '').replace('FAC-', ''));
-          if (num && num >= this.invoiceCounter) this.invoiceCounter = num + 1;
+          if (num && num > this.invoiceCounter) this.invoiceCounter = num;
         });
         
         updateCompanyInfo();
@@ -1502,7 +1779,6 @@
 
     function generateInvoiceNum() {
       AppState.invoiceCounter++;
-      AppState.saveUserData();
       return `FAC-${String(AppState.invoiceCounter).padStart(4, '0')}`;
     }
 
@@ -1891,7 +2167,11 @@
           const username = AuthSystem.currentUser.username;
           const beforeData = localStorage.getItem(`erp_data_${username}`) || '';
           const beforeConfig = localStorage.getItem(`erp_config_${username}`) || '';
-          await SupabaseSync.flush();
+          const flushed = await SupabaseSync.flush();
+          if (!flushed && SupabaseSync.hasDirtyDataKey(username)) {
+            if (!silent) showToast('Hay datos guardados en este telefono pendientes de subir. No se reemplazaron con la nube.', 'warning');
+            return false;
+          }
           await AppState.loadUserData(username);
           const afterData = localStorage.getItem(`erp_data_${username}`) || '';
           const afterConfig = localStorage.getItem(`erp_config_${username}`) || '';
@@ -3910,9 +4190,12 @@
         invoiceData.__backendId = 'inv_' + Date.now();
         AppState.data.push(invoiceData);
         
-        await AppState.saveUserData();
-        
-        showToast(`OK Venta registrada - Factura ${invNum}`, 'success');
+        const cloudSynced = await AppState.saveUserData();
+        if (cloudSynced === false) {
+          showToast(`Venta ${invNum} guardada en este telefono. Se subira automaticamente cuando vuelva el internet.`, 'warning');
+        } else {
+          showToast(`OK Venta registrada - Factura ${invNum}`, 'success');
+        }
         
         if (shouldPrint || AppState.config.auto_print) {
           const printerType = getEffectivePrinterType();
@@ -9443,14 +9726,17 @@
           ? rec.__backendId
           : AppState.data.find(r => r.type === 'sale' && linkedInvoiceNumber && r.invoice_number === linkedInvoiceNumber)?.__backendId;
 
-        AppState.data = AppState.data.filter(item => {
-          if (item.__backendId === id) return false;
-          if (linkedInvoiceNumber && item.type === 'invoice' && item.invoice_number === linkedInvoiceNumber) return false;
-          if (rec.type === 'invoice' && linkedInvoiceNumber && item.type === 'sale' && item.invoice_number === linkedInvoiceNumber) return false;
-          if (linkedSaleId && item.type === 'payment' && item.sale_id === linkedSaleId) return false;
-          return true;
-        });
-        AppState.saveUserData();
+        const shouldDelete = (item) => {
+          if (item.__backendId === id) return true;
+          if (linkedInvoiceNumber && item.type === 'invoice' && item.invoice_number === linkedInvoiceNumber) return true;
+          if (rec.type === 'invoice' && linkedInvoiceNumber && item.type === 'sale' && item.invoice_number === linkedInvoiceNumber) return true;
+          if (linkedSaleId && item.type === 'payment' && item.sale_id === linkedSaleId) return true;
+          return false;
+        };
+        const deletedIds = AppState.data.filter(shouldDelete).map(item => item.__backendId).filter(Boolean);
+        SupabaseSync.markRecordsDeleted(AppState.currentUser, deletedIds);
+        AppState.data = AppState.data.filter(item => !shouldDelete(item));
+        await AppState.saveUserData();
         showToast('Registro eliminado correctamente');
         AppState.deleteConfirmId = null;
         renderPage();
