@@ -8135,23 +8135,7 @@
       },
 
       buildMultiplePaymentText(selectedSales, total, method, notes) {
-        const h = this.helpers();
-        return [
-          ...this.thermalHeader('RECIBO PAGO MULTIPLE'),
-          ...h.section('CLIENTE', h.wordWrap(selectedSales[0]?.sale?.client_name || '')),
-          ...h.section('PAGO', [
-            'Fecha: ' + fmt.dateTime(new Date().toISOString()),
-            'Metodo: ' + String(method || '').toUpperCase()
-          ]),
-          notes ? 'Nota: ' + notes : '',
-          ...h.section('FACTURAS PAGADAS'),
-          ...selectedSales.flatMap(item => [
-            h.item(item.sale.invoice_number, fmt.currency(item.remaining)),
-            ...h.wordWrap(item.sale.material_name || '')
-          ]),
-          ...h.totalBlock('TOTAL', fmt.currency(total)),
-          ...this.thermalFooter('GRACIAS POR SU PAGO')
-        ].filter(Boolean).join('\n');
+        return buildPaidCreditReceiptThermalText(selectedSales, total, method, notes);
       },
 
       buildDirectTripInvoiceText(trip) {
@@ -10160,6 +10144,158 @@
       `;
     }
 
+    function getPaidCreditReceiptData(selectedSales, total, method, notes) {
+      const sales = (selectedSales || []).map(item => item?.sale).filter(Boolean);
+      const saleIds = new Set(sales.map(sale => sale.__backendId));
+      const relatedPayments = getRecords('payment')
+        .filter(payment => saleIds.has(payment.sale_id))
+        .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+      const latestPayment = relatedPayments[relatedPayments.length - 1];
+      const paymentMethods = [...new Set(relatedPayments.map(payment => String(payment.method || '').trim()).filter(Boolean))];
+      const effectiveMethod = String(method || (paymentMethods.length === 1 ? paymentMethods[0] : paymentMethods.length > 1 ? 'Varios' : '')).toUpperCase();
+      const receiptDate = latestPayment?.date || new Date().toISOString();
+      const receiptNumber = latestPayment?.__backendId
+        ? latestPayment.__backendId.replace('pay_', 'TOT-')
+        : 'TOT-' + Date.now();
+      const rows = sales.flatMap(sale => {
+        const invoice = AppState.data.find(record => record.type === 'invoice' && record.invoice_number === sale.invoice_number);
+        const items = invoice ? getInvoiceItems(invoice) : (Array.isArray(sale.items) && sale.items.length ? sale.items : [{
+          material_name: sale.material_name,
+          quantity: sale.sale_quantity,
+          price: sale.price,
+          subtotal: sale.sale_subtotal || sale.sale_total
+        }]);
+        return items.map(item => ({
+          invoice_number: sale.invoice_number,
+          date: sale.date,
+          material_name: item.material_name || sale.material_name || '',
+          quantity: toFiniteNumber(item.quantity, 0),
+          price: toFiniteNumber(item.price, 0),
+          subtotal: toFiniteNumber(item.subtotal, 0) || (toFiniteNumber(item.quantity, 0) * toFiniteNumber(item.price, 0))
+        }));
+      });
+      const subtotal = sales.reduce((sum, sale) => sum + toFiniteNumber(sale.sale_subtotal, toFiniteNumber(sale.sale_total, 0) - toFiniteNumber(sale.sale_tax, 0)), 0);
+      const tax = sales.reduce((sum, sale) => sum + toFiniteNumber(sale.sale_tax, 0), 0);
+      const invoiceTotal = sales.reduce((sum, sale) => sum + toFiniteNumber(sale.sale_total, 0), 0);
+      const paidNow = Number.isFinite(Number(total)) ? Number(total) : invoiceTotal;
+      const previousPaid = Math.max(0, invoiceTotal - paidNow);
+      const firstSale = sales[0] || {};
+      const plate = sales.map(sale => String(sale.vehicle_plate || '').trim()).find(Boolean) || '';
+
+      return {
+        sales,
+        rows,
+        firstSale,
+        plate,
+        subtotal,
+        tax,
+        invoiceTotal,
+        paidNow,
+        previousPaid,
+        effectiveMethod,
+        effectiveNotes: String(notes || '').trim(),
+        receiptDate,
+        receiptNumber
+      };
+    }
+
+    function buildPaidCreditReceiptPrintSection(selectedSales, total, method, notes) {
+      const data = getPaidCreditReceiptData(selectedSales, total, method, notes);
+      return `
+        <section class="doc">
+          <div class="header">
+            <div class="company">${AppState.config.company_name}</div>
+            <div>${AppState.config.company_slogan || ''}</div>
+            ${AppState.config.company_rfc ? `<div class="muted">RNC: ${AppState.config.company_rfc}</div>` : ''}
+          </div>
+          <div class="meta">
+            <div>
+              <div class="muted">CLIENTE</div>
+              <div><strong>${data.firstSale.client_name || ''}</strong></div>
+              ${data.plate ? `<div class="muted">Placa: ${data.plate}</div>` : ''}
+              ${data.effectiveMethod ? `<div class="muted">Metodo: ${data.effectiveMethod}</div>` : ''}
+            </div>
+            <div class="right">
+              <div style="font-size: 22px; font-weight: bold; color: #059669;">RECIBO DE PAGO TOTAL</div>
+              <div class="muted">LIQUIDACION COMPLETA</div>
+              <div class="muted">${fmt.dateTime(data.receiptDate)}</div>
+              <span class="badge">${data.sales.length} factura(s)</span>
+            </div>
+          </div>
+          <div class="muted">Recibo: ${data.receiptNumber}</div>
+          ${data.effectiveNotes ? `<div class="muted">Nota: ${data.effectiveNotes}</div>` : ''}
+          <table>
+            <thead>
+              <tr>
+                <th>Factura</th>
+                <th>Descripcion</th>
+                <th class="center">Cantidad</th>
+                <th class="right">Precio Unit.</th>
+                <th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.rows.map(item => `
+                <tr>
+                  <td>${item.invoice_number || ''}</td>
+                  <td><strong>${item.material_name || ''}</strong></td>
+                  <td class="center">${fmt.quantity(item.quantity)}</td>
+                  <td class="right">${fmt.currency(item.price)}</td>
+                  <td class="right">${fmt.currency(item.subtotal)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="right">
+            <div>Subtotal: ${fmt.currency(data.subtotal)}</div>
+            <div>IVA: ${fmt.currency(data.tax)}</div>
+            <div>Total facturas: ${fmt.currency(data.invoiceTotal)}</div>
+            ${data.previousPaid > 0 ? `<div>Pagado anteriormente: ${fmt.currency(data.previousPaid)}</div>` : ''}
+            <div class="total">PAGO TOTAL: ${fmt.currency(data.paidNow)}</div>
+            <div style="margin-top: 8px; font-size: 17px; font-weight: bold; color: #059669;">DEUDA LIQUIDADA COMPLETAMENTE</div>
+          </div>
+          <div class="center muted" style="margin-top: 20px;">PAGO COMPLETADO${AppState.config.company_phone ? ` - Tel: ${AppState.config.company_phone}` : ''}</div>
+        </section>
+      `;
+    }
+
+    function buildPaidCreditReceiptThermalText(selectedSales, total, method, notes) {
+      const h = BluetoothPrinter.helpers();
+      const data = getPaidCreditReceiptData(selectedSales, total, method, notes);
+      return [
+        ...BluetoothPrinter.thermalHeader('RECIBO DE PAGO TOTAL', 'LIQUIDACION COMPLETA'),
+        ...h.section('RECIBO', [
+          'Fecha: ' + fmt.dateTime(data.receiptDate),
+          'No: ' + data.receiptNumber,
+          'Facturas: ' + data.sales.length,
+          data.effectiveMethod ? 'Metodo: ' + data.effectiveMethod : ''
+        ]),
+        ...h.section('CLIENTE', [
+          ...h.wordWrap(data.firstSale.client_name || ''),
+          data.plate ? h.item('Placa:', data.plate) : ''
+        ]),
+        data.effectiveNotes ? 'Nota: ' + data.effectiveNotes : '',
+        ...h.section('DETALLE DE FACTURAS'),
+        ...data.rows.flatMap(item => [
+          h.line,
+          'Factura: ' + (item.invoice_number || ''),
+          ...h.wordWrap(item.material_name || ''),
+          h.item('Cant:', fmt.quantity(item.quantity)),
+          h.item('Precio:', fmt.currency(item.price)),
+          h.item('Total:', fmt.currency(item.subtotal))
+        ]),
+        h.thickLine,
+        h.item('Subtotal:', fmt.currency(data.subtotal)),
+        h.item('IVA:', fmt.currency(data.tax)),
+        h.item('Total facturas:', fmt.currency(data.invoiceTotal)),
+        data.previousPaid > 0 ? h.item('Pagado antes:', fmt.currency(data.previousPaid)) : '',
+        ...h.totalBlock('PAGO TOTAL', fmt.currency(data.paidNow)),
+        h.item('Falta por pagar:', fmt.currency(0)),
+        h.center('DEUDA LIQUIDADA COMPLETAMENTE'),
+        ...BluetoothPrinter.thermalFooter('PAGO COMPLETADO')
+      ].filter(Boolean).join('\n');
+    }
+
     function buildConsolidatedCreditInvoiceThermalText(invoices) {
       const h = BluetoothPrinter.helpers();
       const firstInvoice = invoices[0] || {};
@@ -10207,7 +10343,7 @@
       ].filter(Boolean).join('\n');
     }
 
-    function generateConsolidatedCreditInvoicePDF(invoices) {
+    function generateConsolidatedCreditInvoicePDF(invoices, asPaidReceipt = false) {
       if (!window.jspdf?.jsPDF) {
         showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
         return;
@@ -10328,8 +10464,15 @@
       doc.setFont(undefined, 'bold');
       doc.setFontSize(isThermal ? 10 : 16);
       doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
-      writeText('FACTURAS SELECCIONADAS', pageWidth / 2, { align: 'center' });
+      writeText(asPaidReceipt ? 'RECIBO DE PAGO TOTAL' : 'FACTURAS SELECCIONADAS', pageWidth / 2, { align: 'center' });
       yPos += isThermal ? 4 : 6;
+
+      if (asPaidReceipt) {
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(isThermal ? 8 : 10);
+        writeText('LIQUIDACION COMPLETA', pageWidth / 2, { align: 'center' });
+        yPos += isThermal ? 4 : 5;
+      }
 
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(isThermal ? 8 : 10);
@@ -10349,7 +10492,7 @@
           .reduce((paymentSum, payment) => paymentSum + (payment.amount || 0), 0) : 0;
         return invoice.payment_status === 'pagada' || paid >= (sale?.sale_total || invoice.sale_total || 0);
       }).length;
-      const consolidatedStatus = paidInvoices === invoices.length ? 'Facturas pagadas' : 'Facturas seleccionadas';
+      const consolidatedStatus = asPaidReceipt ? 'PAGO COMPLETO' : (paidInvoices === invoices.length ? 'Facturas pagadas' : 'Facturas seleccionadas');
       writeText(invoices.length + ' factura(s) - ' + consolidatedStatus, margin);
       yPos += lineHeight;
       drawLine();
@@ -10419,7 +10562,7 @@
 
       doc.setFontSize(isThermal ? 12 : 14);
       doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
-      doc.text('TOTAL:', isThermal ? margin : pageWidth - margin - 55, yPos);
+      doc.text(asPaidReceipt ? 'PAGO TOTAL:' : 'TOTAL:', isThermal ? margin : pageWidth - margin - 55, yPos);
       doc.text(fmt.currency(total), pageWidth - margin, yPos, { align: 'right' });
       yPos += isThermal ? 5 : 7;
 
@@ -10432,12 +10575,20 @@
       doc.text('Falta por pagar:', isThermal ? margin : pageWidth - margin - 55, yPos);
       doc.text(fmt.currency(totalPending), pageWidth - margin, yPos, { align: 'right' });
 
+      if (asPaidReceipt) {
+        yPos += isThermal ? 5 : 7;
+        doc.setTextColor(5, 150, 105);
+        doc.setFont(undefined, 'bold');
+        doc.text('DEUDA LIQUIDADA COMPLETAMENTE', pageWidth / 2, yPos, { align: 'center' });
+        doc.setFont(undefined, 'normal');
+      }
+
       doc.setTextColor(0, 0, 0);
       if (isThermal) {
         yPos += 8;
         drawLine(true);
         doc.setFontSize(8);
-        doc.text('IMPRESION CONSOLIDADA', pageWidth / 2, yPos, { align: 'center' });
+        doc.text(asPaidReceipt ? 'PAGO COMPLETADO' : 'IMPRESION CONSOLIDADA', pageWidth / 2, yPos, { align: 'center' });
       } else {
         yPos += 15;
         doc.setDrawColor(245, 158, 11);
@@ -10449,9 +10600,9 @@
         doc.text('Documento generado por ERP Materiales del Norte', pageWidth / 2, yPos, { align: 'center' });
       }
 
-      const fileName = 'facturas_credito_seleccionadas_' + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
+      const fileName = (asPaidReceipt ? 'recibo_pago_total_facturas_' : 'facturas_credito_seleccionadas_') + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
       doc.save(fileName);
-      showToast('PDF descargado: Facturas seleccionadas (' + formatLabel + ')');
+      showToast('PDF descargado: ' + (asPaidReceipt ? 'Pago total' : 'Facturas seleccionadas') + ' (' + formatLabel + ')');
     }
 
     async function printSelectedCreditInvoices(safeClientName) {
@@ -10462,11 +10613,13 @@
       }
 
       const invoices = [];
+      const selectedSales = [];
       selectedIds.forEach(saleId => {
         const sale = AppState.data.find(r => r.__backendId === saleId);
         const invoice = sale ? AppState.data.find(r => r.type === 'invoice' && r.invoice_number === sale.invoice_number) : null;
         if (invoice) {
           invoices.push(invoice);
+          selectedSales.push({ sale, remaining: toFiniteNumber(sale.sale_total, 0) });
         }
       });
 
@@ -10475,24 +10628,34 @@
         return;
       }
 
+      const isPaidSelection = AppState.creditFilters.status === 'paid';
+      const paidTotal = selectedSales.reduce((sum, item) => sum + toFiniteNumber(item.sale.sale_total, 0), 0);
+      const thermalText = isPaidSelection
+        ? buildPaidCreditReceiptThermalText(selectedSales, paidTotal, '', '')
+        : buildConsolidatedCreditInvoiceThermalText(invoices);
+      const printSection = isPaidSelection
+        ? buildPaidCreditReceiptPrintSection(selectedSales, paidTotal, '', '')
+        : buildConsolidatedCreditInvoicePrintSection(invoices);
+      const documentTitle = isPaidSelection ? 'Recibo de pago total' : 'Facturas seleccionadas';
+
       if (isBluetoothPrinterSelected()) {
         try {
-          await BluetoothPrinter.printText(buildConsolidatedCreditInvoiceThermalText(invoices));
-          showToast('Facturas seleccionadas enviadas por Bluetooth', 'success');
+          await BluetoothPrinter.printText(thermalText);
+          showToast(isPaidSelection ? 'Recibo de pago total enviado por Bluetooth' : 'Facturas seleccionadas enviadas por Bluetooth', 'success');
         } catch (err) {
           showToast('No se pudo imprimir directo por Bluetooth. Se abrira impresion normal.', 'warning');
-          openCombinedCreditPrint('Facturas seleccionadas', [buildConsolidatedCreditInvoicePrintSection(invoices)], buildConsolidatedCreditInvoiceThermalText(invoices));
+          openCombinedCreditPrint(documentTitle, [printSection], thermalText);
         }
         return;
       }
 
       const printerType = getEffectivePrinterType();
       if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
-        generateConsolidatedCreditInvoicePDF(invoices);
+        generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection);
         return;
       }
 
-      openCombinedCreditPrint('Facturas seleccionadas', [buildConsolidatedCreditInvoicePrintSection(invoices)], buildConsolidatedCreditInvoiceThermalText(invoices));
+      openCombinedCreditPrint(documentTitle, [printSection], thermalText);
     }
 
     function selectVisibleCreditPayments(select) {
