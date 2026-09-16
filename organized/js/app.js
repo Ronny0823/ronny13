@@ -4599,8 +4599,8 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-slate-400 mb-2">Notas (opcional)</label>
-              <input type="text" id="paymentNotes" placeholder="Referencia, concepto, etc."
+              <label class="block text-sm font-medium text-slate-400 mb-2">Por donde fue el pago (opcional)</label>
+              <input type="text" id="paymentNotes" placeholder="Ej.: caja, Banreservas, cuenta, persona..."
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
             </div>
 
@@ -4748,8 +4748,8 @@
             </div>
             
             <div>
-              <label class="block text-sm font-medium text-slate-400 mb-2">Notas (opcional)</label>
-              <input type="text" id="paymentNotes" placeholder="Referencia, concepto, etc."
+              <label class="block text-sm font-medium text-slate-400 mb-2">Por donde fue el pago (opcional)</label>
+              <input type="text" id="paymentNotes" placeholder="Ej.: caja, Banreservas, cuenta, persona..."
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
             </div>
             
@@ -10144,6 +10144,17 @@
       `;
     }
 
+    function getPaymentRouteValue(notes) {
+      const value = String(notes || '').trim();
+      if (!value) return '';
+      const automaticNotes = [
+        'pago total - liquidacion completa',
+        'pago multiple de facturas',
+        'abono multiple'
+      ];
+      return automaticNotes.includes(value.toLowerCase()) ? '' : value;
+    }
+
     function getPaidCreditReceiptData(selectedSales, total, method, notes) {
       const sales = (selectedSales || []).map(item => item?.sale).filter(Boolean);
       const saleIds = new Set(sales.map(sale => sale.__backendId));
@@ -10153,6 +10164,9 @@
       const latestPayment = relatedPayments[relatedPayments.length - 1];
       const paymentMethods = [...new Set(relatedPayments.map(payment => String(payment.method || '').trim()).filter(Boolean))];
       const effectiveMethod = String(method || (paymentMethods.length === 1 ? paymentMethods[0] : paymentMethods.length > 1 ? 'Varios' : '')).toUpperCase();
+      const paymentRoutes = [...new Set(relatedPayments.map(payment => getPaymentRouteValue(payment.notes)).filter(Boolean))];
+      const effectiveRoute = getPaymentRouteValue(notes)
+        || (paymentRoutes.length === 1 ? paymentRoutes[0] : paymentRoutes.length > 1 ? paymentRoutes.join(' / ') : '');
       const receiptDate = latestPayment?.date || new Date().toISOString();
       const receiptNumber = latestPayment?.__backendId
         ? latestPayment.__backendId.replace('pay_', 'TOT-')
@@ -10193,7 +10207,7 @@
         paidNow,
         previousPaid,
         effectiveMethod,
-        effectiveNotes: String(notes || '').trim(),
+        effectiveRoute,
         receiptDate,
         receiptNumber
       };
@@ -10223,7 +10237,7 @@
             </div>
           </div>
           <div class="muted">Recibo: ${data.receiptNumber}</div>
-          ${data.effectiveNotes ? `<div class="muted">Nota: ${data.effectiveNotes}</div>` : ''}
+          ${data.effectiveRoute ? `<div class="muted">Por donde fue: ${data.effectiveRoute}</div>` : ''}
           <table>
             <thead>
               <tr>
@@ -10274,7 +10288,7 @@
           ...h.wordWrap(data.firstSale.client_name || ''),
           data.plate ? h.item('Placa:', data.plate) : ''
         ]),
-        data.effectiveNotes ? 'Nota: ' + data.effectiveNotes : '',
+        data.effectiveRoute ? 'Por donde fue: ' + data.effectiveRoute : '',
         ...h.section('DETALLE DE FACTURAS'),
         ...data.rows.flatMap(item => [
           h.line,
@@ -10413,6 +10427,12 @@
           .reduce((paymentSum, payment) => paymentSum + (payment.amount || 0), 0);
       }, 0);
       const totalPending = Math.max(0, total - totalPaid);
+      const selectedInvoiceNumbers = new Set(invoices.map(invoice => invoice.invoice_number));
+      const receiptPayments = payments.filter(payment => selectedInvoiceNumbers.has(payment.invoice_number));
+      const receiptMethods = [...new Set(receiptPayments.map(payment => String(payment.method || '').trim()).filter(Boolean))];
+      const receiptMethod = receiptMethods.length === 1 ? receiptMethods[0].toUpperCase() : receiptMethods.length > 1 ? 'VARIOS' : '';
+      const receiptRoutes = [...new Set(receiptPayments.map(payment => getPaymentRouteValue(payment.notes)).filter(Boolean))];
+      const receiptRoute = receiptRoutes.length === 1 ? receiptRoutes[0] : receiptRoutes.length > 1 ? receiptRoutes.join(' / ') : '';
       let yPos = margin + 2;
 
       const addPageIfNeeded = (needed = lineHeight) => {
@@ -10483,6 +10503,14 @@
       yPos += lineHeight;
       if (firstInvoice.vehicle_plate) {
         writeText('Placa: ' + firstInvoice.vehicle_plate, margin);
+        yPos += lineHeight;
+      }
+      if (asPaidReceipt && receiptMethod) {
+        writeText('Metodo: ' + receiptMethod, margin);
+        yPos += lineHeight;
+      }
+      if (asPaidReceipt && receiptRoute) {
+        writeText('Por donde fue: ' + receiptRoute, margin);
         yPos += lineHeight;
       }
       const paidInvoices = invoices.filter(invoice => {
@@ -11096,8 +11124,8 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-slate-400 mb-2">Notas (opcional)</label>
-              <input type="text" id="multiPaymentNotes" placeholder="Referencia de pago multiple"
+              <label class="block text-sm font-medium text-slate-400 mb-2">Por donde fue el pago (opcional)</label>
+              <input type="text" id="multiPaymentNotes" placeholder="Ej.: caja, Banreservas, cuenta, persona..."
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
             </div>
 
@@ -11270,8 +11298,8 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-slate-400 mb-2">Notas (opcional)</label>
-              <input type="text" id="partialMultiPaymentNotes" placeholder="Referencia de abono"
+              <label class="block text-sm font-medium text-slate-400 mb-2">Por donde fue el pago (opcional)</label>
+              <input type="text" id="partialMultiPaymentNotes" placeholder="Ej.: caja, Banreservas, cuenta, persona..."
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
             </div>
 
@@ -11441,7 +11469,7 @@
         <div>Fecha: ${fmt.dateTime(new Date().toISOString())}</div>
         <div>Cliente: ${selectedSales[0].sale.client_name}</div>
         <div>Metodo: ${method.toUpperCase()}</div>
-        ${notes ? `<div>Nota: ${notes}</div>` : ''}
+        ${notes ? `<div>Por donde fue: ${notes}</div>` : ''}
         <div class="line"></div>
         <div class="bold">Facturas pagadas:</div>
         ${selectedSales.map(item => `
@@ -11468,7 +11496,7 @@
         <p><strong>Fecha:</strong> ${fmt.dateTime(new Date().toISOString())}</p>
         <p><strong>Cliente:</strong> ${selectedSales[0].sale.client_name}</p>
         <p><strong>Metodo:</strong> ${method.toUpperCase()}</p>
-        ${notes ? `<p><strong>Notas:</strong> ${notes}</p>` : ''}
+        ${notes ? `<p><strong>Por donde fue:</strong> ${notes}</p>` : ''}
         <table>
           <thead>
             <tr>
@@ -13639,7 +13667,7 @@
         doc.text('METODO: ' + method.toUpperCase(), margin, yPos);
         yPos += 4;
         if (notes) {
-          doc.text('NOTA: ' + notes, margin, yPos);
+          doc.text('POR DONDE FUE: ' + notes, margin, yPos);
           yPos += 4;
         }
         doc.setFont(undefined, 'normal');
@@ -13699,7 +13727,7 @@
         doc.text('Metodo: ' + method.toUpperCase(), margin, yPos);
         yPos += 5;
         if (notes) {
-          doc.text('Notas: ' + notes, margin, yPos);
+          doc.text('Por donde fue: ' + notes, margin, yPos);
           yPos += 5;
         }
         yPos += 2;
