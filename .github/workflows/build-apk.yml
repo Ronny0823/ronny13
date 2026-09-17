@@ -50,16 +50,16 @@ jobs:
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
       - name: Preparar APK directo
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.28-Metodo-y-Origen-Pago.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.29-Sincronizacion-Segura.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.28-Metodo-y-Origen-Pago.apk
+          path: ERP-Materiales-v1.29-Sincronizacion-Segura.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.29
           name: ERP Materiales v1.29
-          files: ERP-Materiales-v1.28-Metodo-y-Origen-Pago.apk
+          files: ERP-Materiales-v1.29-Sincronizacion-Segura.apk
           overwrite_files: true
