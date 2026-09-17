@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,8 +31,8 @@ jobs:
           cp -R organized/css android/app/src/main/assets/
           cp -R organized/js android/app/src/main/assets/
           node android/scripts/prepare-offline.cjs android/app/src/main/assets/js/app.js
-          sed -i "s/versionCode 24/versionCode 29/" android/app/build.gradle
-          sed -i "s/versionName '1.23.0'/versionName '1.28.0'/" android/app/build.gradle
+          sed -i "s/versionCode 24/versionCode 30/" android/app/build.gradle
+          sed -i "s/versionName '1.23.0'/versionName '1.29.0'/" android/app/build.gradle
           mkdir -p android/app/src/main/assets/vendor
           curl -fsSL --retry 3 https://cdn.tailwindcss.com -o android/app/src/main/assets/vendor/tailwindcss.js
           curl -fsSL --retry 3 https://unpkg.com/lucide@latest -o android/app/src/main/assets/vendor/lucide.js
@@ -58,7 +59,7 @@ jobs:
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.28
-          name: ERP Materiales v1.28
+          tag_name: v1.29
+          name: ERP Materiales v1.29
           files: ERP-Materiales-v1.28-Metodo-y-Origen-Pago.apk
           overwrite_files: true
