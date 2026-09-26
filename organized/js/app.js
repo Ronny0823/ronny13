@@ -5725,6 +5725,25 @@
         });
     }
 
+    function getCreditSalePaymentSnapshot(sale, payments = getRecords('payment')) {
+      const saleTotal = toFiniteNumber(sale?.sale_total, 0);
+      const paidFromPayments = payments
+        .filter(payment => payment.sale_id === sale?.__backendId)
+        .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
+      const storedPaid = toFiniteNumber(sale?.amount_paid, 0);
+      const isMarkedPaid = sale?.payment_status === 'pagada';
+      const paidAmount = isMarkedPaid
+        ? Math.max(paidFromPayments, storedPaid, saleTotal)
+        : Math.max(paidFromPayments, storedPaid);
+      const pendingAmount = Math.max(0, saleTotal - paidAmount);
+
+      return {
+        saleTotal,
+        paidAmount: Math.min(saleTotal, paidAmount),
+        pendingAmount
+      };
+    }
+
     function getReportCustomerPaymentStatus(sales, paymentEntries = []) {
       const payments = getRecords('payment');
       const clientMap = new Map();
@@ -5740,15 +5759,9 @@
 
       Array.from(reportSalesById.values()).forEach(sale => {
         const clientName = sale.client_name || 'Sin cliente';
-        const saleTotal = toFiniteNumber(sale.sale_total, 0);
-        const paidAmount = sale.payment_type === 'credito'
-          ? payments
-              .filter(payment => payment.sale_id === sale.__backendId)
-              .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0)
-          : saleTotal;
-        const pendingAmount = sale.payment_type === 'credito'
-          ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paidAmount)))
-          : 0;
+        const { saleTotal, paidAmount, pendingAmount } = sale.payment_type === 'credito'
+          ? getCreditSalePaymentSnapshot(sale, payments)
+          : { saleTotal: toFiniteNumber(sale.sale_total, 0), paidAmount: toFiniteNumber(sale.sale_total, 0), pendingAmount: 0 };
         const isPaid = pendingAmount <= 0.01;
 
         if (!clientMap.has(clientName)) {
@@ -5786,21 +5799,15 @@
         paidClients,
         pendingClients,
           paidInvoices: Array.from(reportSalesById.values()).filter(sale => {
-          const saleTotal = toFiniteNumber(sale.sale_total, 0);
-          const paid = sale.payment_type === 'credito'
-            ? payments.filter(payment => payment.sale_id === sale.__backendId).reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0)
-            : saleTotal;
-          const pending = sale.payment_type === 'credito'
-            ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paid)))
-            : 0;
+          const { pendingAmount: pending } = sale.payment_type === 'credito'
+            ? getCreditSalePaymentSnapshot(sale, payments)
+            : { pendingAmount: 0 };
           return pending <= 0.01;
         }).length,
         pendingInvoices: Array.from(reportSalesById.values()).filter(sale => {
-          const saleTotal = toFiniteNumber(sale.sale_total, 0);
-          const paid = payments.filter(payment => payment.sale_id === sale.__backendId).reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
-          const pending = sale.payment_type === 'credito'
-            ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paid)))
-            : 0;
+          const { pendingAmount: pending } = sale.payment_type === 'credito'
+            ? getCreditSalePaymentSnapshot(sale, payments)
+            : { pendingAmount: 0 };
           return pending > 0.01;
         }).length,
         totalPaidAmount: clients.reduce((sum, client) => sum + client.paidAmount, 0),
@@ -5841,15 +5848,9 @@
 
       const pendingClientMap = new Map();
       monthSales.forEach(sale => {
-        const saleTotal = toFiniteNumber(sale.sale_total, 0);
-        const paidAmount = sale.payment_type === 'credito'
-          ? payments
-              .filter(payment => payment.sale_id === sale.__backendId)
-              .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0)
-          : saleTotal;
-        const pendingAmount = sale.payment_type === 'credito'
-          ? Math.max(0, toFiniteNumber(sale.remaining_balance, Math.max(0, saleTotal - paidAmount)))
-          : 0;
+        const { saleTotal, paidAmount, pendingAmount } = sale.payment_type === 'credito'
+          ? getCreditSalePaymentSnapshot(sale, payments)
+          : { saleTotal: toFiniteNumber(sale.sale_total, 0), paidAmount: toFiniteNumber(sale.sale_total, 0), pendingAmount: 0 };
         if (pendingAmount <= 0.01) return;
 
         const clientName = sale.client_name || 'Sin cliente';
@@ -5934,11 +5935,7 @@
         .filter(sale => sale.payment_type === 'credito')
         .filter(sale => matchesDateFilter(sale.date, filters.dateFrom, filters.dateTo))
         .forEach(sale => {
-          const saleTotal = toFiniteNumber(sale.sale_total, 0);
-          const paidAmount = payments
-            .filter(payment => payment.sale_id === sale.__backendId)
-            .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
-          const pendingAmount = Math.max(0, toFiniteNumber(sale.remaining_balance, saleTotal - paidAmount));
+          const { saleTotal, paidAmount, pendingAmount } = getCreditSalePaymentSnapshot(sale, payments);
 
           addPendingClientAmount(sale.client_name, saleTotal, paidAmount, pendingAmount, sale.invoice_number);
         });
@@ -6090,7 +6087,11 @@
       const cashRevenue = cashSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const periodCashTotal = cashRevenue + totalPayments;
       const creditRevenue = creditSales.reduce((a, s) => a + (s.sale_total || 0), 0);
-      const pendingCredit = creditSales.reduce((a, s) => a + Math.max(0, s.remaining_balance ?? ((s.sale_total || 0) - (s.amount_paid || 0))), 0);
+      const allPayments = getRecords('payment');
+      const pendingCredit = creditSales.reduce((sum, sale) => {
+        const { pendingAmount } = getCreditSalePaymentSnapshot(sale, allPayments);
+        return sum + pendingAmount;
+      }, 0);
       const paidCredit = Math.max(0, creditRevenue - pendingCredit);
       const bestSale = filteredSales.slice().sort((a, b) => (b.sale_total || 0) - (a.sale_total || 0))[0];
       
