@@ -4669,7 +4669,7 @@
                             </div>
                           </div>
                           <div class="mt-3 flex items-center justify-between pt-3 border-t border-slate-700/50">
-                            <span class="text-xs text-slate-500">${p.method ? 'Metodo: ' + p.method : 'Abono registrado'}</span>
+                            <span class="text-xs text-slate-500">${getPaymentMethodDetail(p)}</span>
                             <button onclick="printPaymentReceipt('${p.__backendId}')" data-credit-action="print-payment-receipt" data-payment-id="${escapeAttr(p.__backendId)}" class="px-3 py-1 bg-primary-500/10 border border-primary-500/20 text-primary-400 rounded text-xs hover:bg-primary-500/20 transition-colors flex items-center gap-1">
                               <i data-lucide="printer" class="w-3 h-3"></i> Imprimir recibo
                             </button>
@@ -5054,6 +5054,7 @@
           invoice_number: sale.invoice_number,
           amount: safeAmount,
           method: method,
+          payment_channel: notes,
           notes: notes || 'Pago total - Liquidacion completa',
           date: document.getElementById('entryDate')?.value || new Date().toISOString(),
           is_full_payment: true,
@@ -5199,6 +5200,7 @@
           invoice_number: sale.invoice_number,
           amount: amount,
           method: method,
+          payment_channel: notes,
           notes: notes,
           date: new Date().toISOString(),
           __backendId: 'pay_' + Date.now()
@@ -5349,8 +5351,8 @@
         <div>Cliente: ${payment.client_name}</div>
         <div class="line"></div>
         <div>Factura ref: ${payment.invoice_number}</div>
-        <div>Metodo: ${payment.method.toUpperCase()}</div>
-        ${payment.notes ? `<div>Nota: ${payment.notes}</div>` : ''}
+        <div>Forma de pago: ${getPaymentMethodLabel(payment)}</div>
+        ${getPaymentRouteLabel(payment) ? `<div>Por donde: ${getPaymentRouteLabel(payment)}</div>` : ''}
         <div class="line"></div>
         <div class="center total">${receiptType}: ${fmt.currency(payment.amount)}</div>
         <div class="line"></div>
@@ -5385,8 +5387,8 @@
 
           <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
             <div style="margin-bottom: 10px;"><strong>Factura de referencia:</strong> ${payment.invoice_number}</div>
-            <div style="margin-bottom: 10px;"><strong>Metodo de pago:</strong> ${payment.method.toUpperCase()}</div>
-            ${payment.notes ? `<div style="margin-bottom: 10px;"><strong>Notas:</strong> ${payment.notes}</div>` : ''}
+            <div style="margin-bottom: 10px;"><strong>Forma de pago:</strong> ${getPaymentMethodLabel(payment)}</div>
+            ${getPaymentRouteLabel(payment) ? `<div style="margin-bottom: 10px;"><strong>Por donde:</strong> ${getPaymentRouteLabel(payment)}</div>` : ''}
           </div>
 
           <div class="total" style="border-top: 2px solid ${isFullPayment ? '#f59e0b' : '#3b82f6'}; padding-top: 15px; margin-top: 15px; color: ${isFullPayment ? '#f59e0b' : '#3b82f6'};">
@@ -8530,9 +8532,9 @@
           ...h.section('CLIENTE', h.wordWrap(payment.client_name || '')),
           ...h.section('DETALLE', [
             'Factura: ' + payment.invoice_number,
-            'Metodo: ' + String(payment.method || '').toUpperCase()
+            'Forma de pago: ' + getPaymentMethodLabel(payment)
           ]),
-          payment.notes ? 'Nota: ' + payment.notes : '',
+          getPaymentRouteLabel(payment) ? 'Por donde: ' + getPaymentRouteLabel(payment) : '',
           ...h.totalBlock(isFullPayment ? 'PAGO TOTAL' : 'ABONO', fmt.currency(payment.amount)),
           !isFullPayment ? h.item('Falta por pagar:', fmt.currency(remainingBalance)) : 'DEUDA LIQUIDADA COMPLETAMENTE',
           !isFullPayment ? h.item('Total factura:', fmt.currency(sale?.sale_total || 0)) : '',
@@ -11115,6 +11117,44 @@
       if (printBtn) printBtn.disabled = selectedCount === 0;
     }
 
+    function getPaymentMethodLabel(paymentOrMethod) {
+      const raw = typeof paymentOrMethod === 'string'
+        ? paymentOrMethod
+        : (paymentOrMethod?.method || paymentOrMethod?.payment_method || '');
+      const clean = safeText(raw).trim();
+      const key = clean.toLowerCase();
+      const labels = {
+        efectivo: 'EFECTIVO',
+        transferencia: 'TRANSFERENCIA',
+        tarjeta: 'TARJETA',
+        cheque: 'CHEQUE'
+      };
+      return labels[key] || clean.toUpperCase() || 'NO ESPECIFICADO';
+    }
+
+    function getPaymentRouteLabel(payment) {
+      const explicitRoute = safeText(
+        payment?.payment_channel ||
+        payment?.payment_route ||
+        payment?.channel ||
+        ''
+      ).trim();
+      if (explicitRoute) return explicitRoute;
+
+      const legacyNotes = safeText(payment?.notes || '').trim();
+      if (!legacyNotes) return '';
+      if (/^(pago total\s*-\s*liquidacion completa|pago multiple de facturas|abono multiple)$/i.test(legacyNotes)) {
+        return '';
+      }
+      return legacyNotes;
+    }
+
+    function getPaymentMethodDetail(payment) {
+      const method = getPaymentMethodLabel(payment);
+      const route = getPaymentRouteLabel(payment);
+      return 'Forma de pago: ' + method + (route ? ' | Por donde: ' + route : '');
+    }
+
     function buildCreditPaymentPrintSection(payment) {
       const sale = AppState.data.find(r => r.__backendId === payment.sale_id);
       const allPayments = getRecords('payment').filter(p => p.sale_id === payment.sale_id);
@@ -11148,8 +11188,8 @@
               <tr><th>Monto abonado</th><td class="right"><strong>${fmt.currency(payment.amount || 0)}</strong></td></tr>
               <tr><th>Total factura</th><td class="right">${fmt.currency(sale?.sale_total || 0)}</td></tr>
               <tr><th>Falta por pagar</th><td class="right">${fmt.currency(remaining)}</td></tr>
-              ${payment.method ? `<tr><th>Metodo</th><td>${payment.method}</td></tr>` : ''}
-              ${payment.notes ? `<tr><th>Nota</th><td>${payment.notes}</td></tr>` : ''}
+              <tr><th>Forma de pago</th><td>${getPaymentMethodLabel(payment)}</td></tr>
+              ${getPaymentRouteLabel(payment) ? `<tr><th>Por donde</th><td>${getPaymentRouteLabel(payment)}</td></tr>` : ''}
             </tbody>
           </table>
           <div class="center muted">Conserve este recibo como comprobante.</div>
@@ -11209,6 +11249,8 @@
                     <td>${sale?.material_name || ''}</td>
                     <td class="right">
                       <strong>${fmt.currency(payment.amount || 0)}</strong>
+                      <div class="muted" style="font-size: 11px;">Forma: ${getPaymentMethodLabel(payment)}</div>
+                      ${getPaymentRouteLabel(payment) ? `<div class="muted" style="font-size: 11px;">Por donde: ${getPaymentRouteLabel(payment)}</div>` : ''}
                       <div class="muted" style="font-size: 11px;">Falta por pagar: ${fmt.currency(remaining)}</div>
                     </td>
                   </tr>
@@ -11254,6 +11296,8 @@
             'Factura: ' + (payment.invoice_number || ''),
             'Fecha: ' + fmt.dateTime(payment.date),
             ...h.wordWrap(sale?.material_name || ''),
+            'Forma: ' + getPaymentMethodLabel(payment),
+            getPaymentRouteLabel(payment) ? 'Por donde: ' + getPaymentRouteLabel(payment) : '',
             h.item('Abono:', fmt.currency(payment.amount || 0)),
             h.item('Falta por pagar:', fmt.currency(remaining))
           ];
@@ -11379,7 +11423,7 @@
             .filter(p => p.date <= payment.date)
             .reduce((sum, p) => sum + (p.amount || 0), 0);
           const remaining = Math.max(0, (sale?.sale_total || 0) - paidUntilThis);
-          addPageIfNeeded(24);
+          addPageIfNeeded(34);
           doc.setFont(undefined, 'bold');
           doc.text('Factura: ' + (payment.invoice_number || ''), margin, yPos);
           yPos += 4;
@@ -11390,6 +11434,16 @@
             doc.text(line, margin, yPos);
             yPos += 4;
           });
+          doc.text('Forma: ' + getPaymentMethodLabel(payment), margin, yPos);
+          yPos += 4;
+          const paymentRoute = getPaymentRouteLabel(payment);
+          if (paymentRoute) {
+            doc.splitTextToSize('Por donde: ' + paymentRoute, contentWidth).forEach(line => {
+              addPageIfNeeded(4);
+              doc.text(line, margin, yPos);
+              yPos += 4;
+            });
+          }
           doc.text('Abono: ' + fmt.currency(payment.amount || 0), margin, yPos);
           yPos += 4;
           doc.text('Falta: ' + fmt.currency(remaining), margin, yPos);
@@ -11415,7 +11469,17 @@
           doc.text(fmt.dateTime(payment.date), margin + 35, yPos);
           doc.text(material, margin + 75, yPos);
           doc.text(fmt.currency(payment.amount || 0), pageWidth - margin, yPos, { align: 'right' });
-          yPos += 7;
+          yPos += 4;
+          doc.setFontSize(8);
+          doc.text('Forma: ' + getPaymentMethodLabel(payment), margin + 2, yPos);
+          yPos += 4;
+          const paymentRoute = getPaymentRouteLabel(payment);
+          if (paymentRoute) {
+            doc.text('Por donde: ' + paymentRoute, margin + 2, yPos);
+            yPos += 4;
+          }
+          doc.setFontSize(9);
+          yPos += 3;
         });
         drawLine();
       }
@@ -11592,6 +11656,7 @@
             invoice_number: item.sale.invoice_number,
             amount: item.remaining,
             method: method,
+            payment_channel: notes,
             notes: notes || 'Pago multiple de facturas',
             date: new Date().toISOString(),
             is_multiple_payment: true,
@@ -13372,6 +13437,7 @@
           date: new Date().toISOString(),
           amount: amount,
           method: method,
+          payment_channel: notes,
           notes: notes
         });
 
