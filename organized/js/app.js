@@ -70,6 +70,8 @@
       retryTimer: null,
       retryDelay: 5000,
       onlineListenerInstalled: false,
+      recordUpdatedField: '__syncUpdatedAt',
+      recordHashField: '__syncHash',
 
       async init() {
         if (this.hooksInstalled) return;
@@ -197,6 +199,81 @@
         return String(key || '').startsWith('erp_data_') ? String(key).slice('erp_data_'.length) : '';
       },
 
+      getRecordId(record) {
+        return record && (record.__backendId || record.id) ? String(record.__backendId || record.id) : '';
+      },
+
+      recordSignature(record) {
+        const normalize = (value) => {
+          if (Array.isArray(value)) return value.map(normalize);
+          if (value && typeof value === 'object') {
+            const normalized = {};
+            Object.keys(value).sort().forEach(key => {
+              if (key === this.recordUpdatedField || key === this.recordHashField) return;
+              normalized[key] = normalize(value[key]);
+            });
+            return normalized;
+          }
+          return value;
+        };
+        return JSON.stringify(normalize(record));
+      },
+
+      recordHash(record) {
+        const signature = this.recordSignature(record);
+        let hash = 2166136261;
+        for (let i = 0; i < signature.length; i++) {
+          hash ^= signature.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(36);
+      },
+
+      getRecordTimestamp(record) {
+        if (!record || typeof record !== 'object') return 0;
+        const rawTimestamp = record[this.recordUpdatedField];
+        const rawHash = record[this.recordHashField];
+        const timestamp = Date.parse(rawTimestamp || '');
+        if (!Number.isFinite(timestamp) || !rawHash) return 0;
+        return rawHash === this.recordHash(record) ? timestamp : 0;
+      },
+
+      stampChangedRecords(key, records) {
+        const previousRecords = this.parseStoredValue(localStorage.getItem(key), []);
+        const previousById = new Map();
+        (Array.isArray(previousRecords) ? previousRecords : []).forEach(record => {
+          const id = this.getRecordId(record);
+          if (id) previousById.set(id, record);
+        });
+        const changedAt = new Date().toISOString();
+
+        return (Array.isArray(records) ? records : []).map(record => {
+          if (!record || typeof record !== 'object') return record;
+          const id = this.getRecordId(record);
+          if (!id) return record;
+          const previous = previousById.get(id);
+          const changed = !previous || this.recordSignature(previous) !== this.recordSignature(record);
+          if (changed) {
+            const stamped = { ...record, [this.recordUpdatedField]: changedAt };
+            stamped[this.recordHashField] = this.recordHash(stamped);
+            return stamped;
+          }
+
+          if (this.getRecordTimestamp(record) > 0) return record;
+          if (this.getRecordTimestamp(previous) > 0) {
+            return {
+              ...record,
+              [this.recordUpdatedField]: previous[this.recordUpdatedField],
+              [this.recordHashField]: previous[this.recordHashField]
+            };
+          }
+
+          const cleanRecord = { ...record };
+          delete cleanRecord[this.recordUpdatedField];
+          delete cleanRecord[this.recordHashField];
+          return cleanRecord;
+        });
+      },
       getDeletedIds(username) {
         if (!username) return new Set();
         const parsed = this.parseStoredValue(localStorage.getItem(this.getDeletedKey(username)), []);
@@ -294,27 +371,71 @@
         }
 
         if (key.startsWith('erp_data_')) {
-          const records = new Map();
-          const addRecords = (items) => {
-            (Array.isArray(items) ? items : []).forEach(record => {
-              if (!record || typeof record !== 'object') return;
-              const id = record.__backendId || record.id;
-              if (!id) return;
-              records.set(id, { ...(records.get(id) || {}), ...record });
-            });
+          const remoteRecords = Array.isArray(remoteParsed) ? remoteParsed : [];
+          const localRecords = Array.isArray(localValue) ? localValue : [];
+          const localById = new Map();
+          const mergedIds = new Set();
+          const mergedRecords = [];
+
+          localRecords.forEach(record => {
+            const id = this.getRecordId(record);
+            if (id) localById.set(id, record);
+          });
+
+          const mergeRecord = (remoteRecord, localRecord) => {
+            const remoteTimestamp = this.getRecordTimestamp(remoteRecord);
+            const localTimestamp = this.getRecordTimestamp(localRecord);
+            let winner = remoteRecord;
+
+            if (localTimestamp > remoteTimestamp) {
+              winner = localRecord;
+            } else if (remoteTimestamp > localTimestamp) {
+              winner = remoteRecord;
+            } else if (remoteTimestamp === 0) {
+              winner = localWins ? localRecord : remoteRecord;
+            }
+
+            const winnerIsLocal = winner === localRecord;
+            const merged = winnerIsLocal
+              ? { ...(remoteRecord || {}), ...(localRecord || {}) }
+              : { ...(localRecord || {}), ...(remoteRecord || {}) };
+            const verifiedTimestamp = this.getRecordTimestamp(winner);
+            if (verifiedTimestamp > 0) {
+              merged[this.recordUpdatedField] = winner[this.recordUpdatedField];
+              merged[this.recordHashField] = winner[this.recordHashField];
+            } else {
+              delete merged[this.recordUpdatedField];
+              delete merged[this.recordHashField];
+            }
+            return merged;
           };
-          if (localWins) {
-            addRecords(remoteParsed);
-            addRecords(localValue);
-          } else {
-            addRecords(localValue);
-            addRecords(remoteParsed);
-          }
+
+          remoteRecords.forEach(remoteRecord => {
+            const id = this.getRecordId(remoteRecord);
+            if (!id) {
+              mergedRecords.push(remoteRecord);
+              return;
+            }
+            const localRecord = localById.get(id);
+            mergedRecords.push(localRecord ? mergeRecord(remoteRecord, localRecord) : remoteRecord);
+            mergedIds.add(id);
+          });
+
+          localRecords.forEach(localRecord => {
+            const id = this.getRecordId(localRecord);
+            if (id && mergedIds.has(id)) return;
+            if (!id) {
+              const signature = this.recordSignature(localRecord);
+              if (mergedRecords.some(record => !this.getRecordId(record) && this.recordSignature(record) === signature)) return;
+            }
+            mergedRecords.push(localRecord);
+            if (id) mergedIds.add(id);
+          });
+
           const username = this.getUsernameFromDataKey(key);
           const deletedIds = this.getDeletedIds(username);
-          return Array.from(records.values()).filter(record => !deletedIds.has(record.__backendId || record.id));
+          return mergedRecords.filter(record => !deletedIds.has(this.getRecordId(record)));
         }
-
         if (key.startsWith('erp_config_')) {
           if (remoteParsed && typeof remoteParsed === 'object') {
             return localWins
@@ -1546,7 +1667,9 @@
       saveUserData() {
         if (!this.currentUser) return;
         this.invalidateDataCache();
-        localStorage.setItem(`erp_data_${this.currentUser}`, JSON.stringify(this.data));
+        const dataKey = `erp_data_${this.currentUser}`;
+        this.data = SupabaseSync.stampChangedRecords(dataKey, this.data);
+        localStorage.setItem(dataKey, JSON.stringify(this.data));
         localStorage.setItem(`erp_config_${this.currentUser}`, JSON.stringify(this.config));
         DataBackup.saveSafetyBackup(this.currentUser);
         return SupabaseSync.flush();
@@ -10101,8 +10224,12 @@
           }
         }
 
-        AppState.saveUserData();
-        showToast('Factura actualizada correctamente', 'success');
+        const cloudSynced = await AppState.saveUserData();
+        if (cloudSynced === false) {
+          showToast('Factura actualizada en este telefono. Se sincronizara automaticamente al volver el internet.', 'warning');
+        } else {
+          showToast('Factura actualizada y sincronizada correctamente', 'success');
+        }
         closeModal();
         renderPage();
       } catch (err) {
