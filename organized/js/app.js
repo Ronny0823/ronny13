@@ -12916,28 +12916,46 @@
 
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 class="text-2xl font-bold text-slate-100">Viajes Directos</h2>
-              <p class="text-slate-500 text-sm mt-1">Gestion de viajes de otras companias</p>
+          <div class="space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 class="text-2xl font-bold text-slate-100">Viajes Directos</h2>
+                <p class="text-slate-500 text-sm mt-1">Gestion de viajes de otras companias</p>
+              </div>
+              <div class="flex items-stretch gap-2 w-full sm:w-auto">
+                <button onclick="showDirectTripModal()" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-500 hover:bg-primary-400 text-slate-900 font-semibold rounded-lg transition-all hover:shadow-lg hover:shadow-primary-500/20">
+                  <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Viaje
+                </button>
+                <button onclick="exportDirectTripsExcel()" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold rounded-lg transition-all">
+                  <i data-lucide="download" class="w-4 h-4"></i> Excel
+                </button>
+              </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <span id="directTripSelectedCount" class="text-xs text-slate-500 px-2">0 facturas seleccionadas</span>
-              <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center gap-2 px-3 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 font-semibold rounded-lg transition-all">
-                <i data-lucide="check-square" class="w-4 h-4"></i> Seleccionar visibles
-              </button>
-              <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center gap-2 px-3 py-2 bg-slate-700/50 border border-slate-600 text-slate-300 hover:bg-slate-700 font-semibold rounded-lg transition-all">
-                <i data-lucide="square" class="w-4 h-4"></i> Quitar seleccion
-              </button>
-              <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex items-center gap-2 px-4 py-2 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                <i data-lucide="send" class="w-4 h-4"></i> PDF WhatsApp
-              </button>
-              <button onclick="exportDirectTripsExcel()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold rounded-lg transition-all">
-                <i data-lucide="download" class="w-4 h-4"></i> Excel
-              </button>
-              <button onclick="showDirectTripModal()" class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-400 text-slate-900 font-semibold rounded-lg transition-all hover:shadow-lg hover:shadow-primary-500/20">
-                <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Viaje Directo
-              </button>
+
+            <div class="glass rounded-xl p-3 sm:p-4 border border-slate-700/50">
+              <div class="flex items-center justify-between gap-3 mb-3">
+                <div class="flex items-center gap-2 min-w-0">
+                  <div class="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
+                    <i data-lucide="files" class="w-4 h-4 text-blue-300"></i>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-200">Seleccion de facturas</div>
+                    <div class="text-xs text-slate-500">Marca las que vas a compartir</div>
+                  </div>
+                </div>
+                <span id="directTripSelectedCount" class="shrink-0 text-xs font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">0 seleccionadas</span>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-sm font-semibold rounded-lg transition-all">
+                  <i data-lucide="check-square" class="w-4 h-4"></i> Seleccionar visibles
+                </button>
+                <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700/40 border border-slate-600/70 text-slate-300 hover:bg-slate-700 text-sm font-semibold rounded-lg transition-all">
+                  <i data-lucide="square" class="w-4 h-4"></i> Quitar seleccion
+                </button>
+                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  <i data-lucide="send" class="w-4 h-4"></i> PDF WhatsApp
+                </button>
+              </div>
             </div>
           </div>
 
