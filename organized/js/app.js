@@ -12921,7 +12921,17 @@
               <h2 class="text-2xl font-bold text-slate-100">Viajes Directos</h2>
               <p class="text-slate-500 text-sm mt-1">Gestion de viajes de otras companias</p>
             </div>
-            <div class="flex flex-wrap gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="directTripSelectedCount" class="text-xs text-slate-500 px-2">0 facturas seleccionadas</span>
+              <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center gap-2 px-3 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 font-semibold rounded-lg transition-all">
+                <i data-lucide="check-square" class="w-4 h-4"></i> Seleccionar visibles
+              </button>
+              <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center gap-2 px-3 py-2 bg-slate-700/50 border border-slate-600 text-slate-300 hover:bg-slate-700 font-semibold rounded-lg transition-all">
+                <i data-lucide="square" class="w-4 h-4"></i> Quitar seleccion
+              </button>
+              <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex items-center gap-2 px-4 py-2 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                <i data-lucide="send" class="w-4 h-4"></i> PDF WhatsApp
+              </button>
               <button onclick="exportDirectTripsExcel()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold rounded-lg transition-all">
                 <i data-lucide="download" class="w-4 h-4"></i> Excel
               </button>
@@ -13026,6 +13036,9 @@
               <table class="w-full data-table">
                 <thead>
                   <tr>
+                    <th class="text-center">
+                      <input type="checkbox" id="directTripSelectAll" onchange="toggleAllDirectTrips(this.checked)" class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500" title="Seleccionar todas las facturas visibles">
+                    </th>
                     <th>Fecha</th>
                     <th>Compania Origen</th>
                     <th>Chofer</th>
@@ -13042,7 +13055,7 @@
                 <tbody>
                   ${filteredTrips.length === 0 ? `
                     <tr>
-                      <td colspan="10" class="text-center py-12 text-slate-500">
+                      <td colspan="12" class="text-center py-12 text-slate-500">
                         <div class="flex flex-col items-center gap-3">
                           <i data-lucide="route" class="w-12 h-12 opacity-30"></i>
                           <p>${trips.length === 0 ? 'Sin viajes directos registrados' : 'No hay viajes con los filtros seleccionados'}</p>
@@ -13054,6 +13067,10 @@
                     const remaining = (t.trip_amount || 0) - (t.amount_paid || 0);
                     return `
                     <tr class="${t.payment_status === 'pagado' ? 'bg-emerald-500/5' : ''}">
+                      <td class="text-center">
+                        <input type="checkbox" class="direct-trip-check w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
+                          data-trip-id="${escapeAttr(t.__backendId)}" data-client="${escapeAttr(t.destination_client || '')}" onchange="updateDirectTripSelection()">
+                      </td>
                       <td class="text-slate-400 text-sm">${fmt.dateTime(t.date)}</td>
                       <td class="font-medium text-slate-200">${t.source_company}</td>
                       <td class="text-slate-300">${t.driver_name}</td>
@@ -13108,6 +13125,52 @@
       lucide.createIcons();
     }
 
+
+    function getSelectedDirectTrips() {
+      return Array.from(document.querySelectorAll('.direct-trip-check:checked'))
+        .map(checkbox => AppState.data.find(record => record.__backendId === checkbox.dataset.tripId))
+        .filter(Boolean);
+    }
+
+    function updateDirectTripSelection() {
+      const selected = getSelectedDirectTrips();
+      const button = document.getElementById('btnDirectTripPdf');
+      const counter = document.getElementById('directTripSelectedCount');
+      const selectAll = document.getElementById('directTripSelectAll');
+      const visible = Array.from(document.querySelectorAll('.direct-trip-check'));
+
+      if (button) button.disabled = selected.length === 0;
+      if (counter) {
+        counter.textContent = selected.length + (selected.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas');
+      }
+      if (selectAll) {
+        selectAll.checked = visible.length > 0 && visible.every(checkbox => checkbox.checked);
+        selectAll.indeterminate = visible.some(checkbox => checkbox.checked) && !selectAll.checked;
+      }
+    }
+
+    function toggleAllDirectTrips(select) {
+      document.querySelectorAll('.direct-trip-check').forEach(checkbox => {
+        checkbox.checked = select;
+      });
+      updateDirectTripSelection();
+    }
+
+    async function shareSelectedDirectTripsPDF() {
+      const selected = getSelectedDirectTrips();
+      if (!selected.length) {
+        showToast('Selecciona una o varias facturas de Viaje Directo', 'error');
+        return;
+      }
+
+      const clients = [...new Set(selected.map(trip => safeText(trip.destination_client).trim().toLowerCase()).filter(Boolean))];
+      if (clients.length > 1) {
+        showToast('Selecciona facturas de un mismo cliente para crear el PDF', 'error');
+        return;
+      }
+
+      await generateSelectedDirectTripsPDF(selected);
+    }
 
     // Funciones de filtro para Viajes Directos
     function updateDirectTripFilters() {
@@ -14513,6 +14576,189 @@
       let fileName = 'recibo_pago_multiple_' + (isThermal ? (is58mm ? '58mm' : '80mm') : 'Carta') + '.pdf';
       doc.save(fileName);
       showToast('PDF descargado: Pago Multiple (' + (isThermal ? (is58mm ? '58mm' : '80mm') : 'Carta') + ')');
+    }
+
+    async function generateSelectedDirectTripsPDF(selectedTrips) {
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
+        return;
+      }
+
+      const trips = selectedTrips.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+      const { jsPDF } = window.jspdf;
+      const format = AppState.config.paper_size === 'a4' ? 'a4' : 'letter';
+      const pageWidth = format === 'a4' ? 210 : 216;
+      const pageHeight = format === 'a4' ? 297 : 279;
+      const margin = 20;
+      const contentWidth = pageWidth - (margin * 2);
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
+      const clientName = trips[0]?.destination_client || 'Cliente';
+      const totalAmount = trips.reduce((sum, trip) => sum + toFiniteNumber(trip.trip_amount, 0), 0);
+      const totalPaid = trips.reduce((sum, trip) => {
+        return sum + Math.min(toFiniteNumber(trip.amount_paid, 0), toFiniteNumber(trip.trip_amount, 0));
+      }, 0);
+      const totalPending = Math.max(0, totalAmount - totalPaid);
+      let yPos = margin + 2;
+
+      const addPageIfNeeded = (needed = 8) => {
+        if (yPos + needed <= pageHeight - margin) return;
+        doc.addPage();
+        yPos = margin + 2;
+      };
+
+      if (AppState.config.company_logo) {
+        try {
+          const logoWidth = 40;
+          const logoHeight = logoWidth * 0.5;
+          doc.addImage(AppState.config.company_logo, 'JPEG', pageWidth / 2 - logoWidth / 2, yPos, logoWidth, logoHeight);
+          yPos += logoHeight + 5;
+        } catch (error) {}
+      }
+
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor(0, 0, 0);
+      doc.text(String(AppState.config.company_name || ''), pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(10);
+      doc.text(String(AppState.config.company_slogan || ''), pageWidth / 2, yPos, { align: 'center' });
+      yPos += 5;
+      if (AppState.config.company_rfc) {
+        doc.setFontSize(8);
+        doc.text('RNC: ' + AppState.config.company_rfc, pageWidth / 2, yPos, { align: 'center' });
+        yPos += 4;
+      }
+
+      yPos += 2;
+      doc.setDrawColor(245, 158, 11);
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 8;
+
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(245, 158, 11);
+      doc.text('FACTURAS DE VIAJE DIRECTO', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 7;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Fecha: ' + fmt.dateTime(new Date().toISOString()), margin, yPos);
+      yPos += 6;
+      doc.text('Cliente destino: ' + clientName, margin, yPos);
+      yPos += 6;
+      doc.text(trips.length + (trips.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas'), margin, yPos);
+      yPos += 8;
+
+      trips.forEach(trip => {
+        const tripTotal = toFiniteNumber(trip.trip_amount, 0);
+        const paid = Math.min(toFiniteNumber(trip.amount_paid, 0), tripTotal);
+        const pending = Math.max(0, tripTotal - paid);
+        const status = trip.payment_status === 'pagado' || pending <= 0
+          ? 'PAGADO'
+          : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
+        const details = [
+          'Fecha: ' + fmt.dateTime(trip.date),
+          'Compania origen: ' + (trip.source_company || 'No especificada'),
+          'Chofer: ' + (trip.driver_name || 'No especificado'),
+          'Vehiculo: ' + (trip.vehicle_plate || 'No especificado'),
+          'Material: ' + (trip.material_type || 'No especificado'),
+          'Metros3: ' + fmt.number(trip.meters, 2),
+          'Estado: ' + status
+        ];
+        if (trip.notes) details.push('Notas: ' + trip.notes);
+        const detailLines = details.flatMap(detail => doc.splitTextToSize(detail, contentWidth - 10));
+        const cardHeight = 36 + (detailLines.length * 4);
+
+        addPageIfNeeded(cardHeight + 6);
+        const cardTop = yPos;
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.25);
+        doc.roundedRect(margin, cardTop, contentWidth, cardHeight, 2, 2, 'FD');
+
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(margin, cardTop, contentWidth, 10, 2, 2, 'F');
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59);
+        doc.text(String(trip.invoice_number || 'Sin numero de factura'), margin + 5, cardTop + 7);
+        if (status === 'PAGADO') {
+          doc.setTextColor(5, 150, 105);
+        } else if (status === 'PAGO PARCIAL') {
+          doc.setTextColor(217, 119, 6);
+        } else {
+          doc.setTextColor(220, 38, 38);
+        }
+        doc.text(status, pageWidth - margin - 5, cardTop + 7, { align: 'right' });
+
+        let detailY = cardTop + 16;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        detailLines.forEach(line => {
+          doc.text(line, margin + 5, detailY);
+          detailY += 4;
+        });
+
+        detailY += 2;
+        doc.setDrawColor(226, 232, 240);
+        doc.line(margin + 5, detailY, pageWidth - margin - 5, detailY);
+        detailY += 6;
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(51, 65, 85);
+        doc.text('Total factura', margin + 5, detailY);
+        doc.text(fmt.currency(tripTotal), pageWidth - margin - 5, detailY, { align: 'right' });
+        detailY += 5;
+        doc.setTextColor(5, 150, 105);
+        doc.text('Abonado', margin + 5, detailY);
+        doc.text(fmt.currency(paid), pageWidth - margin - 5, detailY, { align: 'right' });
+        detailY += 5;
+        doc.setTextColor(217, 119, 6);
+        doc.text('Pendiente', margin + 5, detailY);
+        doc.text(fmt.currency(pending), pageWidth - margin - 5, detailY, { align: 'right' });
+
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(0, 0, 0);
+        yPos = cardTop + cardHeight + 5;
+      });
+
+      addPageIfNeeded(42);
+      const summaryTop = yPos;
+      doc.setFillColor(255, 251, 235);
+      doc.setDrawColor(245, 158, 11);
+      doc.setLineWidth(0.35);
+      doc.roundedRect(margin, summaryTop, contentWidth, 31, 2, 2, 'FD');
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(51, 65, 85);
+      doc.text('TOTAL FACTURADO', margin + 5, summaryTop + 8);
+      doc.text(fmt.currency(totalAmount), pageWidth - margin - 5, summaryTop + 8, { align: 'right' });
+      doc.setTextColor(5, 150, 105);
+      doc.text('TOTAL ABONADO', margin + 5, summaryTop + 17);
+      doc.text(fmt.currency(totalPaid), pageWidth - margin - 5, summaryTop + 17, { align: 'right' });
+      doc.setTextColor(217, 119, 6);
+      doc.text('TOTAL PENDIENTE', margin + 5, summaryTop + 26);
+      doc.text(fmt.currency(totalPending), pageWidth - margin - 5, summaryTop + 26, { align: 'right' });
+      yPos += 38;
+
+      addPageIfNeeded(15);
+      doc.setDrawColor(245, 158, 11);
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 8;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Documento generado por ERP Materiales del Norte', pageWidth / 2, yPos, { align: 'center' });
+
+      const clientFileName = safeText(clientName)
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 50) || 'cliente';
+      const fileName = 'viajes_directos_' + clientFileName + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+      await sharePdfDocument(doc, fileName);
     }
 
     function generateDirectTripPDF(tripId) {
