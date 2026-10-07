@@ -11082,44 +11082,81 @@
         drawLine();
       }
 
-      addPageIfNeeded(isThermal ? 28 : 35);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(isThermal ? 8 : 10);
-      if (!isThermal) {
-        doc.text('Subtotal:', pageWidth - margin - 55, yPos);
-        doc.text(fmt.currency(subtotal), pageWidth - margin, yPos, { align: 'right' });
-        yPos += 6;
-        doc.text('IVA:', pageWidth - margin - 55, yPos);
-        doc.text(fmt.currency(tax), pageWidth - margin, yPos, { align: 'right' });
-        yPos += 8;
-      } else {
+      if (isThermal) {
+        addPageIfNeeded(28);
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(0, 0, 0);
         doc.text('Subtotal: ' + fmt.currency(subtotal), margin, yPos);
         yPos += 4;
         doc.text('IVA: ' + fmt.currency(tax), margin, yPos);
         yPos += 4;
-      }
 
-      doc.setFontSize(isThermal ? 12 : 14);
-      doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
-      doc.text(asPaidReceipt ? 'PAGO TOTAL:' : 'TOTAL:', isThermal ? margin : pageWidth - margin - 55, yPos);
-      doc.text(fmt.currency(total), pageWidth - margin, yPos, { align: 'right' });
-      yPos += isThermal ? 5 : 7;
+        doc.setFontSize(12);
+        doc.text(asPaidReceipt ? 'PAGO TOTAL:' : 'TOTAL:', margin, yPos);
+        doc.text(fmt.currency(total), pageWidth - margin, yPos, { align: 'right' });
+        yPos += 5;
 
-      doc.setFontSize(isThermal ? 8 : 10);
-      doc.setTextColor(5, 150, 105);
-      doc.text('Abonado:', isThermal ? margin : pageWidth - margin - 55, yPos);
-      doc.text(fmt.currency(totalPaid), pageWidth - margin, yPos, { align: 'right' });
-      yPos += isThermal ? 4 : 6;
-      doc.setTextColor(217, 119, 6);
-      doc.text('Falta por pagar:', isThermal ? margin : pageWidth - margin - 55, yPos);
-      doc.text(fmt.currency(totalPending), pageWidth - margin, yPos, { align: 'right' });
-
-      if (asPaidReceipt) {
-        yPos += isThermal ? 5 : 7;
+        doc.setFontSize(8);
         doc.setTextColor(5, 150, 105);
+        doc.text('Abonado:', margin, yPos);
+        doc.text(fmt.currency(totalPaid), pageWidth - margin, yPos, { align: 'right' });
+        yPos += 4;
+        doc.setTextColor(217, 119, 6);
+        doc.text('Falta por pagar:', margin, yPos);
+        doc.text(fmt.currency(totalPending), pageWidth - margin, yPos, { align: 'right' });
+
+        if (asPaidReceipt) {
+          yPos += 5;
+          doc.setTextColor(5, 150, 105);
+          doc.setFont(undefined, 'bold');
+          doc.text('DEUDA LIQUIDADA COMPLETAMENTE', pageWidth / 2, yPos, { align: 'center' });
+          doc.setFont(undefined, 'normal');
+        }
+      } else {
+        addPageIfNeeded(asPaidReceipt ? 58 : 50);
+        const summaryTop = yPos;
+        const summaryHeight = 44;
+        doc.setFillColor(255, 251, 235);
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(0.35);
+        doc.roundedRect(margin, summaryTop, contentWidth, summaryHeight, 2, 2, 'FD');
+
         doc.setFont(undefined, 'bold');
-        doc.text('DEUDA LIQUIDADA COMPLETAMENTE', pageWidth / 2, yPos, { align: 'center' });
-        doc.setFont(undefined, 'normal');
+        doc.setTextColor(51, 65, 85);
+        doc.setFontSize(9);
+        doc.text('Subtotal', margin + 5, summaryTop + 7);
+        doc.text(fmt.currency(subtotal), pageWidth - margin - 5, summaryTop + 7, { align: 'right' });
+        doc.text('IVA', margin + 5, summaryTop + 14);
+        doc.text(fmt.currency(tax), pageWidth - margin - 5, summaryTop + 14, { align: 'right' });
+
+        doc.setDrawColor(253, 230, 138);
+        doc.setLineWidth(0.2);
+        doc.line(margin + 5, summaryTop + 18, pageWidth - margin - 5, summaryTop + 18);
+
+        doc.setTextColor(180, 83, 9);
+        doc.setFontSize(12);
+        doc.text(asPaidReceipt ? 'PAGO TOTAL' : 'TOTAL', margin + 5, summaryTop + 27);
+        doc.text(fmt.currency(total), pageWidth - margin - 5, summaryTop + 27, { align: 'right' });
+
+        doc.setTextColor(5, 150, 105);
+        doc.setFontSize(9);
+        doc.text('ABONADO', margin + 5, summaryTop + 34);
+        doc.text(fmt.currency(totalPaid), pageWidth - margin - 5, summaryTop + 34, { align: 'right' });
+
+        doc.setTextColor(217, 119, 6);
+        doc.text('FALTA POR PAGAR', margin + 5, summaryTop + 41);
+        doc.text(fmt.currency(totalPending), pageWidth - margin - 5, summaryTop + 41, { align: 'right' });
+        yPos = summaryTop + summaryHeight;
+
+        if (asPaidReceipt) {
+          yPos += 7;
+          doc.setTextColor(5, 150, 105);
+          doc.setFont(undefined, 'bold');
+          doc.setFontSize(10);
+          doc.text('DEUDA LIQUIDADA COMPLETAMENTE', pageWidth / 2, yPos, { align: 'center' });
+          doc.setFont(undefined, 'normal');
+        }
       }
 
       doc.setTextColor(0, 0, 0);
