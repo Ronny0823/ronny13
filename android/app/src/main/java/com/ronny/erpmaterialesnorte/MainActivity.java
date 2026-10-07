@@ -17,6 +17,7 @@ import android.bluetooth.BluetoothSocket;
 import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ClipData;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
@@ -40,6 +41,8 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 import java.io.OutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.UUID;
@@ -47,6 +50,8 @@ import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+
+import androidx.core.content.FileProvider;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -92,6 +97,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new BluetoothBridge(), "AndroidBluetooth");
         webView.addJavascriptInterface(new PrintBridge(), "AndroidPrint");
         webView.addJavascriptInterface(new NetworkBridge(), "AndroidNetwork");
+        webView.addJavascriptInterface(new ShareBridge(), "AndroidShare");
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 trustedContent = url != null && url.startsWith("file:///android_asset/");
@@ -214,6 +220,57 @@ public class MainActivity extends Activity {
 
     private boolean trustedPage() {
         return trustedContent;
+    }
+
+    public class ShareBridge {
+        @JavascriptInterface public String sharePdfBase64(String encodedPdf, String requestedName) {
+            if (!trustedPage()) return "Pagina no autorizada";
+            if (encodedPdf == null || encodedPdf.isEmpty()) return "El PDF esta vacio";
+            if (encodedPdf.length() > 25_000_000) return "El PDF es demasiado grande para compartir";
+
+            try {
+                byte[] pdfBytes = android.util.Base64.decode(encodedPdf, android.util.Base64.DEFAULT);
+                if (pdfBytes.length == 0) return "El PDF esta vacio";
+
+                String safeName = requestedName == null ? "estado_de_cuenta.pdf" : requestedName;
+                safeName = safeName.replaceAll("[^a-zA-Z0-9._-]", "_");
+                if (!safeName.toLowerCase(java.util.Locale.ROOT).endsWith(".pdf")) safeName += ".pdf";
+                if (safeName.length() > 100) safeName = safeName.substring(safeName.length() - 100);
+
+                File shareDirectory = new File(getCacheDir(), "shared_pdfs");
+                if (!shareDirectory.exists() && !shareDirectory.mkdirs()) {
+                    return "No se pudo preparar la carpeta para compartir";
+                }
+
+                File pdfFile = new File(shareDirectory, safeName);
+                try (FileOutputStream output = new FileOutputStream(pdfFile, false)) {
+                    output.write(pdfBytes);
+                    output.flush();
+                }
+
+                Uri contentUri = FileProvider.getUriForFile(
+                    MainActivity.this,
+                    getPackageName() + ".fileprovider",
+                    pdfFile
+                );
+
+                runOnUiThread(() -> {
+                    try {
+                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                        shareIntent.setType("application/pdf");
+                        shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                        shareIntent.setClipData(ClipData.newRawUri("Estado de cuenta PDF", contentUri));
+                        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(Intent.createChooser(shareIntent, "Compartir PDF con WhatsApp"));
+                    } catch (Exception error) {
+                        Toast.makeText(MainActivity.this, "No se pudo abrir el menu Compartir", Toast.LENGTH_LONG).show();
+                    }
+                });
+                return "ok";
+            } catch (Exception error) {
+                return error.getMessage() == null ? "No se pudo compartir el PDF" : error.getMessage();
+            }
+        }
     }
 
     public class NetworkBridge {

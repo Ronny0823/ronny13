@@ -10782,7 +10782,47 @@
       ].filter(Boolean).join('\n');
     }
 
-    function generateConsolidatedCreditInvoicePDF(invoices, asPaidReceipt = false, forceStandardPDF = false) {
+    async function sharePdfDocument(doc, fileName) {
+      try {
+        if (window.AndroidShare && typeof window.AndroidShare.sharePdfBase64 === 'function') {
+          const dataUri = String(doc.output('datauristring') || '');
+          const encodedPdf = dataUri.includes(',') ? dataUri.split(',')[1] : '';
+          if (!encodedPdf) throw new Error('No se pudo preparar el PDF');
+          const result = window.AndroidShare.sharePdfBase64(encodedPdf, fileName);
+          if (result !== 'ok') throw new Error(result || 'Android no pudo compartir el PDF');
+          showToast('Selecciona WhatsApp y el contacto para enviar el PDF', 'success');
+          return true;
+        }
+
+        const pdfBlob = doc.output('blob');
+        const ShareFile = window.File;
+        const webNavigator = window.navigator;
+        if (webNavigator?.share && typeof ShareFile === 'function') {
+          const pdfFile = new ShareFile([pdfBlob], fileName, { type: 'application/pdf' });
+          if (!webNavigator.canShare || webNavigator.canShare({ files: [pdfFile] })) {
+            await webNavigator.share({
+              title: 'Estado de cuenta',
+              text: 'Estado de cuenta de facturas seleccionadas',
+              files: [pdfFile]
+            });
+            showToast('PDF enviado al menu de compartir', 'success');
+            return true;
+          }
+        }
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          showToast('Envio cancelado', 'info');
+          return false;
+        }
+        console.warn('No se pudo abrir el menu de compartir PDF', error);
+      }
+
+      doc.save(fileName);
+      showToast('No se pudo abrir Compartir; el PDF quedo descargado como respaldo', 'warning');
+      return false;
+    }
+
+    async function generateConsolidatedCreditInvoicePDF(invoices, asPaidReceipt = false, forceStandardPDF = false) {
       if (!window.jspdf?.jsPDF) {
         showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
         return;
@@ -11099,10 +11139,13 @@
       const fileName = forceStandardPDF
         ? (asPaidReceipt ? 'recibo_pagado_' : 'estado_de_cuenta_') + clientFileName + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
         : (asPaidReceipt ? 'recibo_pago_total_facturas_' : 'facturas_credito_seleccionadas_') + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
+      if (forceStandardPDF) {
+        await sharePdfDocument(doc, fileName);
+        return;
+      }
+
       doc.save(fileName);
-      showToast(forceStandardPDF
-        ? 'PDF descargado y listo para enviar por WhatsApp'
-        : 'PDF descargado: ' + (asPaidReceipt ? 'Pago total' : 'Facturas seleccionadas') + ' (' + formatLabel + ')', 'success');
+      showToast('PDF descargado: ' + (asPaidReceipt ? 'Pago total' : 'Facturas seleccionadas') + ' (' + formatLabel + ')', 'success');
     }
 
     function getSelectedCreditInvoiceData(safeClientName) {
@@ -11125,7 +11168,7 @@
       return { selectedIds, invoices, selectedSales };
     }
 
-    function downloadSelectedCreditInvoicesPDF(safeClientName) {
+    async function downloadSelectedCreditInvoicesPDF(safeClientName) {
       const { selectedIds, invoices } = getSelectedCreditInvoiceData(safeClientName);
       if (!selectedIds.length) {
         showToast('Selecciona una o varias facturas para crear el PDF', 'error');
@@ -11137,7 +11180,7 @@
       }
 
       const isPaidSelection = AppState.creditFilters.status === 'paid';
-      generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true);
+      await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true);
     }
 
     async function printSelectedCreditInvoices(safeClientName) {
