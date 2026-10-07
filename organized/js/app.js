@@ -4826,7 +4826,7 @@
                           <div class="text-sm text-slate-400">Seleccionadas: <span id="selectedCount_${safeClientKey}" class="font-bold text-primary-400">0</span></div>
                           <div class="text-sm text-slate-400 text-right">Total: <span id="selectedTotal_${safeClientKey}" class="font-bold text-emerald-400 font-mono">$0.00</span></div>
                         </div>
-                        <div class="grid ${canPaySelected ? 'grid-cols-3' : 'grid-cols-1'} gap-2">
+                        <div class="grid grid-cols-2 gap-2">
                           ${canPaySelected ? `
                             <button onclick="paySelectedInvoices(${clientArg})" data-credit-action="pay-selected" data-client="${escapeAttr(cn)}" id="btnPaySelected_${safeClientKey}" disabled
                               class="py-2 px-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
@@ -4840,6 +4840,10 @@
                           <button onclick="printSelectedCreditInvoices('${safeClientKey}')" data-credit-action="print-selected-invoices" data-client-key="${safeClientKey}" id="btnPrintSelected_${safeClientKey}" disabled
                             class="py-2 px-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                             <i data-lucide="printer" class="w-4 h-4"></i> Imprimir
+                          </button>
+                          <button onclick="downloadSelectedCreditInvoicesPDF('${safeClientKey}')" data-credit-action="download-selected-invoices-pdf" data-client-key="${safeClientKey}" id="btnPdfSelected_${safeClientKey}" disabled
+                            class="py-2 px-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg text-sm font-medium hover:bg-rose-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
+                            <i data-lucide="file-down" class="w-4 h-4"></i> PDF WhatsApp
                           </button>
                         </div>
                       </div>
@@ -5475,6 +5479,9 @@
             break;
           case 'print-selected-invoices':
             printSelectedCreditInvoices(target.dataset.clientKey);
+            break;
+          case 'download-selected-invoices-pdf':
+            downloadSelectedCreditInvoicesPDF(target.dataset.clientKey);
             break;
           case 'select-visible-payments':
             selectVisibleCreditPayments(select);
@@ -10401,12 +10408,14 @@
       const payBtn = document.getElementById(`btnPaySelected_${safeClientName}`);
       const partialBtn = document.getElementById(`btnPartialPay_${safeClientName}`);
       const printBtn = document.getElementById(`btnPrintSelected_${safeClientName}`);
+      const pdfBtn = document.getElementById(`btnPdfSelected_${safeClientName}`);
 
       if (countEl) countEl.textContent = selectedCount;
       if (totalEl) totalEl.textContent = fmt.currency(selectedTotal);
       if (payBtn) payBtn.disabled = selectedCount === 0;
       if (partialBtn) partialBtn.disabled = selectedCount === 0;
       if (printBtn) printBtn.disabled = selectedCount === 0;
+      if (pdfBtn) pdfBtn.disabled = selectedCount === 0;
     }
 
     function openCombinedCreditPrint(title, sections, thermalText = '') {
@@ -10773,14 +10782,14 @@
       ].filter(Boolean).join('\n');
     }
 
-    function generateConsolidatedCreditInvoicePDF(invoices, asPaidReceipt = false) {
+    function generateConsolidatedCreditInvoicePDF(invoices, asPaidReceipt = false, forceStandardPDF = false) {
       if (!window.jspdf?.jsPDF) {
         showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
         return;
       }
 
       const { jsPDF } = window.jspdf;
-      const printerType = getEffectivePrinterType();
+      const printerType = forceStandardPDF ? 'pdf' : getEffectivePrinterType();
       let format, pageWidth, pageHeight, isThermal, is58mm, formatLabel;
 
       switch (printerType) {
@@ -10835,14 +10844,21 @@
       const subtotal = invoices.reduce((sum, inv) => sum + (inv.subtotal || ((inv.sale_total || 0) - (inv.tax || 0))), 0);
       const tax = invoices.reduce((sum, inv) => sum + (inv.tax || 0), 0);
       const total = invoices.reduce((sum, inv) => sum + (inv.sale_total || 0), 0);
-      const totalPaid = invoices.reduce((sum, invoice) => {
+      const invoiceSummaries = invoices.map(invoice => {
         const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
-        if (!sale) return sum;
-        return sum + payments
+        const invoiceTotal = toFiniteNumber(sale?.sale_total ?? invoice.sale_total, 0);
+        const paid = sale ? payments
           .filter(payment => payment.sale_id === sale.__backendId)
-          .reduce((paymentSum, payment) => paymentSum + (payment.amount || 0), 0);
-      }, 0);
-      const totalPending = Math.max(0, total - totalPaid);
+          .reduce((paymentSum, payment) => paymentSum + toFiniteNumber(payment.amount, 0), 0) : 0;
+        return {
+          invoice_number: invoice.invoice_number || '',
+          total: invoiceTotal,
+          paid: Math.min(invoiceTotal, paid),
+          pending: Math.max(0, invoiceTotal - paid)
+        };
+      });
+      const totalPaid = invoiceSummaries.reduce((sum, invoice) => sum + invoice.paid, 0);
+      const totalPending = invoiceSummaries.reduce((sum, invoice) => sum + invoice.pending, 0);
       const selectedInvoiceNumbers = new Set(invoices.map(invoice => invoice.invoice_number));
       const receiptPayments = payments.filter(payment => selectedInvoiceNumbers.has(payment.invoice_number));
       const receiptMethods = [...new Set(receiptPayments.map(payment => String(payment.method || '').trim()).filter(Boolean))];
@@ -10900,7 +10916,8 @@
       doc.setFont(undefined, 'bold');
       doc.setFontSize(isThermal ? 10 : 16);
       doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
-      writeText(asPaidReceipt ? 'RECIBO DE PAGO TOTAL' : 'FACTURAS SELECCIONADAS', pageWidth / 2, { align: 'center' });
+      const documentHeading = asPaidReceipt ? 'RECIBO DE PAGO TOTAL' : (forceStandardPDF ? 'ESTADO DE CUENTA' : 'FACTURAS SELECCIONADAS');
+      writeText(documentHeading, pageWidth / 2, { align: 'center' });
       yPos += isThermal ? 4 : 6;
 
       if (asPaidReceipt) {
@@ -10987,6 +11004,35 @@
         drawLine();
       }
 
+      if (forceStandardPDF && !isThermal) {
+        addPageIfNeeded(18 + (invoiceSummaries.length * 7));
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(30, 41, 59);
+        doc.text('RESUMEN POR FACTURA', margin, yPos);
+        yPos += 7;
+
+        doc.setFontSize(8);
+        doc.setFillColor(241, 245, 249);
+        doc.rect(margin, yPos - 4, contentWidth, 8, 'F');
+        doc.text('Factura', margin + 2, yPos);
+        doc.text('Total', pageWidth - margin - 72, yPos);
+        doc.text('Abonado', pageWidth - margin - 38, yPos);
+        doc.text('Pendiente', pageWidth - margin, yPos, { align: 'right' });
+        yPos += 8;
+
+        doc.setFont(undefined, 'normal');
+        invoiceSummaries.forEach(summary => {
+          addPageIfNeeded(8);
+          doc.text(String(summary.invoice_number), margin + 2, yPos);
+          doc.text(fmt.currency(summary.total), pageWidth - margin - 72, yPos);
+          doc.text(fmt.currency(summary.paid), pageWidth - margin - 38, yPos);
+          doc.text(fmt.currency(summary.pending), pageWidth - margin, yPos, { align: 'right' });
+          yPos += 7;
+        });
+        drawLine();
+      }
+
       addPageIfNeeded(isThermal ? 28 : 35);
       doc.setFont(undefined, 'bold');
       doc.setFontSize(isThermal ? 8 : 10);
@@ -11044,29 +11090,62 @@
         doc.text('Documento generado por ERP Materiales del Norte', pageWidth / 2, yPos, { align: 'center' });
       }
 
-      const fileName = (asPaidReceipt ? 'recibo_pago_total_facturas_' : 'facturas_credito_seleccionadas_') + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
+      const clientFileName = safeText(firstInvoice.client_name || 'cliente')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 50) || 'cliente';
+      const fileName = forceStandardPDF
+        ? (asPaidReceipt ? 'recibo_pagado_' : 'estado_de_cuenta_') + clientFileName + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
+        : (asPaidReceipt ? 'recibo_pago_total_facturas_' : 'facturas_credito_seleccionadas_') + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
       doc.save(fileName);
-      showToast('PDF descargado: ' + (asPaidReceipt ? 'Pago total' : 'Facturas seleccionadas') + ' (' + formatLabel + ')');
+      showToast(forceStandardPDF
+        ? 'PDF descargado y listo para enviar por WhatsApp'
+        : 'PDF descargado: ' + (asPaidReceipt ? 'Pago total' : 'Facturas seleccionadas') + ' (' + formatLabel + ')', 'success');
     }
 
-    async function printSelectedCreditInvoices(safeClientName) {
-      const selectedIds = Array.from(document.querySelectorAll(`.credit_invoice_${safeClientName}:checked`)).map(cb => cb.id.replace('chk_', ''));
-      if (selectedIds.length === 0) {
-        showToast('No hay facturas seleccionadas', 'error');
-        return;
-      }
-
+    function getSelectedCreditInvoiceData(safeClientName) {
+      const selectedIds = Array.from(document.querySelectorAll(`.credit_invoice_${safeClientName}:checked`))
+        .map(checkbox => checkbox.id.replace('chk_', ''));
       const invoices = [];
       const selectedSales = [];
+
       selectedIds.forEach(saleId => {
-        const sale = AppState.data.find(r => r.__backendId === saleId);
-        const invoice = sale ? AppState.data.find(r => r.type === 'invoice' && r.invoice_number === sale.invoice_number) : null;
-        if (invoice) {
+        const sale = AppState.data.find(record => record.__backendId === saleId);
+        const invoice = sale
+          ? AppState.data.find(record => record.type === 'invoice' && record.invoice_number === sale.invoice_number)
+          : null;
+        if (sale && invoice) {
           invoices.push(invoice);
           selectedSales.push({ sale, remaining: toFiniteNumber(sale.sale_total, 0) });
         }
       });
 
+      return { selectedIds, invoices, selectedSales };
+    }
+
+    function downloadSelectedCreditInvoicesPDF(safeClientName) {
+      const { selectedIds, invoices } = getSelectedCreditInvoiceData(safeClientName);
+      if (!selectedIds.length) {
+        showToast('Selecciona una o varias facturas para crear el PDF', 'error');
+        return;
+      }
+      if (!invoices.length) {
+        showToast('No se encontraron las facturas seleccionadas', 'error');
+        return;
+      }
+
+      const isPaidSelection = AppState.creditFilters.status === 'paid';
+      generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true);
+    }
+
+    async function printSelectedCreditInvoices(safeClientName) {
+      const { selectedIds, invoices, selectedSales } = getSelectedCreditInvoiceData(safeClientName);
+      if (!selectedIds.length) {
+        showToast('No hay facturas seleccionadas', 'error');
+        return;
+      }
       if (!invoices.length) {
         showToast('No se encontraron las facturas seleccionadas', 'error');
         return;
