@@ -11584,53 +11584,114 @@
           drawLine();
         });
       } else {
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'bold');
-        doc.setFillColor(240, 240, 240);
-        doc.rect(margin, yPos - 4, contentWidth, 8, 'F');
-        doc.text('Factura', margin + 2, yPos);
-        doc.text('Fecha', margin + 35, yPos);
-        doc.text('Material', margin + 75, yPos);
-        doc.text('Abono', pageWidth - margin, yPos, { align: 'right' });
-        yPos += 8;
-        doc.setFont(undefined, 'normal');
         paymentsSelected.forEach(payment => {
           const sale = AppState.data.find(r => r.__backendId === payment.sale_id);
-          addPageIfNeeded(10);
-          const material = doc.splitTextToSize(String(sale?.material_name || ''), 55)[0] || '';
-          doc.text(String(payment.invoice_number || ''), margin + 2, yPos);
-          doc.text(fmt.dateTime(payment.date), margin + 35, yPos);
-          doc.text(material, margin + 75, yPos);
-          doc.text(fmt.currency(payment.amount || 0), pageWidth - margin, yPos, { align: 'right' });
-          yPos += 4;
-          doc.setFontSize(8);
-          doc.text('Forma: ' + getPaymentMethodLabel(payment), margin + 2, yPos);
-          yPos += 4;
+          const salePayments = getRecords('payment').filter(p => p.sale_id === payment.sale_id);
+          const paidUntilThis = salePayments
+            .filter(p => p.date <= payment.date)
+            .reduce((sum, p) => sum + (p.amount || 0), 0);
+          const remaining = Math.max(0, (sale?.sale_total || 0) - paidUntilThis);
           const paymentRoute = getPaymentRouteLabel(payment);
-          if (paymentRoute) {
-            doc.text('Por donde: ' + paymentRoute, margin + 2, yPos);
-            yPos += 4;
-          }
+          const materialLines = doc.splitTextToSize(
+            'Material: ' + String(sale?.material_name || 'No especificado'),
+            contentWidth - 8
+          );
+          const methodLines = doc.splitTextToSize(
+            'Forma de pago: ' + getPaymentMethodLabel(payment),
+            contentWidth - 8
+          );
+          const routeLines = paymentRoute
+            ? doc.splitTextToSize('Por donde: ' + paymentRoute, contentWidth - 8)
+            : [];
+          const detailLineCount = materialLines.length + methodLines.length + routeLines.length;
+          const blockHeight = 26 + (detailLineCount * 4);
+
+          addPageIfNeeded(blockHeight + 5);
+          const blockTop = yPos - 4;
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.25);
+          doc.roundedRect(margin, blockTop, contentWidth, blockHeight, 2, 2, 'FD');
+
+          doc.setFillColor(241, 245, 249);
+          doc.roundedRect(margin, blockTop, contentWidth, 9, 2, 2, 'F');
+          doc.setFont(undefined, 'bold');
+          doc.setFontSize(10);
+          doc.setTextColor(30, 41, 59);
+          doc.text(String(payment.invoice_number || 'Factura'), margin + 4, yPos + 1);
+          doc.setTextColor(5, 150, 105);
+          doc.text(fmt.currency(payment.amount || 0), pageWidth - margin - 4, yPos + 1, { align: 'right' });
+
+          yPos += 10;
+          doc.setFont(undefined, 'normal');
           doc.setFontSize(9);
-          yPos += 3;
+          doc.setTextColor(71, 85, 105);
+          doc.text('Fecha: ' + fmt.dateTime(payment.date), margin + 4, yPos);
+          yPos += 5;
+
+          materialLines.forEach(line => {
+            doc.text(line, margin + 4, yPos);
+            yPos += 4;
+          });
+          methodLines.forEach(line => {
+            doc.text(line, margin + 4, yPos);
+            yPos += 4;
+          });
+          routeLines.forEach(line => {
+            doc.text(line, margin + 4, yPos);
+            yPos += 4;
+          });
+
+          yPos += 2;
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(180, 83, 9);
+          doc.text('Saldo despues de este abono:', margin + 4, yPos);
+          doc.text(fmt.currency(remaining), pageWidth - margin - 4, yPos, { align: 'right' });
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(0, 0, 0);
+          yPos = blockTop + blockHeight + 5;
         });
-        drawLine();
       }
 
-      addPageIfNeeded(isThermal ? 24 : 30);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(isThermal ? 12 : 14);
-      doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
-      doc.text('TOTAL ABONADO:', isThermal ? margin : pageWidth - margin - 65, yPos);
-      doc.text(fmt.currency(total), pageWidth - margin, yPos, { align: 'right' });
-      yPos += isThermal ? 5 : 8;
-      doc.setFontSize(isThermal ? 8 : 11);
-      doc.setTextColor(217, 119, 6);
-      doc.text('Falta por pagar cliente:', isThermal ? margin : pageWidth - margin - 65, yPos);
-      doc.text(fmt.currency(clientPending), pageWidth - margin, yPos, { align: 'right' });
+      if (isThermal) {
+        addPageIfNeeded(24);
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text('TOTAL ABONADO:', margin, yPos);
+        doc.text(fmt.currency(total), pageWidth - margin, yPos, { align: 'right' });
+        yPos += 5;
+        doc.setFontSize(8);
+        doc.text('Falta por pagar cliente:', margin, yPos);
+        doc.text(fmt.currency(clientPending), pageWidth - margin, yPos, { align: 'right' });
+        yPos += 8;
+      } else {
+        addPageIfNeeded(38);
+        const summaryTop = yPos;
+        doc.setFillColor(255, 251, 235);
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(0.35);
+        doc.roundedRect(margin, summaryTop, contentWidth, 30, 2, 2, 'FD');
+
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(146, 64, 14);
+        doc.setFontSize(11);
+        doc.text('TOTAL ABONADO', margin + 5, summaryTop + 9);
+        doc.setFontSize(13);
+        doc.text(fmt.currency(total), pageWidth - margin - 5, summaryTop + 9, { align: 'right' });
+
+        doc.setDrawColor(253, 230, 138);
+        doc.setLineWidth(0.2);
+        doc.line(margin + 5, summaryTop + 15, pageWidth - margin - 5, summaryTop + 15);
+
+        doc.setFontSize(9);
+        doc.text('SALDO PENDIENTE DEL CLIENTE', margin + 5, summaryTop + 24);
+        doc.setFontSize(11);
+        doc.text(fmt.currency(clientPending), pageWidth - margin - 5, summaryTop + 24, { align: 'right' });
+        yPos += 35;
+      }
 
       doc.setTextColor(0, 0, 0);
-      yPos += isThermal ? 8 : 15;
       drawLine(true);
       doc.setFontSize(isThermal ? 8 : 9);
       doc.setTextColor(isThermal ? 0 : 100, isThermal ? 0 : 100, isThermal ? 0 : 100);
