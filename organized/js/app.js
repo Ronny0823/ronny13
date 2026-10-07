@@ -4625,7 +4625,7 @@
                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
                       <div class="text-xs font-semibold text-blue-400 flex items-center gap-2">
                         <i data-lucide="receipt" class="w-4 h-4"></i>
-                        Seleccionar abonos para imprimir
+                        Seleccionar abonos para imprimir o compartir
                       </div>
                       <div class="flex gap-2">
                         <button onclick="selectVisibleCreditPayments(true)" data-credit-action="select-visible-payments" data-select="true" class="text-xs text-primary-400 hover:text-primary-300">Seleccionar todos</button>
@@ -4633,12 +4633,18 @@
                         <button onclick="selectVisibleCreditPayments(false)" data-credit-action="select-visible-payments" data-select="false" class="text-xs text-slate-400 hover:text-slate-300">Ninguno</button>
                       </div>
                     </div>
-                    <div class="mt-3 flex items-center justify-between">
+                    <div class="mt-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
                       <span class="text-sm text-slate-400">Seleccionados: <span id="selectedPaymentCount" class="font-bold text-primary-400">0</span></span>
-                      <button onclick="printSelectedCreditPayments()" data-credit-action="print-selected-payments" id="btnPrintSelectedPayments" disabled
-                        class="py-2 px-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
-                        <i data-lucide="printer" class="w-4 h-4"></i> Imprimir
-                      </button>
+                      <div class="grid grid-cols-2 gap-2">
+                        <button onclick="printSelectedCreditPayments()" data-credit-action="print-selected-payments" id="btnPrintSelectedPayments" disabled
+                          class="py-2 px-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
+                          <i data-lucide="printer" class="w-4 h-4"></i> Imprimir
+                        </button>
+                        <button onclick="downloadSelectedCreditPaymentsPDF()" data-credit-action="download-selected-payments-pdf" id="btnPdfSelectedPayments" disabled
+                          class="py-2 px-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg text-sm font-medium hover:bg-rose-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
+                          <i data-lucide="file-down" class="w-4 h-4"></i> PDF WhatsApp
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <div class="space-y-2">
@@ -5488,6 +5494,9 @@
             break;
           case 'print-selected-payments':
             printSelectedCreditPayments();
+            break;
+          case 'download-selected-payments-pdf':
+            downloadSelectedCreditPaymentsPDF();
             break;
           case 'print-payment-receipt':
             printPaymentReceipt(target.dataset.paymentId);
@@ -11235,8 +11244,10 @@
       const selectedCount = document.querySelectorAll('.credit-payment-check:checked').length;
       const countEl = document.getElementById('selectedPaymentCount');
       const printBtn = document.getElementById('btnPrintSelectedPayments');
+      const pdfBtn = document.getElementById('btnPdfSelectedPayments');
       if (countEl) countEl.textContent = selectedCount;
       if (printBtn) printBtn.disabled = selectedCount === 0;
+      if (pdfBtn) pdfBtn.disabled = selectedCount === 0;
     }
 
     function getPaymentMethodLabel(paymentOrMethod) {
@@ -11431,14 +11442,14 @@
       ].filter(Boolean).join('\n');
     }
 
-    function generateConsolidatedCreditPaymentPDF(paymentsSelected) {
+    async function generateConsolidatedCreditPaymentPDF(paymentsSelected, forceStandardPDF = false) {
       if (!window.jspdf?.jsPDF) {
         showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
         return;
       }
 
       const { jsPDF } = window.jspdf;
-      const printerType = getEffectivePrinterType();
+      const printerType = forceStandardPDF ? 'pdf' : getEffectivePrinterType();
       let format, pageWidth, pageHeight, isThermal, is58mm, formatLabel;
 
       switch (printerType) {
@@ -11522,7 +11533,7 @@
       doc.setFont(undefined, 'bold');
       doc.setFontSize(isThermal ? 10 : 16);
       doc.setTextColor(isThermal ? 0 : 245, isThermal ? 0 : 158, isThermal ? 0 : 11);
-      doc.text('ABONOS SELECCIONADOS', pageWidth / 2, yPos, { align: 'center' });
+      doc.text(forceStandardPDF ? 'COMPROBANTE DE ABONOS' : 'ABONOS SELECCIONADOS', pageWidth / 2, yPos, { align: 'center' });
       yPos += isThermal ? 5 : 8;
 
       doc.setTextColor(0, 0, 0);
@@ -11625,21 +11636,53 @@
       doc.setTextColor(isThermal ? 0 : 100, isThermal ? 0 : 100, isThermal ? 0 : 100);
       doc.text('COMPROBANTE CONSOLIDADO', pageWidth / 2, yPos, { align: 'center' });
 
-      const fileName = 'abonos_credito_seleccionados_' + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
-      doc.save(fileName);
-      showToast('PDF descargado: Abonos seleccionados (' + formatLabel + ')');
-    }
+      const clientFileName = safeText(firstPayment.client_name || 'cliente')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 50) || 'cliente';
+      const fileName = forceStandardPDF
+        ? 'comprobante_abonos_' + clientFileName + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
+        : 'abonos_credito_seleccionados_' + (isThermal ? (is58mm ? '58mm' : '80mm') : formatLabel) + '.pdf';
 
-    function printSelectedCreditPayments() {
-      const selectedIds = Array.from(document.querySelectorAll('.credit-payment-check:checked')).map(cb => cb.id.replace('paychk_', ''));
-      if (selectedIds.length === 0) {
-        showToast('No hay abonos seleccionados', 'error');
+      if (forceStandardPDF) {
+        await sharePdfDocument(doc, fileName);
         return;
       }
 
-      const selectedPayments = selectedIds
-        .map(id => AppState.data.find(r => r.__backendId === id))
+      doc.save(fileName);
+      showToast('PDF descargado: Abonos seleccionados (' + formatLabel + ')', 'success');
+    }
+
+    function getSelectedCreditPayments() {
+      return Array.from(document.querySelectorAll('.credit-payment-check:checked'))
+        .map(checkbox => AppState.data.find(record => record.__backendId === checkbox.id.replace('paychk_', '')))
         .filter(Boolean);
+    }
+
+    async function downloadSelectedCreditPaymentsPDF() {
+      const selectedPayments = getSelectedCreditPayments();
+      if (!selectedPayments.length) {
+        showToast('Selecciona uno o varios abonos para crear el PDF', 'error');
+        return;
+      }
+
+      const clients = [...new Set(selectedPayments.map(payment => safeText(payment.client_name).trim()).filter(Boolean))];
+      if (clients.length > 1) {
+        showToast('Selecciona abonos de un solo cliente para enviarlos por WhatsApp', 'warning');
+        return;
+      }
+
+      await generateConsolidatedCreditPaymentPDF(selectedPayments, true);
+    }
+
+    function printSelectedCreditPayments() {
+      const selectedPayments = getSelectedCreditPayments();
+      if (!selectedPayments.length) {
+        showToast('No hay abonos seleccionados', 'error');
+        return;
+      }
 
       if (isBluetoothPrinterSelected()) {
         BluetoothPrinter.printText(buildConsolidatedCreditPaymentThermalText(selectedPayments))
