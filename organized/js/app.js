@@ -10885,6 +10885,7 @@
       const rows = invoices.flatMap(invoice => getInvoiceItems(invoice).map(item => ({
         invoice_number: invoice.invoice_number,
         client_name: invoice.client_name,
+        date: invoice.date,
         material_name: item.material_name,
         quantity: item.quantity,
         price: item.price,
@@ -10901,6 +10902,7 @@
           .reduce((paymentSum, payment) => paymentSum + toFiniteNumber(payment.amount, 0), 0) : 0;
         return {
           invoice_number: invoice.invoice_number || '',
+          date: invoice.date,
           total: invoiceTotal,
           paid: Math.min(invoiceTotal, paid),
           pending: Math.max(0, invoiceTotal - paid)
@@ -11037,23 +11039,45 @@
         doc.setFont(undefined, 'bold');
         doc.setFillColor(240, 240, 240);
         doc.rect(margin, yPos - 4, contentWidth, 8, 'F');
-        doc.text('Factura', margin + 2, yPos);
-        doc.text('Descripcion', margin + 35, yPos);
-        doc.text('Cant.', pageWidth - margin - 65, yPos);
-        doc.text('Precio', pageWidth - margin - 42, yPos);
-        doc.text('Total', pageWidth - margin, yPos, { align: 'right' });
-        yPos += 8;
-        doc.setFont(undefined, 'normal');
-        rows.forEach(item => {
-          addPageIfNeeded(10);
-          const material = doc.splitTextToSize(String(item.material_name || ''), 70)[0] || '';
-          doc.text(String(item.invoice_number || ''), margin + 2, yPos);
-          doc.text(material, margin + 35, yPos);
-          doc.text(fmt.quantity(item.quantity), pageWidth - margin - 65, yPos);
-          doc.text(fmt.currency(item.price), pageWidth - margin - 42, yPos);
-          doc.text(fmt.currency(item.subtotal), pageWidth - margin, yPos, { align: 'right' });
-          yPos += 7;
-        });
+        if (forceStandardPDF) {
+          doc.text('Factura', margin + 2, yPos);
+          doc.text('Fecha', margin + 28, yPos);
+          doc.text('Descripcion', margin + 52, yPos);
+          doc.text('Cant.', pageWidth - margin - 65, yPos);
+          doc.text('Precio', pageWidth - margin - 42, yPos);
+          doc.text('Total', pageWidth - margin, yPos, { align: 'right' });
+          yPos += 8;
+          doc.setFont(undefined, 'normal');
+          rows.forEach(item => {
+            addPageIfNeeded(10);
+            const material = doc.splitTextToSize(String(item.material_name || ''), 48)[0] || '';
+            doc.text(String(item.invoice_number || ''), margin + 2, yPos);
+            doc.text(fmt.date(item.date), margin + 28, yPos);
+            doc.text(material, margin + 52, yPos);
+            doc.text(fmt.quantity(item.quantity), pageWidth - margin - 65, yPos);
+            doc.text(fmt.currency(item.price), pageWidth - margin - 42, yPos);
+            doc.text(fmt.currency(item.subtotal), pageWidth - margin, yPos, { align: 'right' });
+            yPos += 7;
+          });
+        } else {
+          doc.text('Factura', margin + 2, yPos);
+          doc.text('Descripcion', margin + 35, yPos);
+          doc.text('Cant.', pageWidth - margin - 65, yPos);
+          doc.text('Precio', pageWidth - margin - 42, yPos);
+          doc.text('Total', pageWidth - margin, yPos, { align: 'right' });
+          yPos += 8;
+          doc.setFont(undefined, 'normal');
+          rows.forEach(item => {
+            addPageIfNeeded(10);
+            const material = doc.splitTextToSize(String(item.material_name || ''), 70)[0] || '';
+            doc.text(String(item.invoice_number || ''), margin + 2, yPos);
+            doc.text(material, margin + 35, yPos);
+            doc.text(fmt.quantity(item.quantity), pageWidth - margin - 65, yPos);
+            doc.text(fmt.currency(item.price), pageWidth - margin - 42, yPos);
+            doc.text(fmt.currency(item.subtotal), pageWidth - margin, yPos, { align: 'right' });
+            yPos += 7;
+          });
+        }
         drawLine();
       }
 
@@ -11069,6 +11093,7 @@
         doc.setFillColor(241, 245, 249);
         doc.rect(margin, yPos - 4, contentWidth, 8, 'F');
         doc.text('Factura', margin + 2, yPos);
+        doc.text('Fecha', margin + 32, yPos);
         doc.text('Total', pageWidth - margin - 72, yPos);
         doc.text('Abonado', pageWidth - margin - 38, yPos);
         doc.text('Pendiente', pageWidth - margin, yPos, { align: 'right' });
@@ -11078,6 +11103,7 @@
         invoiceSummaries.forEach(summary => {
           addPageIfNeeded(8);
           doc.text(String(summary.invoice_number), margin + 2, yPos);
+          doc.text(fmt.date(summary.date), margin + 32, yPos);
           doc.text(fmt.currency(summary.total), pageWidth - margin - 72, yPos);
           doc.text(fmt.currency(summary.paid), pageWidth - margin - 38, yPos);
           doc.text(fmt.currency(summary.pending), pageWidth - margin, yPos, { align: 'right' });
@@ -11649,7 +11675,7 @@
             ? doc.splitTextToSize('Por donde: ' + paymentRoute, contentWidth - 8)
             : [];
           const detailLineCount = materialLines.length + methodLines.length + routeLines.length;
-          const blockHeight = 26 + (detailLineCount * 4);
+          const blockHeight = (forceStandardPDF ? 31 : 26) + (detailLineCount * 4);
 
           addPageIfNeeded(blockHeight + 5);
           const blockTop = yPos - 4;
@@ -11671,8 +11697,15 @@
           doc.setFont(undefined, 'normal');
           doc.setFontSize(9);
           doc.setTextColor(71, 85, 105);
-          doc.text('Fecha: ' + fmt.dateTime(payment.date), margin + 4, yPos);
-          yPos += 5;
+          if (forceStandardPDF) {
+            doc.text('Fecha factura: ' + fmt.date(sale?.date), margin + 4, yPos);
+            yPos += 5;
+            doc.text('Fecha abono: ' + fmt.dateTime(payment.date), margin + 4, yPos);
+            yPos += 5;
+          } else {
+            doc.text('Fecha: ' + fmt.dateTime(payment.date), margin + 4, yPos);
+            yPos += 5;
+          }
 
           materialLines.forEach(line => {
             doc.text(line, margin + 4, yPos);
@@ -14689,7 +14722,7 @@
           ? 'PAGADO'
           : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
         const details = [
-          'Fecha: ' + fmt.dateTime(trip.date),
+          'Fecha de factura: ' + fmt.dateTime(trip.date),
           'Compania origen: ' + (trip.source_company || 'No especificada'),
           'Chofer: ' + (trip.driver_name || 'No especificado'),
           'Vehiculo: ' + (trip.vehicle_plate || 'No especificado'),
