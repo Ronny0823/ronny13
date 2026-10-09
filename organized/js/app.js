@@ -10933,20 +10933,24 @@
         doc.text(String(text || ''), x, yPos, options);
       };
 
+      let logoAdded = false;
       if (AppState.config.company_logo) {
         try {
           const logoWidth = isThermal ? (is58mm ? 25 : 35) : 40;
           const logoHeight = logoWidth * 0.5;
           doc.addImage(AppState.config.company_logo, 'JPEG', pageWidth / 2 - logoWidth / 2, yPos, logoWidth, logoHeight);
+          logoAdded = true;
           yPos += logoHeight + (isThermal ? 2 : 5);
         } catch (e) {}
       }
 
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(isThermal ? 10 : 20);
-      writeText(isThermal ? String(AppState.config.company_name || '').toUpperCase() : AppState.config.company_name, pageWidth / 2, { align: 'center' });
-      yPos += isThermal ? 4 : 8;
+      if (!forceStandardPDF || !logoAdded) {
+        doc.setTextColor(0, 0, 0);
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(isThermal ? 10 : 20);
+        writeText(isThermal ? String(AppState.config.company_name || '').toUpperCase() : AppState.config.company_name, pageWidth / 2, { align: 'center' });
+        yPos += isThermal ? 4 : 8;
+      }
 
       doc.setFont(undefined, isThermal ? 'bold' : 'normal');
       doc.setFontSize(isThermal ? 7 : 10);
@@ -11538,20 +11542,24 @@
         yPos += isThermal ? 3 : 5;
       };
 
+      let logoAdded = false;
       if (AppState.config.company_logo) {
         try {
           const logoWidth = isThermal ? (is58mm ? 25 : 35) : 40;
           const logoHeight = logoWidth * 0.5;
           doc.addImage(AppState.config.company_logo, 'JPEG', pageWidth / 2 - logoWidth / 2, yPos, logoWidth, logoHeight);
+          logoAdded = true;
           yPos += logoHeight + (isThermal ? 2 : 5);
         } catch (e) {}
       }
 
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(isThermal ? 10 : 20);
-      doc.text(isThermal ? String(AppState.config.company_name || '').toUpperCase() : AppState.config.company_name, pageWidth / 2, yPos, { align: 'center' });
-      yPos += isThermal ? 4 : 8;
+      if (!forceStandardPDF || !logoAdded) {
+        doc.setTextColor(0, 0, 0);
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(isThermal ? 10 : 20);
+        doc.text(isThermal ? String(AppState.config.company_name || '').toUpperCase() : AppState.config.company_name, pageWidth / 2, yPos, { align: 'center' });
+        yPos += isThermal ? 4 : 8;
+      }
 
       doc.setFont(undefined, isThermal ? 'bold' : 'normal');
       doc.setFontSize(isThermal ? 7 : 10);
@@ -14624,20 +14632,24 @@
         yPos = margin + 2;
       };
 
+      let logoAdded = false;
       if (AppState.config.company_logo) {
         try {
           const logoWidth = 40;
           const logoHeight = logoWidth * 0.5;
           doc.addImage(AppState.config.company_logo, 'JPEG', pageWidth / 2 - logoWidth / 2, yPos, logoWidth, logoHeight);
+          logoAdded = true;
           yPos += logoHeight + 5;
         } catch (error) {}
       }
 
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(20);
-      doc.setTextColor(0, 0, 0);
-      doc.text(String(AppState.config.company_name || ''), pageWidth / 2, yPos, { align: 'center' });
-      yPos += 8;
+      if (!logoAdded) {
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(0, 0, 0);
+        doc.text(String(AppState.config.company_name || ''), pageWidth / 2, yPos, { align: 'center' });
+        yPos += 8;
+      }
       doc.setFont(undefined, 'normal');
       doc.setFontSize(10);
       doc.text(String(AppState.config.company_slogan || ''), pageWidth / 2, yPos, { align: 'center' });
