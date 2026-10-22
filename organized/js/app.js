@@ -2034,6 +2034,46 @@
       });
     }
 
+    function enhanceWebDateFilterInputs(root = document) {
+      // La aplicacion Android ya permite limpiar sus fechas de forma nativa.
+      if (window.AndroidShare) return;
+
+      root.querySelectorAll('input[type="date"]:not([required])').forEach(input => {
+        if (input.dataset.webDateClearEnhanced === 'true') return;
+        input.dataset.webDateClearEnhanced = 'true';
+
+        const parent = input.parentElement;
+        if (!parent) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'flex items-center gap-2';
+        parent.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+        input.classList.add('min-w-0', 'flex-1');
+
+        const clearButton = document.createElement('button');
+        clearButton.type = 'button';
+        clearButton.className = 'shrink-0 w-9 h-9 rounded-lg border border-slate-700 bg-slate-800/70 text-slate-400 hover:text-rose-300 hover:border-rose-500/40 transition-colors flex items-center justify-center';
+        clearButton.textContent = '×';
+        clearButton.title = 'Borrar fecha';
+        clearButton.setAttribute('aria-label', 'Borrar fecha');
+
+        const syncButton = () => clearButton.classList.toggle('hidden', !input.value);
+        input.addEventListener('input', syncButton);
+        input.addEventListener('change', syncButton);
+
+        clearButton.addEventListener('click', () => {
+          if (!input.value) return;
+          input.value = '';
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          syncButton();
+        });
+
+        wrapper.appendChild(clearButton);
+        syncButton();
+      });
+    }
+
     function renderPageForFilter(searchInputId) {
       const active = document.getElementById(searchInputId);
       const focusState = active ? {
@@ -2049,6 +2089,7 @@
         renderReports(container);
         lucide.createIcons();
         enhanceSearchInputs(container);
+        enhanceWebDateFilterInputs(container);
       } else {
         renderPage();
       }
@@ -2264,6 +2305,7 @@
       container.querySelectorAll('.animate-fade-in').forEach(el => el.classList.remove('animate-fade-in'));
       
       enhanceSearchInputs(container);
+      enhanceWebDateFilterInputs(container);
       requestAnimationFrame(() => {
         if (container.isConnected) lucide.createIcons();
       });
