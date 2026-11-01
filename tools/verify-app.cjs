@@ -6,6 +6,8 @@ const html = fs.readFileSync('organized/index.html', 'utf8');
 const gradle = fs.readFileSync('android/app/build.gradle', 'utf8');
 const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 const mainActivity = fs.readFileSync('android/app/src/main/java/com/ronny/erpmaterialesnorte/MainActivity.java', 'utf8');
+const workflow = fs.readFileSync('.github/workflows/build-apk.yml', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/20261101200000_pull_erp_record_changes.sql', 'utf8');
 
 const checks = [
   [app.includes('const RecordSyncV2'), 'Falta la sincronización por registro'],
@@ -17,7 +19,11 @@ const checks = [
   [html.includes('id="syncStatusDot"') && html.includes('id="syncStatusText"'), 'Falta el indicador de sincronización'],
   [app.includes("if (!silent) updateSyncStatus('syncing');"), 'La sincronización silenciosa no debe hacer parpadear el indicador'],
   [!mainActivity.includes('autoSyncRetry') && mainActivity.includes('if (changed) notifyWebNetwork(online);'), 'Android no debe forzar sincronización repetida'],
-  [gradle.includes('versionCode 45') && gradle.includes("versionName '1.44.0'"), 'Versión Android incorrecta'],
+  [app.includes("rpc('pull_erp_record_changes'") && app.includes("'pull_cursor'"), 'Falta la descarga incremental'],
+  [app.includes("if (!RecordSyncV2.hasCursor(username)) await SupabaseSync.pullUser(username)"), 'La copia antigua no debe descargarse en cada sincronización'],
+  [migration.includes('pull_erp_record_changes') && migration.includes('security invoker'), 'Falta la migración incremental segura'],
+  [workflow.includes('ANDROID_KEYSTORE_BASE64') && workflow.includes('assembleRelease'), 'Falta la firma permanente de Android'],
+  [gradle.includes('versionCode 46') && gradle.includes("versionName '1.45.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -26,4 +32,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.44 completadas');
+console.log('Verificaciones v1.45 completadas');

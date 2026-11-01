@@ -710,10 +710,13 @@
     };
 
     const RecordSyncV2 = (function makeV2(){return {
-table:'erp_records',settingsTable:'erp_user_settings',pageSize:1000,flushing:null,
+table:'erp_records',settingsTable:'erp_user_settings',pageSize:500,flushing:null,
 key(username,kind){return `erp_v2_${kind}_${username}`},
 readSet(username,kind){try{const parsed=JSON.parse(localStorage.getItem(this.key(username,kind))||'[]');return new Set(Array.isArray(parsed)?parsed.map(String).filter(Boolean):[])}catch(error){return new Set()}},
 writeSet(username,kind,values){SupabaseSync.originalSetItem(this.key(username,kind),JSON.stringify(Array.from(values)))},
+readCursor(username){try{const parsed=JSON.parse(localStorage.getItem(this.key(username,'pull_cursor'))||'null');if(!parsed||!parsed.at||Number.isNaN(Date.parse(parsed.at)))return null;return{at:new Date(parsed.at).toISOString(),id:String(parsed.id||'')}}catch(error){return null}},
+hasCursor(username){return Boolean(this.readCursor(username))},
+writeCursor(username,cursor){if(username&&cursor?.at)SupabaseSync.originalSetItem(this.key(username,'pull_cursor'),JSON.stringify({at:cursor.at,id:String(cursor.id||'')}))},
 getDeviceId(){const key='erp_v2_device_id';let id=localStorage.getItem(key);if(!id){id=createRecordId('device');SupabaseSync.originalSetItem(key,id)}return id},
 queueRecords(username,records){if(!username||!Array.isArray(records)||!records.length)return;const pending=this.readSet(username,'pending'),deleted=this.readSet(username,'deleted');records.forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id){pending.add(id);deleted.delete(id)}});this.writeSet(username,'pending',pending);this.writeSet(username,'deleted',deleted)},
 queueDeleted(username,recordIds){if(!username||!Array.isArray(recordIds)||!recordIds.length)return;const pending=this.readSet(username,'pending'),deleted=this.readSet(username,'deleted');recordIds.map(String).filter(Boolean).forEach(id=>{pending.delete(id);deleted.add(id)});this.writeSet(username,'pending',pending);this.writeSet(username,'deleted',deleted)},
@@ -723,9 +726,20 @@ async pullAndMerge(username){
 if(!SupabaseSync.client||!username||navigator.onLine===false)return false;
 const pending=this.readSet(username,'pending'),localKey=`erp_data_${username}`,localParsed=SupabaseSync.parseStoredValue(localStorage.getItem(localKey)||'[]',[]),localById=new Map();
 (Array.isArray(localParsed)?localParsed:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)localById.set(id,record)});
-const remoteRows=[];for(let from=0;;from+=this.pageSize){const{data,error}=await SupabaseSync.client.from(this.table).select('record_id,record_type,payload,client_updated_at,server_updated_at,deleted_at').order('record_id',{ascending:true}).range(from,from+this.pageSize-1);if(error)throw error;remoteRows.push(...(data||[]));if(!data||data.length<this.pageSize)break}
+let cursor=this.readCursor(username)||{at:'1970-01-01T00:00:00.000Z',id:''};
+const remoteRows=[];
+for(;;){
+const{data,error}=await SupabaseSync.client.rpc('pull_erp_record_changes',{p_after:cursor.at,p_after_id:cursor.id,p_limit:this.pageSize});
+if(error)throw error;
+const page=Array.isArray(data)?data:[];
+if(!page.length)break;
+remoteRows.push(...page);
+const last=page[page.length-1];
+cursor={at:new Date(last.server_updated_at).toISOString(),id:String(last.record_id||'')};
+if(page.length<this.pageSize)break;
+}
 remoteRows.forEach(row=>{const id=String(row.record_id||'');if(!id)return;if(row.deleted_at){localById.delete(id);pending.delete(id);return}const remoteRecord=row.payload&&typeof row.payload==='object'?{...row.payload,__backendId:row.payload.__backendId||id,type:row.payload.type||row.record_type}:{__backendId:id,type:row.record_type||'unknown'};const remoteUpdatedAt=row.client_updated_at||row.server_updated_at||new Date(0).toISOString();remoteRecord[SupabaseSync.recordUpdatedField]=remoteUpdatedAt;remoteRecord[SupabaseSync.recordHashField]=SupabaseSync.recordHash(remoteRecord);const localRecord=localById.get(id);if(pending.has(id))return;if(!localRecord){localById.set(id,remoteRecord);return}const localTime=SupabaseSync.getRecordTimestamp(localRecord),remoteTime=Date.parse(remoteUpdatedAt)||0;if(localTime>remoteTime&&SupabaseSync.recordSignature(localRecord)!==SupabaseSync.recordSignature(remoteRecord)){pending.add(id);return}if(remoteTime>=localTime)localById.set(id,remoteRecord)});
-SupabaseSync.originalSetItem(localKey,JSON.stringify(Array.from(localById.values())));this.writeSet(username,'pending',pending);
+SupabaseSync.originalSetItem(localKey,JSON.stringify(Array.from(localById.values())));this.writeSet(username,'pending',pending);this.writeCursor(username,cursor);
 if(localStorage.getItem(this.key(username,'settings_dirty'))!=='1'){const{data,error}=await SupabaseSync.client.from(this.settingsTable).select('config,updated_at').maybeSingle();if(error)throw error;if(data?.config){const current=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_config_${username}`),{});SupabaseSync.originalSetItem(`erp_config_${username}`,JSON.stringify({...current,...data.config}))}}
 return remoteRows.length>0},
 async pushSettings(username){if(!username||localStorage.getItem(this.key(username,'settings_dirty'))!=='1')return true;const config=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_config_${username}`),{});const{error}=await SupabaseSync.client.from(this.settingsTable).upsert({config,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;SupabaseSync.originalRemoveItem(this.key(username,'settings_dirty'));return true},
@@ -1679,7 +1693,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       async loadUserData(username) {
         this.currentUser = username;
-        await SupabaseSync.pullUser(username);
+        // La copia completa antigua solo se descarga una vez por instalacion.
+        // Despues se solicitan unicamente los registros modificados desde el ultimo cursor.
+        if (!RecordSyncV2.hasCursor(username)) await SupabaseSync.pullUser(username);
         try {
           await RecordSyncV2.pullAndMerge(username);
         } catch (error) {

@@ -57,33 +57,53 @@ jobs:
         run: |
           node --check organized/js/app.js
           node tools/verify-app.cjs
-      - name: Compilar APK
+      - name: Preparar firma permanente
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/erp-materiales-release.p12"
+          keytool -list -keystore "$RUNNER_TEMP/erp-materiales-release.p12" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+      - name: Compilar APK firmada
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/erp-materiales-release.p12
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --no-daemon
       - name: Preparar APK directo
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.44-Sincronizacion-Estable.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
       - name: Publicar APK en descarga web
         run: |
           mkdir -p downloads
-          cp ERP-Materiales-v1.44-Sincronizacion-Estable.apk downloads/ERP-Materiales-v1.44-Sincronizacion-Estable.apk
+          cp ERP-Materiales-v1.45-Sincronizacion-Incremental.apk downloads/ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add downloads/ERP-Materiales-v1.44-Sincronizacion-Estable.apk
+          git add downloads/ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
           if git diff --cached --quiet; then
             echo "La APK web ya estaba actualizada"
           else
-            git commit -m "Publicar descarga web APK v1.44"
+            git commit -m "Publicar descarga web APK v1.45"
             git push origin HEAD:main
           fi
+      - name: Verificar firma de la APK
+        run: jarsigner -verify ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.44-Sincronizacion-Estable.apk
+          path: ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.44
-          name: ERP Materiales v1.44
-          files: ERP-Materiales-v1.44-Sincronizacion-Estable.apk
+          tag_name: v1.45
+          name: ERP Materiales v1.45
+          files: ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
           overwrite_files: true
