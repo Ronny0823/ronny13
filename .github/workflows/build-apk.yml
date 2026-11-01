@@ -57,11 +57,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.42-Borrar-Fechas-Web.apk
+          path: ERP-Materiales-v1.42-Sincronizacion-Segura.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.42
           name: ERP Materiales v1.42
-          files: ERP-Materiales-v1.42-Borrar-Fechas-Web.apk
+          files: ERP-Materiales-v1.42-Sincronizacion-Segura.apk
           overwrite_files: true
