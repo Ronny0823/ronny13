@@ -62,6 +62,19 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon
       - name: Preparar APK directo
         run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.43-Supabase-Offline.apk
+      - name: Publicar APK en descarga web
+        run: |
+          mkdir -p downloads
+          cp ERP-Materiales-v1.43-Supabase-Offline.apk downloads/ERP-Materiales-v1.43-Supabase-Offline.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add downloads/ERP-Materiales-v1.43-Supabase-Offline.apk
+          if git diff --cached --quiet; then
+            echo "La APK web ya estaba actualizada"
+          else
+            git commit -m "Publicar descarga web APK v1.43"
+            git push origin HEAD:main
+          fi
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
