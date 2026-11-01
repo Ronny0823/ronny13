@@ -7,8 +7,8 @@ android {
         applicationId 'com.ronny.erpmaterialesnorte'
         minSdk 24
         targetSdk 35
-        versionCode 44
-        versionName '1.43.0'
+        versionCode 45
+        versionName '1.44.0'
     }
     buildTypes {
         release {

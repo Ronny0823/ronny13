@@ -2471,7 +2471,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           const username = AuthSystem.currentUser.username;
           const beforeData = localStorage.getItem(`erp_data_${username}`) || '';
           const beforeConfig = localStorage.getItem(`erp_config_${username}`) || '';
-          updateSyncStatus('syncing');
+          // Las sincronizaciones automaticas trabajan en segundo plano sin hacer parpadear el indicador.
+          // El estado "Sincronizando" se reserva para acciones visibles del usuario y guardados reales.
+          if (!silent) updateSyncStatus('syncing');
           const [legacyFlushed, recordsFlushed] = await Promise.all([
             SupabaseSync.flush(),
             RecordSyncV2.flush(username)

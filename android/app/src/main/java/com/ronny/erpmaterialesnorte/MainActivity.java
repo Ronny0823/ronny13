@@ -27,8 +27,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.webkit.MimeTypeMap;
@@ -64,13 +62,6 @@ public class MainActivity extends Activity {
     private volatile boolean networkValidated = false;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
-    private final Handler autoSyncHandler = new Handler(Looper.getMainLooper());
-    private final Runnable autoSyncRetry = new Runnable() {
-        @Override public void run() {
-            if (networkValidated) notifyWebNetwork(true);
-            autoSyncHandler.postDelayed(this, 5000);
-        }
-    };
     private WebView activePrintWebView;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
@@ -164,7 +155,6 @@ public class MainActivity extends Activity {
         });
         webView.loadUrl("file:///android_asset/index.html");
         startNetworkMonitoring();
-        autoSyncHandler.postDelayed(autoSyncRetry, 5000);
         requestBluetoothPermission();
     }
 
@@ -192,7 +182,7 @@ public class MainActivity extends Activity {
     private void updateNativeNetworkState(boolean online) {
         boolean changed = networkValidated != online;
         networkValidated = online;
-        if (changed || online) notifyWebNetwork(online);
+        if (changed) notifyWebNetwork(online);
     }
 
     private void notifyWebNetwork(boolean online) {
@@ -202,7 +192,6 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
-        autoSyncHandler.removeCallbacksAndMessages(null);
         if (connectivityManager != null && networkCallback != null) {
             try { connectivityManager.unregisterNetworkCallback(networkCallback); } catch (Exception ignored) {}
         }
