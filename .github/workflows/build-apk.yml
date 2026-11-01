@@ -61,15 +61,19 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: erp_materiales_release
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           test -n "$ANDROID_KEYSTORE_BASE64"
           test -n "$ANDROID_KEYSTORE_PASSWORD"
-          test -n "$ANDROID_KEY_ALIAS"
-          test -n "$ANDROID_KEY_PASSWORD"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/erp-materiales-release.p12"
-          keytool -list -keystore "$RUNNER_TEMP/erp-materiales-release.p12" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/erp-materiales-release.p12"; then
+            echo "::error::La llave de firma no se pudo decodificar"
+            exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/erp-materiales-release.p12" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias erp_materiales_release >/dev/null; then
+            echo "::error::La llave o su contraseña no coinciden"
+            exit 1
+          fi
       - name: Compilar APK firmada
         working-directory: android
         env:
