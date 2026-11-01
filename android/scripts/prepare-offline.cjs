@@ -22,8 +22,8 @@ const edits = [
     `await AppState.loadUserData(this.currentUser.username, { localOnly: localFirst });`
   ],
   [
-    `async loadUserData(username) {\n        this.currentUser = username;\n        await SupabaseSync.pullUser(username);`,
-    `async loadUserData(username, { localOnly = false } = {}) {\n        this.currentUser = username;\n        if (!localOnly && navigator.onLine) {\n          try { await SupabaseSync.pullUser(username); }\n          catch (error) { console.warn('Se usaran los datos locales', error); }\n        }`
+    `async loadUserData(username) {\n        this.currentUser = username;\n        // La copia completa antigua solo se descarga una vez por instalacion.\n        // Despues se solicitan unicamente los registros modificados desde el ultimo cursor.\n        if (!RecordSyncV2.hasCursor(username)) await SupabaseSync.pullUser(username);\n        try {\n          await RecordSyncV2.pullAndMerge(username);\n        } catch (error) {\n          console.warn('No se pudo leer la sincronizacion por registro:', error.message || error);\n        }`,
+    `async loadUserData(username, { localOnly = false } = {}) {\n        this.currentUser = username;\n        // La copia completa antigua solo se descarga una vez por instalacion.\n        // Despues se solicitan unicamente los registros modificados desde el ultimo cursor.\n        if (!localOnly && navigator.onLine) {\n          try {\n            if (!RecordSyncV2.hasCursor(username)) await SupabaseSync.pullUser(username);\n            await RecordSyncV2.pullAndMerge(username);\n          } catch (error) {\n            console.warn('Se usaran los datos locales:', error.message || error);\n          }\n        }`
   ],
   [
     `async logout() {\n        if (SupabaseSync.client) await SupabaseSync.client.auth.signOut();`,
