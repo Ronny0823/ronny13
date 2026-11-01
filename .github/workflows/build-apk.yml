@@ -39,11 +39,20 @@ jobs:
           curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js -o android/app/src/main/assets/vendor/xlsx.bundle.js
           curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10 -o android/app/src/main/assets/vendor/supabase.js
           sed -i 's#https://cdn.tailwindcss.com#vendor/tailwindcss.js#g' android/app/src/main/assets/index.html
-          sed -i 's#https://unpkg.com/lucide@latest#vendor/lucide.js#g' android/app/src/main/assets/index.html
-          sed -i 's#https://cdn.jsdelivr.net/npm/chart.js#vendor/chart.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://unpkg.com/lucide@0.468.0#vendor/lucide.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://cdn.jsdelivr.net/npm/chart.js@4.4.7#vendor/chart.js#g' android/app/src/main/assets/index.html
           sed -i 's#https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js#vendor/jspdf.umd.min.js#g' android/app/src/main/assets/index.html
           sed -i 's#https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js#vendor/xlsx.bundle.js#g' android/app/src/main/assets/index.html
-          sed -i 's#https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2#vendor/supabase.js#g' android/app/src/main/assets/index.html
+          sed -i 's#https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10#vendor/supabase.js#g' android/app/src/main/assets/index.html
+          grep -q 'src="vendor/lucide.js"' android/app/src/main/assets/index.html
+          grep -q 'src="vendor/chart.js"' android/app/src/main/assets/index.html
+          grep -q 'src="vendor/supabase.js"' android/app/src/main/assets/index.html
+          test "$(wc -c < android/app/src/main/assets/vendor/supabase.js)" -gt 100000
+          grep -q 'createClient' android/app/src/main/assets/vendor/supabase.js
+          if grep -Eq 'src="https://[^"]*(lucide|chart\.js|supabase-js)' android/app/src/main/assets/index.html; then
+            echo "Quedaron librerías críticas apuntando a internet"
+            exit 1
+          fi
       - name: Verificar aplicación
         run: |
           node --check organized/js/app.js
@@ -52,16 +61,16 @@ jobs:
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
       - name: Preparar APK directo
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.42-Sincronizacion-Segura.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.43-Supabase-Offline.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.42-Sincronizacion-Segura.apk
+          path: ERP-Materiales-v1.43-Supabase-Offline.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.42
-          name: ERP Materiales v1.42
-          files: ERP-Materiales-v1.42-Sincronizacion-Segura.apk
+          tag_name: v1.43
+          name: ERP Materiales v1.43
+          files: ERP-Materiales-v1.43-Supabase-Offline.apk
           overwrite_files: true

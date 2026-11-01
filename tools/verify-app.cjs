@@ -14,7 +14,7 @@ const checks = [
   [!/(?<!await )AppState\.saveUserData\(\);/.test(app), 'Hay guardados sin esperar confirmación'],
   [!/__backendId[^\n]*Date\.now/.test(app), 'Hay identificadores basados solo en Date.now'],
   [html.includes('id="syncStatusDot"') && html.includes('id="syncStatusText"'), 'Falta el indicador de sincronización'],
-  [gradle.includes('versionCode 43') && gradle.includes("versionName '1.42.0'"), 'Versión Android incorrecta'],
+  [gradle.includes('versionCode 44') && gradle.includes("versionName '1.43.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -23,4 +23,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.42 completadas');
+console.log('Verificaciones v1.43 completadas');
