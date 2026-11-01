@@ -12,10 +12,34 @@
     const INITIAL_AUTH_HASH = window.location.hash || '';
 
     const safeText = (value) => String(value ?? '').trim();
+    const createRecordId = (prefix = 'record') => {
+      const randomId = globalThis.crypto?.randomUUID?.() ||
+        `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      return `${prefix}_${randomId}`;
+    };
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
     const escapeAttr = (value) => escapeHtml(value).replace(/`/g, '&#96;');
+    const RAW_DATA_FIELDS = new Set([
+      '__backendId', 'id', 'sale_id', 'invoice_id', 'invoice_number', 'type',
+      '__syncUpdatedAt', '__syncHash', 'date', 'created_at', 'updated_at', 'company_logo'
+    ]);
+    const sanitizePlainData = (value, key = '') => {
+      if (Array.isArray(value)) return value.map(item => sanitizePlainData(item, key));
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([childKey, childValue]) => [
+          childKey, sanitizePlainData(childValue, childKey)
+        ]));
+      }
+      if (typeof value !== 'string' || RAW_DATA_FIELDS.has(key)) return value;
+      return value
+        .replace(/[<>]/g, char => char === '<' ? '‹' : '›')
+        .replace(/"/g, '”')
+        .replace(/'/g, '’')
+        .replace(/`/g, '´')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+    };
     const toFiniteNumber = (value, fallback = 0) => {
       const num = Number(String(value ?? '').replace(/,/g, '.'));
       return Number.isFinite(num) ? num : fallback;
@@ -43,6 +67,8 @@
     const showExcelLibraryError = () => {
       showToast('No se pudo cargar la libreria de Excel. Revisa tu conexion e intenta de nuevo.', 'error');
     };
+
+    function updateSyncStatus(state='synced'){const dot=document.getElementById('syncStatusDot'),text=document.getElementById('syncStatusText');if(!dot||!text)return;const states={syncing:{label:'Sincronizando...',color:'bg-amber-400',pulse:true},synced:{label:'Sincronizado',color:'bg-emerald-500',pulse:false},online:{label:'Online',color:'bg-emerald-500',pulse:true},offline:{label:'Sin conexión · guardado local',color:'bg-slate-500',pulse:false},pending:{label:'Pendiente de subir',color:'bg-amber-400',pulse:true},error:{label:'Error de sincronización',color:'bg-rose-500',pulse:false}},value=states[state]||states.synced;dot.className=`w-2 h-2 rounded-full ${value.color}${value.pulse?' animate-pulse':''}`;text.textContent=value.label}
 
     // Evita recorrer todo el documento varias veces cuando una vista crea muchos iconos.
     const nativeLucideCreateIcons = window.lucide?.createIcons?.bind(window.lucide);
@@ -132,12 +158,9 @@
       },
 
       shouldSyncKey(key) {
-        return typeof key === 'string' &&
-          key.startsWith('erp_') &&
-          key !== 'erp_users' &&
-          key !== 'erp_session' &&
-          key !== this.dirtyStorageKey &&
-          !key.startsWith('erp_safety_');
+        if (typeof key !== 'string' || key === this.dirtyStorageKey) return false;
+        return ['erp_data_', 'erp_config_', 'erp_deleted_', 'erp_auth_kick_']
+          .some(prefix => key.startsWith(prefix));
       },
 
       installOnlineRetry() {
@@ -282,10 +305,12 @@
 
       markRecordsDeleted(username, recordIds) {
         if (!username || !Array.isArray(recordIds) || !recordIds.length) return;
+        const cleanIds = recordIds.filter(Boolean).map(String);
         const deletedKey = this.getDeletedKey(username);
         const deleted = this.getDeletedIds(username);
-        recordIds.filter(Boolean).forEach(id => deleted.add(id));
+        cleanIds.forEach(id => deleted.add(id));
         localStorage.setItem(deletedKey, JSON.stringify(Array.from(deleted)));
+        if (typeof RecordSyncV2 !== 'undefined') RecordSyncV2.queueDeleted(username, cleanIds);
       },
 
       restorePendingWrites() {
@@ -684,6 +709,35 @@
       }
     };
 
+    const RecordSyncV2 = (function makeV2(){return {
+table:'erp_records',settingsTable:'erp_user_settings',pageSize:1000,flushing:null,
+key(username,kind){return `erp_v2_${kind}_${username}`},
+readSet(username,kind){try{const parsed=JSON.parse(localStorage.getItem(this.key(username,kind))||'[]');return new Set(Array.isArray(parsed)?parsed.map(String).filter(Boolean):[])}catch(error){return new Set()}},
+writeSet(username,kind,values){SupabaseSync.originalSetItem(this.key(username,kind),JSON.stringify(Array.from(values)))},
+getDeviceId(){const key='erp_v2_device_id';let id=localStorage.getItem(key);if(!id){id=createRecordId('device');SupabaseSync.originalSetItem(key,id)}return id},
+queueRecords(username,records){if(!username||!Array.isArray(records)||!records.length)return;const pending=this.readSet(username,'pending'),deleted=this.readSet(username,'deleted');records.forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id){pending.add(id);deleted.delete(id)}});this.writeSet(username,'pending',pending);this.writeSet(username,'deleted',deleted)},
+queueDeleted(username,recordIds){if(!username||!Array.isArray(recordIds)||!recordIds.length)return;const pending=this.readSet(username,'pending'),deleted=this.readSet(username,'deleted');recordIds.map(String).filter(Boolean).forEach(id=>{pending.delete(id);deleted.add(id)});this.writeSet(username,'pending',pending);this.writeSet(username,'deleted',deleted)},
+markSettingsDirty(username){if(username)SupabaseSync.originalSetItem(this.key(username,'settings_dirty'),'1')},
+hasPending(username){return this.readSet(username,'pending').size>0||this.readSet(username,'deleted').size>0||localStorage.getItem(this.key(username,'settings_dirty'))==='1'},
+async pullAndMerge(username){
+if(!SupabaseSync.client||!username||navigator.onLine===false)return false;
+const pending=this.readSet(username,'pending'),localKey=`erp_data_${username}`,localParsed=SupabaseSync.parseStoredValue(localStorage.getItem(localKey)||'[]',[]),localById=new Map();
+(Array.isArray(localParsed)?localParsed:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)localById.set(id,record)});
+const remoteRows=[];for(let from=0;;from+=this.pageSize){const{data,error}=await SupabaseSync.client.from(this.table).select('record_id,record_type,payload,client_updated_at,server_updated_at,deleted_at').order('record_id',{ascending:true}).range(from,from+this.pageSize-1);if(error)throw error;remoteRows.push(...(data||[]));if(!data||data.length<this.pageSize)break}
+remoteRows.forEach(row=>{const id=String(row.record_id||'');if(!id)return;if(row.deleted_at){localById.delete(id);pending.delete(id);return}const remoteRecord=row.payload&&typeof row.payload==='object'?{...row.payload,__backendId:row.payload.__backendId||id,type:row.payload.type||row.record_type}:{__backendId:id,type:row.record_type||'unknown'};const remoteUpdatedAt=row.client_updated_at||row.server_updated_at||new Date(0).toISOString();remoteRecord[SupabaseSync.recordUpdatedField]=remoteUpdatedAt;remoteRecord[SupabaseSync.recordHashField]=SupabaseSync.recordHash(remoteRecord);const localRecord=localById.get(id);if(pending.has(id))return;if(!localRecord){localById.set(id,remoteRecord);return}const localTime=SupabaseSync.getRecordTimestamp(localRecord),remoteTime=Date.parse(remoteUpdatedAt)||0;if(localTime>remoteTime&&SupabaseSync.recordSignature(localRecord)!==SupabaseSync.recordSignature(remoteRecord)){pending.add(id);return}if(remoteTime>=localTime)localById.set(id,remoteRecord)});
+SupabaseSync.originalSetItem(localKey,JSON.stringify(Array.from(localById.values())));this.writeSet(username,'pending',pending);
+if(localStorage.getItem(this.key(username,'settings_dirty'))!=='1'){const{data,error}=await SupabaseSync.client.from(this.settingsTable).select('config,updated_at').maybeSingle();if(error)throw error;if(data?.config){const current=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_config_${username}`),{});SupabaseSync.originalSetItem(`erp_config_${username}`,JSON.stringify({...current,...data.config}))}}
+return remoteRows.length>0},
+async pushSettings(username){if(!username||localStorage.getItem(this.key(username,'settings_dirty'))!=='1')return true;const config=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_config_${username}`),{});const{error}=await SupabaseSync.client.from(this.settingsTable).upsert({config,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;SupabaseSync.originalRemoveItem(this.key(username,'settings_dirty'));return true},
+async flush(username=AppState.currentUser){
+if(!SupabaseSync.client||!username||navigator.onLine===false)return false;if(this.flushing)return this.flushing;
+this.flushing=(async()=>{const pending=this.readSet(username,'pending'),deleted=this.readSet(username,'deleted'),records=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_data_${username}`),[]),byId=new Map();(Array.isArray(records)?records:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)byId.set(id,record)});const deviceId=this.getDeviceId(),queuedRecords=Array.from(pending).map(id=>byId.get(id)).filter(Boolean),sentSignatures=new Map(queuedRecords.map(record=>[SupabaseSync.getRecordId(record),SupabaseSync.recordSignature(record)]));
+for(let i=0;i<queuedRecords.length;i+=200){const batch=queuedRecords.slice(i,i+200).map(record=>({record_id:SupabaseSync.getRecordId(record),record_type:record.type||'unknown',payload:record,client_updated_at:record[SupabaseSync.recordUpdatedField]||new Date().toISOString()}));const{error}=await SupabaseSync.client.rpc('sync_erp_records',{p_records:batch,p_deleted_ids:[],p_device_id:deviceId});if(error)throw error}
+const deletedIds=Array.from(deleted);for(let i=0;i<deletedIds.length;i+=500){const{error}=await SupabaseSync.client.rpc('sync_erp_records',{p_records:[],p_deleted_ids:deletedIds.slice(i,i+500),p_device_id:deviceId});if(error)throw error}
+const latest=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_data_${username}`),[]),latestById=new Map();(Array.isArray(latest)?latest:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)latestById.set(id,record)});sentSignatures.forEach((signature,id)=>{const current=latestById.get(id);if(current&&SupabaseSync.recordSignature(current)===signature)pending.delete(id)});deletedIds.forEach(id=>deleted.delete(id));this.writeSet(username,'pending',pending);this.writeSet(username,'deleted',deleted);await this.pushSettings(username);return !this.hasPending(username)})();
+try{return await this.flushing}catch(error){console.warn('Sincronizacion por registro pendiente:',error.message||error);return false}finally{this.flushing=null}}
+}})();
+
     // ==================== AUTHENTICATION SYSTEM ====================
     function getAuthEmailKey(email) {
       return String(email || '')
@@ -920,9 +974,9 @@
           SupabaseSync.setLocalOnly(`erp_config_${user.username}`, JSON.stringify({
             company_name: 'Materiales del Norte',
             company_slogan: 'Calidad en cada metro cubico',
-            currency: 'MXN',
+            currency: 'DOP',
             iva_default_enabled: true,
-            iva_default_rate: 16
+            iva_default_rate: 18
           }));
         }
       },
@@ -1584,8 +1638,8 @@
         company_address: '',
         company_phone: '',
         company_logo: '',
-        tax_rate: 16,
-        currency: 'MXN',
+        tax_rate: 18,
+        currency: 'DOP',
         printer_type: 'standard',
         bluetooth_print_mode: 'thermal_80',
         bluetooth_charset: 'cp850',
@@ -1594,7 +1648,7 @@
         auto_print: false,
         backup_enabled: true,
         iva_default_enabled: true,
-        iva_default_rate: 16
+        iva_default_rate: 18
       },
       currentPage: 'dashboard',
       invoiceCounter: 1000,
@@ -1626,12 +1680,17 @@
       async loadUserData(username) {
         this.currentUser = username;
         await SupabaseSync.pullUser(username);
+        try {
+          await RecordSyncV2.pullAndMerge(username);
+        } catch (error) {
+          console.warn('No se pudo leer la sincronizacion por registro:', error.message || error);
+        }
         
         const savedData = localStorage.getItem(`erp_data_${username}`);
         if (savedData) {
           try {
             const parsedData = JSON.parse(savedData);
-            this.data = Array.isArray(parsedData) ? parsedData : [];
+            this.data = Array.isArray(parsedData) ? parsedData.map(record => sanitizePlainData(record)) : [];
           } catch (error) {
             console.warn('Datos locales invalidos. Se inicia con lista vacia:', error.message || error);
             this.data = [];
@@ -1645,7 +1704,7 @@
         const savedConfig = localStorage.getItem(`erp_config_${username}`);
         if (savedConfig) {
           try {
-            this.config = { ...this.config, ...JSON.parse(savedConfig) };
+            this.config = { ...this.config, ...sanitizePlainData(JSON.parse(savedConfig)) };
           } catch (error) {
             console.warn('Configuracion local invalida. Se usara la configuracion base:', error.message || error);
             showToast('La configuracion local tenia un formato invalido. Se uso la configuracion base.', 'warning');
@@ -1664,15 +1723,40 @@
         updateLogoDisplay();
       },
 
-      saveUserData() {
-        if (!this.currentUser) return;
+      async saveUserData() {
+        if (!this.currentUser) return false;
         this.invalidateDataCache();
-        const dataKey = `erp_data_${this.currentUser}`;
-        this.data = SupabaseSync.stampChangedRecords(dataKey, this.data);
+        const username = this.currentUser;
+        const dataKey = `erp_data_${username}`;
+        const previous = SupabaseSync.parseStoredValue(localStorage.getItem(dataKey), []);
+        const previousById = new Map();
+        (Array.isArray(previous) ? previous : []).forEach(record => {
+          const id = SupabaseSync.getRecordId(record);
+          if (id) previousById.set(id, record);
+        });
+        this.data = SupabaseSync.stampChangedRecords(dataKey, this.data.map(record => sanitizePlainData(record)));
+        const changedRecords = this.data.filter(record => {
+          const id = SupabaseSync.getRecordId(record);
+          const oldRecord = id ? previousById.get(id) : null;
+          return Boolean(id) && (!oldRecord ||
+            SupabaseSync.recordSignature(oldRecord) !== SupabaseSync.recordSignature(record));
+        });
         localStorage.setItem(dataKey, JSON.stringify(this.data));
-        localStorage.setItem(`erp_config_${this.currentUser}`, JSON.stringify(this.config));
-        DataBackup.saveSafetyBackup(this.currentUser);
-        return SupabaseSync.flush();
+        const configKey = `erp_config_${username}`;
+        const previousConfigRaw = localStorage.getItem(configKey) || '';
+        this.config = sanitizePlainData(this.config);
+        const nextConfigRaw = JSON.stringify(this.config);
+        if (nextConfigRaw !== previousConfigRaw) {
+          localStorage.setItem(configKey, nextConfigRaw);
+          RecordSyncV2.markSettingsDirty(username);
+        }
+        RecordSyncV2.queueRecords(username, changedRecords);
+        DataBackup.saveSafetyBackup(username);
+        updateSyncStatus('syncing');
+        const [legacyOk, recordsOk] = await Promise.all([SupabaseSync.flush(), RecordSyncV2.flush(username)]);
+        const ok = legacyOk !== false && recordsOk !== false;
+        updateSyncStatus(ok ? 'synced' : (navigator.onLine === false ? 'offline' : 'pending'));
+        return ok;
       }
     };
 
@@ -1718,7 +1802,7 @@
 
     function updateDate() {
       const now = new Date();
-      document.getElementById('current-date').textContent = now.toLocaleDateString('es-MX', {
+      document.getElementById('current-date').textContent = now.toLocaleDateString('es-DO', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
       });
     }
@@ -1900,9 +1984,64 @@
       return inv;
     }
 
-    function generateInvoiceNum() {
-      AppState.invoiceCounter++;
-      return `FAC-${String(AppState.invoiceCounter).padStart(4, '0')}`;
+    function findSaleForInvoice(invoice) {
+      if (!invoice) return null;
+      if (invoice.sale_id) {
+        const byId = AppState.data.find(record => record.type === 'sale' && record.__backendId === invoice.sale_id);
+        if (byId) return byId;
+      }
+      return AppState.data.find(record =>
+        record.type === 'sale' &&
+        (record.invoice_id === invoice.__backendId || record.invoice_number === invoice.invoice_number)
+      ) || null;
+    }
+
+    function findInvoiceForSale(sale) {
+      if (!sale) return null;
+      if (sale.invoice_id) {
+        const byId = AppState.data.find(record => record.type === 'invoice' && record.__backendId === sale.invoice_id);
+        if (byId) return byId;
+      }
+      return AppState.data.find(record =>
+        record.type === 'invoice' &&
+        (record.sale_id === sale.__backendId || record.invoice_number === sale.invoice_number)
+      ) || null;
+    }
+
+    async function generateInvoiceNum() {
+      const username = AppState.currentUser || 'local';
+      const blockKey = `erp_invoice_block_${username}`;
+      const readBlock = () => {
+        try { return JSON.parse(localStorage.getItem(blockKey) || 'null'); }
+        catch (error) { return null; }
+      };
+      const useNext = (block) => {
+        const next = Number(block?.next || 0);
+        const end = Number(block?.end || 0);
+        if (!next || next > end) return '';
+        SupabaseSync.originalSetItem(blockKey, JSON.stringify({ next: next + 1, end }));
+        AppState.invoiceCounter = Math.max(AppState.invoiceCounter, next);
+        return `FAC-${String(next).padStart(4, '0')}`;
+      };
+      const cached = useNext(readBlock());
+      if (cached) return cached;
+      if (SupabaseSync.client && navigator.onLine !== false) {
+        try {
+          const { data, error } = await SupabaseSync.client.rpc('reserve_erp_invoice_numbers', { p_count: 50 });
+          if (error) throw error;
+          const block = Array.isArray(data) ? data[0] : data;
+          const start = Number(block?.start || 0);
+          const end = Number(block?.end || 0);
+          if (start && end >= start) {
+            SupabaseSync.originalSetItem(blockKey, JSON.stringify({ next: start, end }));
+            return useNext(readBlock());
+          }
+        } catch (error) {
+          console.warn('No se pudo reservar un bloque de facturas:', error.message || error);
+        }
+      }
+      const device = RecordSyncV2.getDeviceId().replace(/[^a-z0-9]/gi, '').slice(-6).toUpperCase();
+      return `FAC-OFF-${device}-${Date.now().toString(36).toUpperCase()}`;
     }
 
     const CURRENCY_SYMBOL_OVERRIDES = {
@@ -1939,7 +2078,7 @@
     }
 
     function formatCurrencyValue(value) {
-      const code = AppState.config.currency || 'MXN';
+      const code = AppState.config.currency || 'DOP';
       const amount = Number(value || 0);
 
       try {
@@ -1959,17 +2098,17 @@
 
     const fmt = {
       currency: (n) => formatCurrencyValue(n),
-      number: (n, d = 1) => getNumberFormatter('es-MX', {
+      number: (n, d = 1) => getNumberFormatter('es-DO', {
         minimumFractionDigits: d, maximumFractionDigits: d
       }).format(n || 0),
-      quantity: (n, max = 6) => getNumberFormatter('es-MX', {
+      quantity: (n, max = 6) => getNumberFormatter('es-DO', {
         minimumFractionDigits: 0,
         maximumFractionDigits: max
       }).format(Number(n) || 0),
-      date: (iso) => iso ? getDateFormatter('es-MX', {
+      date: (iso) => iso ? getDateFormatter('es-DO', {
         day: '2-digit', month: 'short', year: 'numeric'
       }).format(new Date(iso)) : '-',
-      dateTime: (iso) => iso ? getDateFormatter('es-MX', {
+      dateTime: (iso) => iso ? getDateFormatter('es-DO', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit'
       }).format(new Date(iso)) : '-',
@@ -1981,7 +2120,7 @@
       const match = String(dateKey).match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (!match) return fmt.date(dateKey);
       const [, year, month, day] = match;
-      return getDateFormatter('es-MX', {
+      return getDateFormatter('es-DO', {
         day: '2-digit', month: 'short', year: 'numeric'
       }).format(new Date(Number(year), Number(month) - 1, Number(day)));
     }
@@ -2332,8 +2471,14 @@
           const username = AuthSystem.currentUser.username;
           const beforeData = localStorage.getItem(`erp_data_${username}`) || '';
           const beforeConfig = localStorage.getItem(`erp_config_${username}`) || '';
-          const flushed = await SupabaseSync.flush();
-          if (!flushed && SupabaseSync.hasDirtyDataKey(username)) {
+          updateSyncStatus('syncing');
+          const [legacyFlushed, recordsFlushed] = await Promise.all([
+            SupabaseSync.flush(),
+            RecordSyncV2.flush(username)
+          ]);
+          const flushed = legacyFlushed !== false && recordsFlushed !== false;
+          if (!flushed && (SupabaseSync.hasDirtyDataKey(username) || RecordSyncV2.hasPending(username))) {
+            updateSyncStatus(navigator.onLine === false ? 'offline' : 'pending');
             if (!silent) showToast('Hay datos guardados en este telefono pendientes de subir. No se reemplazaron con la nube.', 'warning');
             return false;
           }
@@ -2341,10 +2486,12 @@
           const afterData = localStorage.getItem(`erp_data_${username}`) || '';
           const afterConfig = localStorage.getItem(`erp_config_${username}`) || '';
           const changed = beforeData !== afterData || beforeConfig !== afterConfig;
+          updateSyncStatus(RecordSyncV2.hasPending(username) ? 'pending' : 'synced');
           if (changed && !silent) showToast('Datos y configuracion actualizados desde la nube', 'success');
           return changed;
         } catch (error) {
           console.warn('No se pudo sincronizar desde Supabase:', error.message || error);
+          updateSyncStatus(navigator.onLine === false ? 'offline' : 'error');
           if (!silent) showToast('No se pudo leer la nube. Revisa la conexion o Supabase.', 'error');
           return false;
         }
@@ -2913,12 +3060,12 @@
       });
 
       const reportDate = new Date();
-      const formatReportDate = (date) => date.toLocaleDateString('es-MX', {
+      const formatReportDate = (date) => date.toLocaleDateString('es-DO', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric'
       });
-      const formatReportTime = (date) => date.toLocaleTimeString('es-MX', {
+      const formatReportTime = (date) => date.toLocaleTimeString('es-DO', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
@@ -2926,7 +3073,7 @@
       const formatEntryDate = (value) => {
         const date = value ? new Date(value) : null;
         if (!date || Number.isNaN(date.getTime())) return value || '';
-        return date.toLocaleString('es-MX', {
+        return date.toLocaleString('es-DO', {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',
@@ -4292,8 +4439,10 @@
       const firstItem = saleItems[0];
       const materialLabel = saleItems.length === 1 ? firstItem.material_name : 'Varios productos';
       const quantityTotal = saleItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
-      const invNum = generateInvoiceNum();
+      const invNum = await generateInvoiceNum();
       const now = buildSaleDateTime(saleDate);
+      const saleId = createRecordId('sale');
+      const invoiceId = createRecordId('inv');
       
       AppState.saleSaving = true;
       btn.disabled = true;
@@ -4305,6 +4454,8 @@
       
       try {
         const saleData = {
+          __backendId: saleId,
+          invoice_id: invoiceId,
           type: 'sale',
           material_name: materialLabel,
           client_name: client,
@@ -4328,10 +4479,11 @@
           payments: []
         };
         
-        saleData.__backendId = 'sale_' + Date.now();
         AppState.data.push(saleData);
         
         const invoiceData = {
+          __backendId: invoiceId,
+          sale_id: saleId,
           type: 'invoice',
           invoice_number: invNum,
           client_name: client,
@@ -4352,7 +4504,6 @@
           iva_rate: ivaRate
         };
         
-        invoiceData.__backendId = 'inv_' + Date.now();
         AppState.data.push(invoiceData);
         
         const cloudSynced = await AppState.saveUserData();
@@ -5110,7 +5261,7 @@
           notes: notes || 'Pago total - Liquidacion completa',
           date: document.getElementById('entryDate')?.value || new Date().toISOString(),
           is_full_payment: true,
-          __backendId: 'pay_' + Date.now()
+          __backendId: createRecordId('pay')
         };
         
         AppState.data.push(paymentData);
@@ -5123,13 +5274,13 @@
         sale.remaining_balance = remaining;
         sale.amount_paid = totalPaid;
 
-        const invoice = AppState.data.find(r => r.type === 'invoice' && r.invoice_number === sale.invoice_number);
+        const invoice = findInvoiceForSale(sale);
         if (invoice) {
           invoice.payment_status = remaining <= 0.01 ? 'pagada' : 'pendiente';
           invoice.status = remaining <= 0.01 ? 'pagada' : 'pendiente';
         }
         
-        AppState.saveUserData();
+        await AppState.saveUserData();
         
         showToast(`Pago total de ${fmt.currency(safeAmount)} registrado correctamente`, 'success');
         
@@ -5255,7 +5406,7 @@
           payment_channel: notes,
           notes: notes,
           date: new Date().toISOString(),
-          __backendId: 'pay_' + Date.now()
+          __backendId: createRecordId('pay')
         };
         
         AppState.data.push(paymentData);
@@ -5273,7 +5424,7 @@
           sale.amount_paid = totalPaid;
         }
 
-        const invoice = AppState.data.find(r => r.type === 'invoice' && r.invoice_number === sale.invoice_number);
+        const invoice = findInvoiceForSale(sale);
         if (invoice) {
           invoice.payment_status = remaining <= 0 ? 'pagada' : 'pendiente';
           invoice.status = remaining <= 0 ? 'pagada' : 'pendiente';
@@ -6931,7 +7082,7 @@
       const sortedDays = Object.keys(salesByDay).sort();
       const labels = sortedDays.map(d => {
         const date = new Date(d + 'T00:00:00');
-        return date.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric' });
+        return date.toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric' });
       });
       const data = sortedDays.map(d => salesByDay[d]);
 
@@ -7494,7 +7645,7 @@
     }
 
     function renderCurrencyOptions(selectedCurrency, searchTerm = '') {
-      const selected = selectedCurrency || 'MXN';
+      const selected = selectedCurrency || 'DOP';
       const query = String(searchTerm || '').trim().toLowerCase();
       const matches = getCurrencyMatches(query);
       const hasSelected = matches.some(([code]) => code === selected);
@@ -7538,7 +7689,7 @@
     function filterCurrencyOptions(searchTerm) {
       const select = document.getElementById('configCurrency');
       if (!select) return;
-      const selected = select.value || AppState.config.currency || 'MXN';
+      const selected = select.value || AppState.config.currency || 'DOP';
       select.innerHTML = renderCurrencyOptions(selected, searchTerm);
 
       const results = document.getElementById('currencySearchResults');
@@ -8400,7 +8551,7 @@
         ]).filter(Boolean);
 
         const isCredito = invoice.payment_type === 'credito';
-        const creditSale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const creditSale = findSaleForInvoice(invoice);
         const creditPayments = creditSale ? getRecords('payment').filter(payment => payment.sale_id === creditSale.__backendId) : [];
         const creditAmountPaid = creditPayments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
         const creditRemaining = Math.max(0, (creditSale?.sale_total || invoice.sale_total || 0) - creditAmountPaid);
@@ -8811,8 +8962,8 @@
       updateCompanyInfo();
     }
 
-    function saveConfig() {
-      AppState.saveUserData();
+    async function saveConfig() {
+      await AppState.saveUserData();
       showToast('Configuracion guardada correctamente');
     }
 
@@ -9346,7 +9497,7 @@
 
       // Determinar mensaje segun tipo de pago
       const isCredito = invoice.payment_type === 'credito';
-      const creditSale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+      const creditSale = findSaleForInvoice(invoice);
       const creditPayments = creditSale ? getRecords('payment').filter(payment => payment.sale_id === creditSale.__backendId) : [];
       const creditAmountPaid = creditPayments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
       const creditRemaining = Math.max(0, (creditSale?.sale_total || invoice.sale_total || 0) - creditAmountPaid);
@@ -9668,13 +9819,13 @@
           const existing = AppState.data.find(r => r.__backendId === editId);
           if (existing) {
             Object.assign(existing, data);
-            AppState.saveUserData();
+            await AppState.saveUserData();
             showToast('Material actualizado correctamente');
           }
         } else {
-          data.__backendId = 'mat_' + Date.now();
+          data.__backendId = createRecordId('mat');
           AppState.data.push(data);
-          AppState.saveUserData();
+          await AppState.saveUserData();
           showToast('Material creado correctamente');
         }
         closeModal();
@@ -9791,7 +9942,7 @@
         if (existing) {
           Object.assign(existing, data);
         } else {
-          data.__backendId = 'ent_' + Date.now();
+          data.__backendId = createRecordId('ent');
           AppState.data.push(data);
         }
         await AppState.saveUserData();
@@ -9877,7 +10028,7 @@
             showToast('Cliente actualizado correctamente');
           }
         } else {
-          data.__backendId = 'cli_' + Date.now();
+          data.__backendId = createRecordId('cli');
           AppState.data.push(data);
           await AppState.saveUserData();
           showToast('Cliente creado correctamente');
@@ -9933,7 +10084,7 @@
     
     // ========== FUNCIONES PARA GESTION DE FACTURAS ==========
 
-    function payInvoice(invoiceId) {
+    async function payInvoice(invoiceId) {
       const invoice = AppState.data.find(r => r.__backendId === invoiceId);
       if (!invoice) return;
 
@@ -9943,14 +10094,14 @@
         invoice.status = 'completed';
 
         // Buscar y actualizar la venta relacionada
-        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const sale = findSaleForInvoice(invoice);
         if (sale) {
           sale.payment_status = 'pagada';
           sale.amount_paid = sale.sale_total;
           sale.remaining_balance = 0;
         }
 
-        AppState.saveUserData();
+        await AppState.saveUserData();
         showToast(`Factura ${invoice.invoice_number} marcada como pagada`, 'success');
         renderPage();
       }
@@ -9975,7 +10126,7 @@
     }
 
     function getInvoiceOriginalQtyByMaterial(invoice) {
-      const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+      const sale = findSaleForInvoice(invoice);
       const items = sale ? getInvoiceEditItems(sale) : getInvoiceEditItems(invoice);
       return items.reduce((map, item) => {
         map[item.material_name] = (map[item.material_name] || 0) + toFiniteNumber(item.quantity, 0);
@@ -10263,7 +10414,7 @@
         invoice.sale_total = total;
 
         // Actualizar venta relacionada
-        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const sale = findSaleForInvoice(invoice);
         if (sale) {
           sale.client_name = invoice.client_name;
           sale.date = invoice.date;
@@ -10362,13 +10513,13 @@
         invoice.payment_status = 'cancelled';
 
         // Actualizar venta relacionada
-        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const sale = findSaleForInvoice(invoice);
         if (sale) {
           sale.status = 'cancelled';
           sale.payment_status = 'cancelled';
         }
 
-        AppState.saveUserData();
+        await AppState.saveUserData();
         showToast(`Factura ${invoice.invoice_number} anulada correctamente`, 'success');
         closeModal();
         renderPage();
@@ -10555,7 +10706,7 @@
       const total = invoices.reduce((sum, inv) => sum + (inv.sale_total || 0), 0);
       const payments = getRecords('payment');
       const pendingByInvoice = invoices.map(invoice => {
-        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const sale = findSaleForInvoice(invoice);
         const saleTotal = sale?.sale_total || invoice.sale_total || 0;
         const paid = sale ? payments
           .filter(payment => payment.sale_id === sale.__backendId)
@@ -10801,7 +10952,7 @@
       const total = invoices.reduce((sum, inv) => sum + (inv.sale_total || 0), 0);
       const payments = getRecords('payment');
       const totalPaid = invoices.reduce((sum, invoice) => {
-        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const sale = findSaleForInvoice(invoice);
         if (!sale) return sum;
         const paid = payments
           .filter(payment => payment.sale_id === sale.__backendId)
@@ -10937,7 +11088,7 @@
       const tax = invoices.reduce((sum, inv) => sum + (inv.tax || 0), 0);
       const total = invoices.reduce((sum, inv) => sum + (inv.sale_total || 0), 0);
       const invoiceSummaries = invoices.map(invoice => {
-        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const sale = findSaleForInvoice(invoice);
         const invoiceTotal = toFiniteNumber(sale?.sale_total ?? invoice.sale_total, 0);
         const paid = sale ? payments
           .filter(payment => payment.sale_id === sale.__backendId)
@@ -11044,7 +11195,7 @@
         yPos += lineHeight;
       }
       const paidInvoices = invoices.filter(invoice => {
-        const sale = AppState.data.find(r => r.type === 'sale' && r.invoice_number === invoice.invoice_number);
+        const sale = findSaleForInvoice(invoice);
         const paid = sale ? payments
           .filter(payment => payment.sale_id === sale.__backendId)
           .reduce((paymentSum, payment) => paymentSum + (payment.amount || 0), 0) : 0;
@@ -12006,7 +12157,7 @@
             notes: notes || 'Pago multiple de facturas',
             date: new Date().toISOString(),
             is_multiple_payment: true,
-            __backendId: 'pay_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
+            __backendId: createRecordId('pay')
           };
 
           AppState.data.push(paymentData);
@@ -12025,7 +12176,7 @@
           totalPaid += item.remaining;
         });
 
-        AppState.saveUserData();
+        await AppState.saveUserData();
 
         showToast(`Pago multiple procesado: ${fmt.currency(totalPaid)} por ${selectedSales.length} facturas`, 'success');
 
@@ -12192,7 +12343,7 @@
                 notes: notes || 'Abono multiple',
                 date: new Date().toISOString(),
                 is_partial_multiple: true,
-                __backendId: 'pay_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
+                __backendId: createRecordId('pay')
               };
 
               AppState.data.push(paymentData);
@@ -12228,7 +12379,7 @@
           return;
         }
 
-        AppState.saveUserData();
+        await AppState.saveUserData();
 
         showToast(`Abono de ${fmt.currency(totalAbonado)} registrado en ${processedSales.length} facturas`, 'success');
         closeModal();
@@ -12569,7 +12720,7 @@
               </div>
             ` : sortedDays.map(day => {
               const dateObj = new Date(day.date + 'T00:00:00');
-              const dateStr = dateObj.toLocaleDateString('es-MX', { 
+              const dateStr = dateObj.toLocaleDateString('es-DO', { 
                 weekday: 'long', 
                 year: 'numeric', 
                 month: 'long', 
@@ -12632,7 +12783,7 @@
                         </thead>
                         <tbody>
                           ${day.transactions.sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(t => {
-                            const time = t.date ? new Date(t.date).toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+                            const time = t.date ? new Date(t.date).toLocaleTimeString('es-DO', {hour: '2-digit', minute:'2-digit'}) : '--:--';
                             return `
                               <tr>
                                 <td class="text-slate-500 font-mono">${time}</td>
@@ -12888,13 +13039,13 @@
               <div class="company">${AppState.config.company_name}</div>
               <div>${AppState.config.company_slogan}</div>
               <h2 style="margin-top: 10px; color: #374151;">REPORTE DE METROS DIARIOS</h2>
-              <p style="color: #6b7280; font-size: 10px;">Generado: ${new Date().toLocaleString('es-MX')}</p>
+              <p style="color: #6b7280; font-size: 10px;">Generado: ${new Date().toLocaleString('es-DO')}</p>
             </div>
 
             ${Object.keys(dailyData).sort().reverse().map(day => {
               const d = dailyData[day];
               const dateObj = new Date(day + 'T00:00:00');
-              const dateStr = dateObj.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+              const dateStr = dateObj.toLocaleDateString('es-DO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
               return `
                 <div class="day-section">
@@ -12920,7 +13071,7 @@
                     </thead>
                     <tbody>
                       ${d.transactions.sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(t => {
-                        const time = t.date ? new Date(t.date).toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+                        const time = t.date ? new Date(t.date).toLocaleTimeString('es-DO', {hour: '2-digit', minute:'2-digit'}) : '--:--';
                         return `
                           <tr>
                             <td>${time}</td>
@@ -13719,13 +13870,13 @@
           const existing = AppState.data.find(r => r.__backendId === editId);
           if (existing) {
             Object.assign(existing, data);
-            AppState.saveUserData();
+            await AppState.saveUserData();
             showToast('Viaje directo actualizado correctamente');
           }
         } else {
-          data.__backendId = 'dtrip_' + Date.now();
+          data.__backendId = createRecordId('dtrip');
           AppState.data.push(data);
-          AppState.saveUserData();
+          await AppState.saveUserData();
           showToast('Viaje directo registrado correctamente');
         }
         closeModal();
@@ -13868,7 +14019,7 @@
           notes: notes
         });
 
-        AppState.saveUserData();
+        await AppState.saveUserData();
 
         showToast(`Pago de ${fmt.currency(amount)} registrado correctamente`, 'success');
 
@@ -15717,12 +15868,12 @@
       `);
     }
 
-    function saveFuelDispatch(event) {
+    async function saveFuelDispatch(event) {
       event.preventDefault();
       const shouldPrint = event.submitter?.dataset.print !== 'false';
       const existingId = document.getElementById('fuelDispatchId')?.value || '';
       const record = {
-        __backendId: existingId || 'fuel_dispatch_' + Date.now(),
+        __backendId: existingId || createRecordId('fuel_dispatch'),
         type: 'fuel_dispatch',
         name: document.getElementById('fuelName').value.trim(),
         date: document.getElementById('fuelDate').value,
@@ -15739,23 +15890,23 @@
       } else {
         AppState.data.push(record);
       }
-      AppState.saveUserData();
+      await AppState.saveUserData();
       closeModal();
       renderPage();
       showToast(existingIndex !== -1 ? 'Despacho de gasol actualizado' : 'Despacho de gasol guardado');
       if (shouldPrint) printFuelReceipt(record.__backendId);
     }
 
-    function saveFuelDelivery(event) {
+    async function saveFuelDelivery(event) {
       event.preventDefault();
       AppState.data.push({
-        __backendId: 'fuel_delivery_' + Date.now(),
+        __backendId: createRecordId('fuel_delivery'),
         type: 'fuel_delivery',
         date: document.getElementById('fuelDeliveryDate').value,
         company: document.getElementById('fuelDeliveryCompany').value.trim(),
         quantity: Number(document.getElementById('fuelDeliveryQuantity').value) || 0
       });
-      AppState.saveUserData();
+      await AppState.saveUserData();
       closeModal();
       renderPage();
       showToast('Llegada de gasol registrada');

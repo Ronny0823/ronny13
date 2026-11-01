@@ -109,7 +109,10 @@ public class MainActivity extends Activity {
                 Uri uri = req.getUrl();
                 String scheme = uri.getScheme();
                 if ("http".equals(scheme) || "https".equals(scheme)) {
-                    if (uri.getHost() != null && (uri.getHost().contains("supabase.co") || uri.getHost().contains("github.io"))) return false;
+                    String host = uri.getHost();
+                    String normalizedHost = host == null ? "" : host.toLowerCase(java.util.Locale.ROOT);
+                    if ("ronny0823.github.io".equals(normalizedHost) ||
+                        normalizedHost.endsWith(".supabase.co")) return false;
                     startActivity(new Intent(Intent.ACTION_VIEW, uri));
                     return true;
                 }

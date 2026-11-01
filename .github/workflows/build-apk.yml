@@ -31,35 +31,37 @@ jobs:
           cp -R organized/css android/app/src/main/assets/
           cp -R organized/js android/app/src/main/assets/
           node android/scripts/prepare-offline.cjs android/app/src/main/assets/js/app.js
-          sed -i "s/versionCode 24/versionCode 42/" android/app/build.gradle
-          sed -i "s/versionName '1.23.0'/versionName '1.41.0'/" android/app/build.gradle
           mkdir -p android/app/src/main/assets/vendor
           curl -fsSL --retry 3 https://cdn.tailwindcss.com -o android/app/src/main/assets/vendor/tailwindcss.js
-          curl -fsSL --retry 3 https://unpkg.com/lucide@latest -o android/app/src/main/assets/vendor/lucide.js
-          curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/chart.js -o android/app/src/main/assets/vendor/chart.js
+          curl -fsSL --retry 3 https://unpkg.com/lucide@0.468.0 -o android/app/src/main/assets/vendor/lucide.js
+          curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/chart.js@4.4.7 -o android/app/src/main/assets/vendor/chart.js
           curl -fsSL --retry 3 https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js -o android/app/src/main/assets/vendor/jspdf.umd.min.js
           curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js -o android/app/src/main/assets/vendor/xlsx.bundle.js
-          curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2 -o android/app/src/main/assets/vendor/supabase.js
+          curl -fsSL --retry 3 https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10 -o android/app/src/main/assets/vendor/supabase.js
           sed -i 's#https://cdn.tailwindcss.com#vendor/tailwindcss.js#g' android/app/src/main/assets/index.html
           sed -i 's#https://unpkg.com/lucide@latest#vendor/lucide.js#g' android/app/src/main/assets/index.html
           sed -i 's#https://cdn.jsdelivr.net/npm/chart.js#vendor/chart.js#g' android/app/src/main/assets/index.html
           sed -i 's#https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js#vendor/jspdf.umd.min.js#g' android/app/src/main/assets/index.html
           sed -i 's#https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js#vendor/xlsx.bundle.js#g' android/app/src/main/assets/index.html
           sed -i 's#https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2#vendor/supabase.js#g' android/app/src/main/assets/index.html
+      - name: Verificar aplicación
+        run: |
+          node --check organized/js/app.js
+          node tools/verify-app.cjs
       - name: Compilar APK
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
       - name: Preparar APK directo
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.41-Borrar-Fechas-Web.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ERP-Materiales-v1.42-Sincronizacion-Segura.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.41-Borrar-Fechas-Web.apk
+          path: ERP-Materiales-v1.42-Borrar-Fechas-Web.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.41
-          name: ERP Materiales v1.41
-          files: ERP-Materiales-v1.41-Borrar-Fechas-Web.apk
+          tag_name: v1.42
+          name: ERP Materiales v1.42
+          files: ERP-Materiales-v1.42-Borrar-Fechas-Web.apk
           overwrite_files: true
