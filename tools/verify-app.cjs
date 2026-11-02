@@ -8,6 +8,8 @@ const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'ut
 const mainActivity = fs.readFileSync('android/app/src/main/java/com/ronny/erpmaterialesnorte/MainActivity.java', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/build-apk.yml', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20261101200000_pull_erp_record_changes.sql', 'utf8');
+const pdfFontRegular = fs.statSync('organized/assets/fonts/LiberationSans-Regular.ttf');
+const pdfFontBold = fs.statSync('organized/assets/fonts/LiberationSans-Bold.ttf');
 
 const checks = [
   [app.includes('const RecordSyncV2'), 'Falta la sincronización por registro'],
@@ -26,10 +28,12 @@ const checks = [
   [app.includes('generateClientCreditReportPDF') && app.includes('generateClientPaymentReportPDF'), 'Faltan los nuevos reportes claros para clientes'],
   [app.includes('createExactClientPdf') && app.includes('drawExactPaidInvoiceCard') && app.includes('drawExactPendingInvoice'), 'Los reportes no reproducen los tres formatos exactos'],
   [app.includes("format: [pageWidth, pageHeight]") && app.includes("const pageHeight = 324"), 'El formato PDF no conserva la proporcion vertical de las referencias'],
+  [app.includes('loadExactPdfFontFiles') && app.includes('LiberationSans-Regular.ttf') && app.includes('LiberationSans-Bold.ttf'), 'Los PDF no usan la tipografia visual de las referencias'],
+  [pdfFontRegular.size > 300000 && pdfFontBold.size > 300000, 'Faltan los archivos completos de tipografia para los PDF'],
   [app.includes('await generateClientCreditReportPDF(invoices, isPaidSelection)') && app.includes('await generateClientPaymentReportPDF(selectedPayments)'), 'El boton PDF WhatsApp no usa los nuevos formatos'],
   [!app.includes('await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true)') && !app.includes('await generateConsolidatedCreditPaymentPDF(selectedPayments, true)'), 'El boton PDF WhatsApp todavia usa los formatos anteriores'],
-  [workflow.includes('v1.47'), 'El flujo de APK no apunta a v1.47'],
-  [gradle.includes('versionCode 48') && gradle.includes("versionName '1.47.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.48'), 'El flujo de APK no apunta a v1.48'],
+  [gradle.includes('versionCode 49') && gradle.includes("versionName '1.48.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -38,4 +42,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.47 completadas');
+console.log('Verificaciones v1.48 completadas');

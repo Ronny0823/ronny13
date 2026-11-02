@@ -11044,13 +11044,62 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
     // Formatos exactos de las tres referencias entregadas por el usuario.
     // Se usan solamente en PDF WhatsApp; la impresion termica no cambia.
-    function createExactClientPdf(reportTitle, reportSubtitle = '') {
+    let exactPdfFontFilesPromise = null;
+
+    function exactArrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+      }
+      return btoa(binary);
+    }
+
+    async function loadExactPdfFontFiles() {
+      if (!exactPdfFontFilesPromise) {
+        exactPdfFontFilesPromise = Promise.all([
+          fetch('assets/fonts/LiberationSans-Regular.ttf').then(response => {
+            if (!response.ok) throw new Error('No se pudo cargar la fuente regular');
+            return response.arrayBuffer();
+          }),
+          fetch('assets/fonts/LiberationSans-Bold.ttf').then(response => {
+            if (!response.ok) throw new Error('No se pudo cargar la fuente negrita');
+            return response.arrayBuffer();
+          })
+        ]).then(([regular, bold]) => ({
+          regular: exactArrayBufferToBase64(regular),
+          bold: exactArrayBufferToBase64(bold)
+        })).catch(error => {
+          exactPdfFontFilesPromise = null;
+          console.warn('No se pudo cargar la tipografía exacta del PDF', error);
+          return null;
+        });
+      }
+      return exactPdfFontFilesPromise;
+    }
+
+    async function createExactClientPdf(reportTitle, reportSubtitle = '') {
       const { jsPDF } = window.jspdf;
       const pageWidth = 216;
       const pageHeight = 324;
       const margin = 7;
       const contentWidth = pageWidth - (margin * 2);
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [pageWidth, pageHeight] });
+      doc.setCharSpace(0);
+      const fontFiles = await loadExactPdfFontFiles();
+      if (fontFiles) {
+        doc.addFileToVFS('LiberationSans-Regular.ttf', fontFiles.regular);
+        doc.addFileToVFS('LiberationSans-Bold.ttf', fontFiles.bold);
+        doc.addFont('LiberationSans-Regular.ttf', 'ExactSans', 'normal');
+        doc.addFont('LiberationSans-Bold.ttf', 'ExactSans', 'bold');
+        const originalSetFont = doc.setFont.bind(doc);
+        doc.setFont = (fontName, fontStyle, fontWeight) => originalSetFont(
+          fontName === 'helvetica' ? 'ExactSans' : fontName,
+          fontStyle,
+          fontWeight
+        );
+      }
       const color = {
         blue: [5, 43, 120],
         dark: [12, 31, 61],
@@ -11084,14 +11133,15 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       };
 
       const header = () => {
+        const isPaidReceipt = reportTitle === 'RECIBO DE PAGO TOTAL';
         let logoAdded = false;
         if (AppState.config.company_logo) {
           try {
-            const logoWidth = 75;
-            const logoHeight = 24;
+            const logoWidth = isPaidReceipt ? 70 : 90;
+            const logoHeight = isPaidReceipt ? 18 : 30;
             doc.addImage(AppState.config.company_logo, 'JPEG', (pageWidth - logoWidth) / 2, y, logoWidth, logoHeight);
             logoAdded = true;
-            y += logoHeight + 4;
+            y += logoHeight + 3;
           } catch (error) {
             console.warn('No se pudo agregar el logo al PDF', error);
           }
@@ -11106,29 +11156,33 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(13);
+        doc.setFontSize(isPaidReceipt ? 13 : 15);
         if (AppState.config.company_slogan) {
           doc.text(safeText(AppState.config.company_slogan), pageWidth / 2, y, { align: 'center' });
-          y += 7;
+          y += isPaidReceipt ? 7 : 8;
         }
         if (AppState.config.company_rfc) {
-          doc.setFontSize(10);
+          doc.setFontSize(isPaidReceipt ? 10.5 : 12);
           doc.text('RNC: ' + safeText(AppState.config.company_rfc), pageWidth / 2, y, { align: 'center' });
-          y += 6;
+          y += isPaidReceipt ? 6 : 7;
         }
+
+        if (reportTitle === 'COMPROBANTE DE ABONO') y += 17;
+        else if (reportTitle === 'ESTADO DE CUENTA') y += 9;
+        else if (isPaidReceipt) y += 9;
 
         doc.setDrawColor(150, 150, 150);
         doc.setLineWidth(0.3);
         doc.line(margin, y, pageWidth - margin, y);
-        y += 11;
+        y += isPaidReceipt ? 7 : 11;
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(21);
+        doc.setFontSize(27);
         doc.setTextColor(...color.gold);
         doc.text(reportTitle, pageWidth / 2, y, { align: 'center' });
         y += 8;
         if (reportSubtitle) {
-          doc.setFontSize(12);
+          doc.setFontSize(14);
           doc.setTextColor(0, 0, 0);
           doc.text(reportSubtitle, pageWidth / 2, y, { align: 'center' });
           y += 10;
@@ -11144,8 +11198,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       };
 
       const footer = (firstLine, secondLine) => {
-        const footerHeight = 16;
-        if (y > pageHeight - 17) {
+        const footerHeight = 20;
+        if (y > pageHeight - 12) {
           doc.addPage([pageWidth, pageHeight], 'portrait');
           compactHeader();
         }
@@ -11153,19 +11207,19 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         line(y, color.gold, 0.45);
         y += 6;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10.5);
+        doc.setFontSize(13.5);
         doc.setTextColor(...color.blue);
         doc.text(firstLine, pageWidth / 2, y, { align: 'center' });
-        y += 5;
+        y += 6;
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9.5);
+        doc.setFontSize(12);
         doc.text(secondLine, pageWidth / 2, y, { align: 'center' });
       };
 
       const sectionTitle = title => {
         ensure(13);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(13.5);
+        doc.setFontSize(16.5);
         doc.setTextColor(...color.dark);
         doc.text(title, margin + 2, y);
         y += 5;
@@ -11180,6 +11234,32 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         getY: () => y,
         setY: value => { y = value; }
       };
+    }
+
+    function exactDate(value) {
+      const date = new Date(value || Date.now());
+      if (Number.isNaN(date.getTime())) return '-';
+      const parts = new Intl.DateTimeFormat('es-DO', {
+        day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Santo_Domingo'
+      }).formatToParts(date);
+      const get = type => safeText(parts.find(part => part.type === type)?.value).replace('.', '');
+      return get('day') + ' ' + get('month') + ' ' + get('year');
+    }
+
+    function exactDateTime(value) {
+      const date = new Date(value || Date.now());
+      if (Number.isNaN(date.getTime())) return '-';
+      const time = new Intl.DateTimeFormat('es-DO', {
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Santo_Domingo'
+      }).format(date).toLowerCase();
+      return exactDate(date) + ', ' + time;
+    }
+
+    function exactCurrency(value) {
+      return 'RD$' + toFiniteNumber(value, 0).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
     }
 
     function exactReportFileName(prefix, clientName) {
@@ -11232,12 +11312,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       doc.rect(margin, top, contentWidth, 11, 'F');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
+      doc.setFontSize(12.5);
       doc.setTextColor(...color.dark);
       doc.text(safeText(summary.invoice.invoice_number || 'Factura'), margin + 5, top + 7.5);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
-      doc.text('·  ' + fmt.date(summary.invoice.date), margin + 38, top + 7.5);
+      doc.setFontSize(10.5);
+      doc.text('·  ' + exactDate(summary.invoice.date), margin + 45, top + 7.5);
 
       let rowY = top + 16;
       rows.forEach((item, index) => {
@@ -11247,22 +11327,22 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         }
         const amount = toFiniteNumber(item.subtotal, toFiniteNumber(item.quantity, 0) * toFiniteNumber(item.price, 0));
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9.5);
+        doc.setFontSize(11);
         doc.setTextColor(0, 0, 0);
-        const description = safeText(item.material_name || 'Material') + ':   ' + fmt.quantity(item.quantity) + ' m³ × ' + fmt.currency(item.price);
+        const description = safeText(item.material_name || 'Material') + ':   ' + fmt.quantity(item.quantity) + ' m³ × ' + exactCurrency(item.price);
         doc.text(doc.splitTextToSize(description, contentWidth - 60)[0] || description, margin + 5, rowY);
-        doc.text(fmt.currency(amount), pageWidth - margin - 5, rowY, { align: 'right' });
+        doc.text(exactCurrency(amount), pageWidth - margin - 5, rowY, { align: 'right' });
         rowY += 8;
       });
 
       doc.setFillColor(...color.paleHeader);
       doc.rect(margin, top + height - 10, contentWidth, 10, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
+      doc.setFontSize(11.5);
       doc.setTextColor(...color.dark);
       doc.text('Total de la factura:', margin + 5, top + height - 3.5);
-      doc.setFontSize(11);
-      doc.text(fmt.currency(summary.total), pageWidth - margin - 5, top + height - 3.5, { align: 'right' });
+      doc.setFontSize(13);
+      doc.text(exactCurrency(summary.total), pageWidth - margin - 5, top + height - 3.5, { align: 'right' });
       kit.setY(top + height + 4);
     }
 
@@ -11283,20 +11363,20 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       let y = kit.getY();
       doc.setFillColor(...color.paleHeader);
       doc.rect(margin, y, contentWidth, 23, 'F');
-      doc.setFontSize(10.5);
+      doc.setFontSize(14);
       doc.setTextColor(...color.dark);
       doc.setFont('helvetica', 'bold');
       doc.text('Factura:', margin + 5, y + 8);
       doc.text('Fecha de compra:', margin + 5, y + 17);
       doc.setFont('helvetica', 'normal');
       doc.text(safeText(summary.invoice.invoice_number || '-'), margin + 60, y + 8);
-      doc.text(fmt.date(summary.invoice.date), margin + 60, y + 17);
+      doc.text(exactDate(summary.invoice.date), margin + 60, y + 17);
       y += 26;
 
       doc.setFillColor(...color.paleHeader);
       doc.rect(margin, y, contentWidth, 12, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
+      doc.setFontSize(12.5);
       doc.text('Material', margin + 5, y + 8);
       doc.text('Cantidad', margin + 82, y + 8, { align: 'right' });
       doc.text('Precio por m³', margin + 143, y + 8, { align: 'right' });
@@ -11304,38 +11384,38 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       y += 15;
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
+      doc.setFontSize(13);
       rows.forEach(item => {
         const amount = toFiniteNumber(item.subtotal, toFiniteNumber(item.quantity, 0) * toFiniteNumber(item.price, 0));
         doc.setTextColor(0, 0, 0);
         doc.text(doc.splitTextToSize(safeText(item.material_name || 'Material'), 65)[0] || 'Material', margin + 5, y);
         doc.text(fmt.quantity(item.quantity) + ' m³', margin + 82, y, { align: 'right' });
-        doc.text(fmt.currency(item.price), margin + 143, y, { align: 'right' });
-        doc.text(fmt.currency(amount), pageWidth - margin - 5, y, { align: 'right' });
+        doc.text(exactCurrency(item.price), margin + 143, y, { align: 'right' });
+        doc.text(exactCurrency(amount), pageWidth - margin - 5, y, { align: 'right' });
         y += 10;
       });
 
       const summaryTop = y + 1;
-      const summaryHeight = 46;
+      const summaryHeight = 50;
       doc.setFillColor(...color.paleBlue);
       doc.setDrawColor(226, 232, 240);
       doc.roundedRect(margin, summaryTop, contentWidth, summaryHeight, 2, 2, 'FD');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
+      doc.setFontSize(14);
       doc.setTextColor(...color.dark);
       doc.text('Total de la factura', margin + 6, summaryTop + 10);
-      doc.text(fmt.currency(summary.total), pageWidth - margin - 6, summaryTop + 10, { align: 'right' });
+      doc.text(exactCurrency(summary.total), pageWidth - margin - 6, summaryTop + 10, { align: 'right' });
       doc.setDrawColor(...color.line);
       doc.line(margin + 5, summaryTop + 15, pageWidth - margin - 5, summaryTop + 15);
       doc.text('Pagos recibidos', margin + 6, summaryTop + 25);
       doc.setTextColor(...color.green);
-      doc.text(fmt.currency(summary.paid), pageWidth - margin - 6, summaryTop + 25, { align: 'right' });
+      doc.text(exactCurrency(summary.paid), pageWidth - margin - 6, summaryTop + 25, { align: 'right' });
       doc.setFillColor(...color.paleGold);
       doc.rect(margin, summaryTop + 31, contentWidth, 15, 'F');
       doc.setTextColor(...color.brown);
-      doc.setFontSize(12);
+      doc.setFontSize(16);
       doc.text('SALDO PENDIENTE', margin + 6, summaryTop + 41);
-      doc.text(fmt.currency(summary.pending), pageWidth - margin - 6, summaryTop + 41, { align: 'right' });
+      doc.text(exactCurrency(summary.pending), pageWidth - margin - 6, summaryTop + 41, { align: 'right' });
       kit.setY(summaryTop + summaryHeight + 4);
     }
 
@@ -11358,14 +11438,14 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const routes = [...new Set(selectedPayments.map(payment => getPaymentRouteValue(payment.notes)).filter(Boolean))];
 
       if (asPaidReceipt) {
-        const kit = createExactClientPdf('RECIBO DE PAGO TOTAL', 'LIQUIDACIÓN COMPLETA');
+        const kit = await createExactClientPdf('RECIBO DE PAGO TOTAL', 'LIQUIDACIÓN COMPLETA');
         const { doc, pageWidth, margin, contentWidth, color } = kit;
         const top = kit.getY();
         const leftValueX = margin + 22;
         const rightX = pageWidth / 2 + 4;
-        const rightValueX = rightX + 43;
+        const rightValueX = rightX + 55;
 
-        doc.setFontSize(9.5);
+        doc.setFontSize(11.5);
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'bold');
         doc.text('Cliente:', margin, top);
@@ -11379,12 +11459,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         doc.text('Forma de pago:', rightX, top + 8);
         doc.text('Por dónde se recibió:', rightX, top + 16);
         doc.setFont('helvetica', 'normal');
-        doc.text(fmt.dateTime(latestPayment?.date || new Date().toISOString()), rightValueX, top);
+        doc.text(exactDateTime(latestPayment?.date || new Date().toISOString()), rightValueX, top);
         doc.text(methods.length === 1 ? methods[0] : (methods.length ? 'Varios' : '-'), rightValueX, top + 8);
         doc.text(routes.length ? routes.join(' / ') : '-', rightValueX, top + 16);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10.5);
+        doc.setFontSize(12.5);
         doc.text(invoices.length + (invoices.length === 1 ? ' FACTURA PAGADA' : ' FACTURAS PAGADAS'), margin, top + 24);
         kit.setY(top + 32);
 
@@ -11396,15 +11476,15 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         doc.setDrawColor(230, 220, 190);
         doc.line(pageWidth / 2, boxTop + 4, pageWidth / 2, boxTop + 30);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10.5);
+        doc.setFontSize(12.5);
         doc.setTextColor(0, 0, 0);
         doc.text('TOTAL PAGADO', margin + contentWidth / 4, boxTop + 11, { align: 'center' });
         doc.text('PENDIENTE DE ESTAS FACTURAS', pageWidth / 2 + contentWidth / 4, boxTop + 11, { align: 'center' });
-        doc.setFontSize(20);
+        doc.setFontSize(24);
         doc.setTextColor(...color.green);
-        doc.text(fmt.currency(total), margin + contentWidth / 4, boxTop + 25, { align: 'center' });
+        doc.text(exactCurrency(total), margin + contentWidth / 4, boxTop + 25, { align: 'center' });
         doc.setTextColor(...color.dark);
-        doc.text(fmt.currency(0), pageWidth / 2 + contentWidth / 4, boxTop + 25, { align: 'center' });
+        doc.text(exactCurrency(0), pageWidth / 2 + contentWidth / 4, boxTop + 25, { align: 'center' });
         kit.setY(boxTop + 47);
 
         kit.sectionTitle('DETALLE DE LAS FACTURAS PAGADAS');
@@ -11412,28 +11492,28 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
         kit.ensure(12);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9.5);
+        doc.setFontSize(12);
         doc.setTextColor(0, 0, 0);
-        doc.text('Las ' + invoices.length + ' factura(s) incluidas en este recibo están saldadas.', pageWidth / 2, kit.getY(), { align: 'center' });
+        doc.text('Las ' + invoices.length + (invoices.length === 1 ? ' factura incluida en este recibo está saldada.' : ' facturas incluidas en este recibo están saldadas.'), pageWidth / 2, kit.getY(), { align: 'center' });
         kit.setY(kit.getY() + 5);
         kit.footer('¡Gracias por su pago y por confiar en nosotros!', 'Su preferencia nos motiva a servirle cada día mejor.');
         await sharePdfDocument(doc, exactReportFileName('recibo_pago_total', clientName));
         return;
       }
 
-      const kit = createExactClientPdf('ESTADO DE CUENTA');
+      const kit = await createExactClientPdf('ESTADO DE CUENTA');
       const { doc, pageWidth, margin, contentWidth, color } = kit;
       let y = kit.getY();
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
+      doc.setFontSize(15);
       doc.setTextColor(...color.dark);
       doc.text('Estado al:', margin + 2, y);
       doc.text('Cliente:', margin + 2, y + 10);
       doc.text('Placa:', margin + 2, y + 20);
       doc.setFont('helvetica', 'normal');
-      doc.text(fmt.dateTime(new Date().toISOString()), margin + 36, y);
-      doc.text(safeText(clientName), margin + 36, y + 10);
-      doc.text(safeText(plate || '-'), margin + 36, y + 20);
+      doc.text(exactDateTime(new Date().toISOString()), margin + 42, y);
+      doc.text(safeText(clientName), margin + 42, y + 10);
+      doc.text(safeText(plate || '-'), margin + 42, y + 20);
       kit.setY(y + 32);
 
       const pendingTop = kit.getY();
@@ -11442,13 +11522,13 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       doc.setLineWidth(0.4);
       doc.roundedRect(margin, pendingTop, contentWidth, 34, 3, 3, 'FD');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(15);
+      doc.setFontSize(22);
       doc.setTextColor(...color.brown);
       doc.text('LE FALTA POR PAGAR', margin + 6, pendingTop + 15);
-      doc.setFontSize(20);
-      doc.text(fmt.currency(pending), pageWidth - margin - 6, pendingTop + 15, { align: 'right' });
+      doc.setFontSize(25);
+      doc.text(exactCurrency(pending), pageWidth - margin - 6, pendingTop + 15, { align: 'right' });
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
+      doc.setFontSize(12.5);
       doc.setTextColor(...color.gray);
       doc.text(invoices.length === 1 ? 'Saldo de la factura incluida en este estado.' : 'Saldo de las facturas incluidas en este estado.', margin + 6, pendingTop + 26);
       kit.setY(pendingTop + 48);
@@ -11462,7 +11542,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       doc.setFillColor(...color.paleBlue);
       doc.roundedRect(margin, y, contentWidth, 15, 2, 2, 'F');
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
+      doc.setFontSize(12);
       doc.setTextColor(...color.dark);
       doc.text(noPayments
         ? (invoices.length === 1 ? 'No hay pagos registrados en esta factura.' : 'No hay pagos registrados en estas facturas.')
@@ -11504,17 +11584,17 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const totalReceived = ordered.reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
       const remainingShown = details.length === 1 ? details[0].remaining : clientPending;
 
-      const kit = createExactClientPdf('COMPROBANTE DE ABONO');
+      const kit = await createExactClientPdf('COMPROBANTE DE ABONO');
       const { doc, pageWidth, margin, contentWidth, color } = kit;
       let y = kit.getY();
-      doc.setFontSize(10.5);
+      doc.setFontSize(15);
       doc.setTextColor(...color.dark);
       doc.setFont('helvetica', 'normal');
       doc.text('Cliente:', margin + 3, y);
       doc.text('Fecha del abono:', margin + 3, y + 12);
       doc.setFont('helvetica', 'bold');
       doc.text(safeText(firstPayment.client_name || 'Cliente'), margin + 30, y);
-      doc.text(details.length === 1 ? fmt.dateTime(firstPayment.date) : fmt.dateTime(new Date().toISOString()), margin + 56, y + 12);
+      doc.text(details.length === 1 ? exactDateTime(firstPayment.date) : exactDateTime(new Date().toISOString()), margin + 56, y + 12);
       kit.setY(y + 22);
 
       const amountTop = kit.getY();
@@ -11527,23 +11607,23 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       doc.line(margin + 4, amountTop + amountHeight / 2, pageWidth - margin - 4, amountTop + amountHeight / 2);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...color.brown);
-      doc.setFontSize(15);
+      doc.setFontSize(22);
       doc.text(details.length === 1 ? 'ABONO RECIBIDO' : 'ABONOS RECIBIDOS', margin + 7, amountTop + 17);
       doc.text('LE FALTA POR PAGAR', margin + 7, amountTop + 42);
-      doc.setFontSize(18);
+      doc.setFontSize(23);
       doc.setTextColor(...color.green);
-      doc.text(fmt.currency(totalReceived), pageWidth - margin - 7, amountTop + 17, { align: 'right' });
+      doc.text(exactCurrency(totalReceived), pageWidth - margin - 7, amountTop + 17, { align: 'right' });
       doc.setTextColor(...color.brown);
-      doc.text(fmt.currency(remainingShown), pageWidth - margin - 7, amountTop + 42, { align: 'right' });
+      doc.text(exactCurrency(remainingShown), pageWidth - margin - 7, amountTop + 42, { align: 'right' });
       kit.setY(amountTop + amountHeight + 8);
 
       details.forEach((detail, detailIndex) => {
         const route = getPaymentRouteValue(detail.payment.notes);
         const materialLines = doc.splitTextToSize(safeText(detail.materials || 'Sin detalle'), contentWidth - 73);
         const routeLines = route ? doc.splitTextToSize(safeText(route), contentWidth - 73) : [];
-        const fieldHeight = 8 + 8 + Math.max(8, materialLines.length * 5) + 8 + (route ? Math.max(8, routeLines.length * 5) : 0);
+        const fieldHeight = 10 + 10 + Math.max(10, materialLines.length * 6) + 10 + (route ? Math.max(10, routeLines.length * 6) : 0);
         const sentenceLines = doc.splitTextToSize(
-          'Se recibió un abono de ' + fmt.currency(detail.payment.amount) + ' para la factura ' + safeText(detail.payment.invoice_number || detail.sale?.invoice_number || '') + '.',
+          'Se recibió un abono de ' + exactCurrency(detail.payment.amount) + ' para la factura ' + safeText(detail.payment.invoice_number || detail.sale?.invoice_number || '') + '.',
           contentWidth - 16
         );
         const cardHeight = 22 + fieldHeight + 10 + (sentenceLines.length * 5) + 28;
@@ -11556,7 +11636,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         doc.setFillColor(...color.paleHeader);
         doc.rect(margin, top, contentWidth, 18, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
+        doc.setFontSize(17);
         doc.setTextColor(...color.dark);
         doc.text(details.length === 1 ? 'DATOS DEL ABONO' : 'DATOS DEL ABONO ' + (detailIndex + 1), margin + 8, top + 12);
 
@@ -11564,15 +11644,15 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         const field = (label, value, lines = null) => {
           const valueLines = lines || doc.splitTextToSize(safeText(value || '-'), contentWidth - 73);
           doc.setFont('helvetica', 'normal');
-          doc.setFontSize(10);
+          doc.setFontSize(14);
           doc.setTextColor(...color.dark);
           doc.text(label + ':', margin + 8, rowY);
           doc.setFont('helvetica', 'bold');
           doc.text(valueLines, margin + 66, rowY);
-          rowY += Math.max(8, valueLines.length * 5);
+          rowY += Math.max(10, valueLines.length * 6);
         };
         field('Factura', detail.payment.invoice_number || detail.sale?.invoice_number || '-');
-        field('Fecha de la factura', fmt.date(detail.invoice?.date || detail.sale?.date));
+        field('Fecha de la factura', exactDate(detail.invoice?.date || detail.sale?.date));
         field('Material', detail.materials || 'Sin detalle', materialLines);
         field('Forma de pago', detail.payment.method || '-');
         if (route) field('Por dónde se recibió', route, routeLines);
@@ -11581,18 +11661,18 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         doc.line(margin + 8, rowY - 2, pageWidth - margin - 8, rowY - 2);
         rowY += 8;
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9.5);
+        doc.setFontSize(12.5);
         doc.setTextColor(...color.dark);
         doc.text(sentenceLines, margin + 8, rowY);
-        rowY += sentenceLines.length * 5 + 5;
+        rowY += sentenceLines.length * 6 + 5;
         doc.line(margin + 8, rowY, pageWidth - margin - 8, rowY);
         rowY += 10;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
+        doc.setFontSize(13.5);
         doc.setTextColor(...color.brown);
         doc.text('Saldo de esta factura después del abono:', margin + 8, rowY);
-        doc.setFontSize(11.5);
-        doc.text(fmt.currency(detail.remaining), pageWidth - margin - 8, rowY, { align: 'right' });
+        doc.setFontSize(16);
+        doc.text(exactCurrency(detail.remaining), pageWidth - margin - 8, rowY, { align: 'right' });
         kit.setY(top + cardHeight + 8);
       });
 

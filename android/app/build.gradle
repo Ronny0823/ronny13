@@ -9,8 +9,8 @@ android {
         applicationId 'com.ronny.erpmaterialesnorte'
         minSdk 24
         targetSdk 35
-        versionCode 48
-        versionName '1.47.0'
+        versionCode 49
+        versionName '1.48.0'
     }
     signingConfigs {
         release {
