@@ -83,36 +83,36 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon
       - name: Preparar APK directo
-        run: cp android/app/build/outputs/apk/release/app-release.apk ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk ERP-Materiales-v1.46-Sincronizacion-Incremental.apk
       - name: Publicar APK en descarga web
         run: |
           mkdir -p downloads
-          cp ERP-Materiales-v1.45-Sincronizacion-Incremental.apk downloads/ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
+          cp ERP-Materiales-v1.46-Sincronizacion-Incremental.apk downloads/ERP-Materiales-v1.46-Sincronizacion-Incremental.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add downloads/ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
+          git add downloads/ERP-Materiales-v1.46-Sincronizacion-Incremental.apk
           if git diff --cached --quiet; then
             echo "La APK web ya estaba actualizada"
           else
-            git commit -m "Publicar descarga web APK v1.45"
+            git commit -m "Publicar descarga web APK v1.46"
             git push origin HEAD:main
           fi
       - name: Verificar firma de la APK
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
-          CERT_SHA256="$("$APKSIGNER" verify --print-certs ERP-Materiales-v1.45-Sincronizacion-Incremental.apk | sed -n 's/^.*Signer: certificate SHA-256 digest: //p' | head -1)"
+          "$APKSIGNER" verify --verbose --print-certs ERP-Materiales-v1.46-Sincronizacion-Incremental.apk
+          CERT_SHA256="$("$APKSIGNER" verify --print-certs ERP-Materiales-v1.46-Sincronizacion-Incremental.apk | sed -n 's/^.*Signer: certificate SHA-256 digest: //p' | head -1)"
           test "$CERT_SHA256" = "ccb3a55a3c1f97bc16badba3363299c65ff6b453212b983d59321348a223b44b"
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: ERP-Materiales-APK
-          path: ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
+          path: ERP-Materiales-v1.46-Sincronizacion-Incremental.apk
       - name: Publicar descarga directa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.45
-          name: ERP Materiales v1.45
-          files: ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
+          tag_name: v1.46
+          name: ERP Materiales v1.46
+          files: ERP-Materiales-v1.46-Sincronizacion-Incremental.apk
           overwrite_files: true

@@ -23,7 +23,11 @@ const checks = [
   [app.includes("if (!RecordSyncV2.hasCursor(username)) await SupabaseSync.pullUser(username)"), 'La copia antigua no debe descargarse en cada sincronización'],
   [migration.includes('pull_erp_record_changes') && migration.includes('security invoker'), 'Falta la migración incremental segura'],
   [workflow.includes('ANDROID_KEYSTORE_BASE64') && workflow.includes('assembleRelease'), 'Falta la firma permanente de Android'],
-  [gradle.includes('versionCode 46') && gradle.includes("versionName '1.45.0'"), 'Versión Android incorrecta'],
+  [app.includes('generateClientCreditReportPDF') && app.includes('generateClientPaymentReportPDF'), 'Faltan los nuevos reportes claros para clientes'],
+  [app.includes('await generateClientCreditReportPDF(invoices, isPaidSelection)') && app.includes('await generateClientPaymentReportPDF(selectedPayments)'), 'El boton PDF WhatsApp no usa los nuevos formatos'],
+  [!app.includes('await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true)') && !app.includes('await generateConsolidatedCreditPaymentPDF(selectedPayments, true)'), 'El boton PDF WhatsApp todavia usa los formatos anteriores'],
+  [workflow.includes('v1.46'), 'El flujo de APK no apunta a v1.46'],
+  [gradle.includes('versionCode 47') && gradle.includes("versionName '1.46.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -32,4 +36,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.45 completadas');
+console.log('Verificaciones v1.46 completadas');

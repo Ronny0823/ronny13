@@ -11042,6 +11042,448 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       return false;
     }
 
+    // Reportes claros para clientes usados solamente por el boton PDF WhatsApp.
+    // La impresion termica conserva sus formatos independientes.
+    function createClientReportKit(reportTitle, reportSubtitle = '') {
+      const { jsPDF } = window.jspdf;
+      const format = AppState.config.paper_size === 'a4' ? 'a4' : 'letter';
+      const pageWidth = format === 'a4' ? 210 : 216;
+      const pageHeight = format === 'a4' ? 297 : 279;
+      const margin = 10;
+      const contentWidth = pageWidth - (margin * 2);
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
+      const colors = {
+        blue: [7, 45, 116],
+        gold: [224, 148, 0],
+        dark: [15, 23, 42],
+        green: [4, 132, 74],
+        softBlue: [244, 247, 255],
+        softGold: [255, 250, 235],
+        gray: [100, 116, 139],
+        line: [203, 213, 225]
+      };
+      let y = 12;
+
+      const compactHeader = () => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...colors.blue);
+        doc.text(safeText(AppState.config.company_name || 'AGRECACI'), margin, 10);
+        doc.text(reportTitle, pageWidth - margin, 10, { align: 'right' });
+        doc.setDrawColor(...colors.gold);
+        doc.setLineWidth(0.35);
+        doc.line(margin, 13, pageWidth - margin, 13);
+        y = 20;
+      };
+
+      const ensure = (needed = 8) => {
+        if (y + needed <= pageHeight - 14) return;
+        doc.addPage();
+        compactHeader();
+      };
+
+      const header = () => {
+        let logoAdded = false;
+        if (AppState.config.company_logo) {
+          try {
+            const logoWidth = 68;
+            const logoHeight = 27;
+            doc.addImage(AppState.config.company_logo, 'JPEG', (pageWidth - logoWidth) / 2, y, logoWidth, logoHeight);
+            y += logoHeight + 3;
+            logoAdded = true;
+          } catch (error) {
+            console.warn('No se pudo agregar el logo al reporte', error);
+          }
+        }
+        if (!logoAdded) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(20);
+          doc.setTextColor(...colors.blue);
+          doc.text(safeText(AppState.config.company_name || 'AGRECACI'), pageWidth / 2, y + 8, { align: 'center' });
+          y += 14;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(...colors.dark);
+        if (AppState.config.company_slogan) {
+          doc.text(safeText(AppState.config.company_slogan), pageWidth / 2, y, { align: 'center' });
+          y += 6;
+        }
+        if (AppState.config.company_rfc) {
+          doc.setFontSize(9);
+          doc.text('RNC: ' + safeText(AppState.config.company_rfc), pageWidth / 2, y, { align: 'center' });
+          y += 7;
+        }
+
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(0.3);
+        doc.line(margin, y, pageWidth - margin, y);
+        y += 10;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(...colors.gold);
+        doc.text(reportTitle, pageWidth / 2, y, { align: 'center' });
+        y += 7;
+        if (reportSubtitle) {
+          doc.setFontSize(11);
+          doc.setTextColor(...colors.dark);
+          doc.text(reportSubtitle, pageWidth / 2, y, { align: 'center' });
+          y += 8;
+        } else {
+          y += 2;
+        }
+      };
+
+      const field = (label, value, x = margin, valueX = margin + 34, maxWidth = contentWidth - 34) => {
+        ensure(7);
+        doc.setFontSize(10);
+        doc.setTextColor(...colors.dark);
+        doc.setFont('helvetica', 'bold');
+        doc.text(label + ':', x, y);
+        doc.setFont('helvetica', 'normal');
+        const lines = doc.splitTextToSize(safeText(value || '-'), maxWidth);
+        doc.text(lines, valueX, y);
+        y += Math.max(6, lines.length * 5);
+      };
+
+      const sectionTitle = (title) => {
+        ensure(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(...colors.dark);
+        doc.text(title, margin + 2, y);
+        y += 4;
+        doc.setDrawColor(...colors.line);
+        doc.setLineWidth(0.25);
+        doc.line(margin, y, pageWidth - margin, y);
+        y += 7;
+      };
+
+      const highlight = (leftLabel, leftValue, rightLabel, rightValue, rightValueColor = colors.gold) => {
+        ensure(29);
+        const top = y;
+        doc.setFillColor(...colors.softGold);
+        doc.setDrawColor(...colors.gold);
+        doc.setLineWidth(0.4);
+        doc.roundedRect(margin, top, contentWidth, 25, 3, 3, 'FD');
+        doc.setDrawColor(229, 231, 235);
+        doc.line(pageWidth / 2, top + 3, pageWidth / 2, top + 22);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(...colors.dark);
+        doc.text(leftLabel, margin + contentWidth / 4, top + 7, { align: 'center' });
+        doc.text(rightLabel, pageWidth / 2 + contentWidth / 4, top + 7, { align: 'center' });
+        doc.setFontSize(18);
+        doc.setTextColor(...colors.green);
+        doc.text(leftValue, margin + contentWidth / 4, top + 18, { align: 'center' });
+        doc.setTextColor(...rightValueColor);
+        doc.text(rightValue, pageWidth / 2 + contentWidth / 4, top + 18, { align: 'center' });
+        y = top + 32;
+      };
+
+      const messageBox = (message) => {
+        const lines = doc.splitTextToSize(safeText(message), contentWidth - 12);
+        const height = Math.max(14, 8 + (lines.length * 5));
+        ensure(height + 3);
+        doc.setFillColor(...colors.softBlue);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(margin, y, contentWidth, height, 2, 2, 'FD');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(...colors.dark);
+        doc.text(lines, pageWidth / 2, y + 8, { align: 'center' });
+        y += height + 6;
+      };
+
+      const footer = (firstLine, secondLine) => {
+        ensure(24);
+        y += 3;
+        doc.setDrawColor(...colors.gold);
+        doc.setLineWidth(0.5);
+        doc.line(margin, y, pageWidth - margin, y);
+        y += 8;
+        doc.setTextColor(...colors.blue);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(firstLine, pageWidth / 2, y, { align: 'center' });
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.text(secondLine, pageWidth / 2, y, { align: 'center' });
+      };
+
+      header();
+      return {
+        doc, pageWidth, pageHeight, margin, contentWidth, colors,
+        ensure, field, sectionTitle, highlight, messageBox, footer,
+        getY: () => y,
+        setY: value => { y = value; }
+      };
+    }
+
+    function getClientReportFileName(prefix, clientName) {
+      const cleanClient = safeText(clientName || 'cliente')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 45) || 'cliente';
+      return prefix + '_' + cleanClient + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+    }
+
+    async function generateClientCreditReportPDF(invoices, asPaidReceipt = false) {
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF.', 'error');
+        return;
+      }
+
+      const allPayments = getRecords('payment');
+      const summaries = invoices.map(invoice => {
+        const sale = findSaleForInvoice(invoice);
+        const invoicePayments = allPayments
+          .filter(payment => payment.sale_id === sale?.__backendId || payment.invoice_number === invoice.invoice_number)
+          .sort((a, b) => new Date(a.date) - new Date(b.date));
+        const total = toFiniteNumber(sale?.sale_total ?? invoice.sale_total, 0);
+        const paid = invoicePayments.reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
+        return {
+          invoice,
+          sale,
+          items: getInvoiceItems(invoice),
+          payments: invoicePayments,
+          total,
+          paid: Math.min(total, paid),
+          pending: Math.max(0, total - paid)
+        };
+      });
+      const firstInvoice = invoices[0] || {};
+      const clientName = firstInvoice.client_name || summaries[0]?.sale?.client_name || 'Cliente';
+      const plate = firstInvoice.vehicle_plate || summaries[0]?.sale?.vehicle_plate || '';
+      const totalValue = summaries.reduce((sum, item) => sum + item.total, 0);
+      const totalPaid = summaries.reduce((sum, item) => sum + item.paid, 0);
+      const totalPending = summaries.reduce((sum, item) => sum + item.pending, 0);
+      const selectedPayments = summaries.flatMap(item => item.payments);
+      const latestPaymentDate = selectedPayments.reduce((latest, payment) => {
+        const time = new Date(payment.date).getTime();
+        return Number.isFinite(time) && time > latest ? time : latest;
+      }, 0);
+      const methods = [...new Set(selectedPayments.map(payment => safeText(payment.method).trim()).filter(Boolean))];
+      const routes = [...new Set(selectedPayments.map(payment => getPaymentRouteValue(payment.notes)).filter(Boolean))];
+
+      const kit = createClientReportKit(
+        asPaidReceipt ? 'RECIBO DE PAGO TOTAL' : 'ESTADO DE CUENTA',
+        asPaidReceipt ? 'LIQUIDACIÓN COMPLETA' : ''
+      );
+      const { doc, pageWidth, margin, contentWidth, colors } = kit;
+
+      if (asPaidReceipt) {
+        const leftX = margin;
+        const rightX = pageWidth / 2 + 4;
+        const top = kit.getY();
+        kit.field('Cliente', clientName, leftX, leftX + 24, contentWidth / 2 - 28);
+        if (plate) kit.field('Placa', plate, leftX, leftX + 24, contentWidth / 2 - 28);
+        const leftBottom = kit.getY();
+        kit.setY(top);
+        kit.field('Fecha del pago', latestPaymentDate ? fmt.dateTime(new Date(latestPaymentDate).toISOString()) : fmt.dateTime(new Date().toISOString()), rightX, rightX + 35, contentWidth / 2 - 39);
+        kit.field('Forma de pago', methods.length === 1 ? methods[0] : (methods.length ? 'Varios' : '-'), rightX, rightX + 35, contentWidth / 2 - 39);
+        if (routes.length) kit.field('Por dónde se recibió', routes.join(' / '), rightX, rightX + 35, contentWidth / 2 - 39);
+        kit.setY(Math.max(leftBottom, kit.getY()) + 2);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(...colors.dark);
+        doc.text(invoices.length + (invoices.length === 1 ? ' FACTURA PAGADA' : ' FACTURAS PAGADAS'), margin, kit.getY());
+        kit.setY(kit.getY() + 8);
+        kit.highlight('TOTAL PAGADO', fmt.currency(totalValue), 'PENDIENTE DE ESTAS FACTURAS', fmt.currency(0), colors.dark);
+        kit.sectionTitle('DETALLE DE LAS FACTURAS PAGADAS');
+      } else {
+        kit.field('Estado al', fmt.dateTime(new Date().toISOString()));
+        kit.field('Cliente', clientName);
+        if (plate) kit.field('Placa', plate);
+        kit.setY(kit.getY() + 2);
+        kit.highlight('TOTAL DE LAS FACTURAS', fmt.currency(totalValue), 'LE FALTA POR PAGAR', fmt.currency(totalPending));
+        kit.sectionTitle(invoices.length === 1 ? 'DETALLE DE LA FACTURA PENDIENTE' : 'DETALLE DE LAS FACTURAS PENDIENTES');
+      }
+
+      summaries.forEach((summary, summaryIndex) => {
+        const itemRows = summary.items.length || 1;
+        const cardHeight = asPaidReceipt ? 18 + (itemRows * 8) + 9 : 25 + (itemRows * 8) + 20;
+        kit.ensure(cardHeight + 4);
+        const top = kit.getY();
+        doc.setFillColor(...colors.softBlue);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(margin, top, contentWidth, cardHeight, 2, 2, 'FD');
+        doc.setFillColor(238, 242, 255);
+        doc.rect(margin, top, contentWidth, 10, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(...colors.blue);
+        doc.text(safeText(summary.invoice.invoice_number || 'Factura'), margin + 5, top + 7);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(...colors.dark);
+        doc.text(fmt.date(summary.invoice.date), margin + 42, top + 7);
+
+        let rowY = top + 16;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text('Material', margin + 5, rowY);
+        doc.text('Cantidad', margin + 82, rowY, { align: 'right' });
+        doc.text('Precio por m³', margin + 135, rowY, { align: 'right' });
+        doc.text('Importe', pageWidth - margin - 5, rowY, { align: 'right' });
+        rowY += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        const rows = summary.items.length ? summary.items : [{ material_name: 'Sin detalle', quantity: 0, price: 0, subtotal: summary.total }];
+        rows.forEach(item => {
+          const itemTotal = toFiniteNumber(item.subtotal, toFiniteNumber(item.quantity, 0) * toFiniteNumber(item.price, 0));
+          const material = doc.splitTextToSize(safeText(item.material_name || 'Material'), 70)[0] || '';
+          doc.text(material, margin + 5, rowY);
+          doc.text(fmt.quantity(item.quantity), margin + 82, rowY, { align: 'right' });
+          doc.text(fmt.currency(item.price), margin + 135, rowY, { align: 'right' });
+          doc.text(fmt.currency(itemTotal), pageWidth - margin - 5, rowY, { align: 'right' });
+          rowY += 8;
+        });
+
+        doc.setDrawColor(...colors.line);
+        doc.line(margin + 5, rowY - 3, pageWidth - margin - 5, rowY - 3);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.text('Total de la factura', margin + 5, rowY + 2);
+        doc.text(fmt.currency(summary.total), pageWidth - margin - 5, rowY + 2, { align: 'right' });
+        rowY += 8;
+
+        if (!asPaidReceipt) {
+          doc.setTextColor(...colors.green);
+          doc.text('Pagos recibidos', margin + 5, rowY);
+          doc.text(fmt.currency(summary.paid), pageWidth - margin - 5, rowY, { align: 'right' });
+          rowY += 7;
+          doc.setTextColor(...colors.gold);
+          doc.setFontSize(11);
+          doc.text('SALDO PENDIENTE', margin + 5, rowY);
+          doc.text(fmt.currency(summary.pending), pageWidth - margin - 5, rowY, { align: 'right' });
+        }
+
+        kit.setY(top + cardHeight + 5);
+        if (summaryIndex < summaries.length - 1) kit.ensure(2);
+      });
+
+      if (asPaidReceipt) {
+        kit.messageBox('Las ' + invoices.length + ' factura(s) incluidas en este recibo están saldadas completamente.');
+        kit.footer('¡Gracias por su pago y por confiar en nosotros!', 'Su preferencia nos motiva a servirle cada día mejor.');
+      } else {
+        kit.messageBox(totalPaid > 0
+          ? 'Los pagos recibidos ya fueron descontados. El saldo mostrado es lo que queda pendiente actualmente.'
+          : 'No hay pagos registrados en las facturas incluidas en este estado.');
+        kit.footer('¡Gracias por su confianza y preferencia!', 'Estamos a su disposición para cualquier consulta sobre su cuenta.');
+      }
+
+      const fileName = getClientReportFileName(asPaidReceipt ? 'recibo_pago_total' : 'estado_de_cuenta', clientName);
+      await sharePdfDocument(doc, fileName);
+    }
+
+    async function generateClientPaymentReportPDF(paymentsSelected) {
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF.', 'error');
+        return;
+      }
+
+      const orderedPayments = paymentsSelected.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+      const firstPayment = orderedPayments[0] || {};
+      const allPayments = getRecords('payment');
+      const clientSales = getRecords('sale').filter(sale => sale.payment_type === 'credito' && sale.client_name === firstPayment.client_name);
+      const clientPending = clientSales.reduce((sum, sale) => {
+        const paid = allPayments
+          .filter(payment => payment.sale_id === sale.__backendId)
+          .reduce((paymentSum, payment) => paymentSum + toFiniteNumber(payment.amount, 0), 0);
+        return sum + Math.max(0, toFiniteNumber(sale.sale_total, 0) - paid);
+      }, 0);
+
+      const details = orderedPayments.map(payment => {
+        const sale = AppState.data.find(record => record.__backendId === payment.sale_id);
+        const invoice = AppState.data.find(record => record.type === 'invoice' && record.invoice_number === (payment.invoice_number || sale?.invoice_number));
+        const paymentsUntilThis = allPayments
+          .filter(item => item.sale_id === payment.sale_id && new Date(item.date) <= new Date(payment.date))
+          .reduce((sum, item) => sum + toFiniteNumber(item.amount, 0), 0);
+        const remainingAfter = Math.max(0, toFiniteNumber(sale?.sale_total, 0) - paymentsUntilThis);
+        const materials = invoice
+          ? [...new Set(getInvoiceItems(invoice).map(item => safeText(item.material_name)).filter(Boolean))].join(', ')
+          : safeText(sale?.material_name || '');
+        return { payment, sale, invoice, remainingAfter, materials };
+      });
+      const totalReceived = orderedPayments.reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
+      const remainingShown = details.length === 1 ? details[0].remainingAfter : clientPending;
+      const title = details.length === 1 ? 'COMPROBANTE DE ABONO' : 'COMPROBANTE DE ABONOS';
+      const kit = createClientReportKit(title);
+      const { doc, pageWidth, margin, contentWidth, colors } = kit;
+
+      kit.field('Cliente', firstPayment.client_name || 'Cliente');
+      kit.field(details.length === 1 ? 'Fecha del abono' : 'Fecha del reporte',
+        details.length === 1 ? fmt.dateTime(firstPayment.date) : fmt.dateTime(new Date().toISOString()));
+      kit.setY(kit.getY() + 2);
+      kit.highlight(
+        details.length === 1 ? 'ABONO RECIBIDO' : 'TOTAL DE ABONOS',
+        fmt.currency(totalReceived),
+        details.length === 1 ? 'LE FALTA POR PAGAR' : 'PENDIENTE DEL CLIENTE',
+        fmt.currency(remainingShown)
+      );
+      kit.sectionTitle(details.length === 1 ? 'DATOS DEL ABONO' : 'DETALLE DE LOS ABONOS');
+
+      details.forEach((detail, index) => {
+        const route = getPaymentRouteValue(detail.payment.notes);
+        const height = 45 + (route ? 7 : 0);
+        kit.ensure(height + 4);
+        const top = kit.getY();
+        doc.setFillColor(...colors.softBlue);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(margin, top, contentWidth, height, 2, 2, 'FD');
+        doc.setFillColor(238, 242, 255);
+        doc.rect(margin, top, contentWidth, 10, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(...colors.blue);
+        doc.text((detail.payment.invoice_number || detail.sale?.invoice_number || 'Factura') + ' · ' + fmt.date(detail.payment.date), margin + 5, top + 7);
+
+        let rowY = top + 17;
+        const detailField = (label, value) => {
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...colors.dark);
+          doc.text(label + ':', margin + 5, rowY);
+          doc.setFont('helvetica', 'bold');
+          const valueLines = doc.splitTextToSize(safeText(value || '-'), contentWidth - 52);
+          doc.text(valueLines, margin + 50, rowY);
+          rowY += Math.max(6, valueLines.length * 5);
+        };
+        detailField('Fecha de la factura', fmt.date(detail.invoice?.date || detail.sale?.date));
+        detailField('Material', detail.materials || 'Sin detalle');
+        detailField('Forma de pago', detail.payment.method || '-');
+        if (route) detailField('Por dónde se recibió', route);
+
+        doc.setDrawColor(...colors.line);
+        doc.line(margin + 5, top + height - 13, pageWidth - margin - 5, top + height - 13);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(...colors.green);
+        doc.text('Abono recibido: ' + fmt.currency(detail.payment.amount), margin + 5, top + height - 7);
+        doc.setTextColor(...colors.gold);
+        doc.text('Saldo después: ' + fmt.currency(detail.remainingAfter), pageWidth - margin - 5, top + height - 7, { align: 'right' });
+        kit.setY(top + height + 5);
+
+        if (details.length === 1) {
+          kit.messageBox('Se recibió un abono de ' + fmt.currency(detail.payment.amount) + ' para la factura ' + (detail.payment.invoice_number || detail.sale?.invoice_number || '') + '.');
+        } else if (index === details.length - 1) {
+          kit.messageBox('Este comprobante incluye ' + details.length + ' abonos seleccionados del cliente.');
+        }
+      });
+
+      kit.footer('¡Gracias por su abono y por confiar en nosotros!', 'Es un placer seguir atendiendo sus proyectos.');
+      await sharePdfDocument(doc, getClientReportFileName('comprobante_abono', firstPayment.client_name));
+    }
+
+
     async function generateConsolidatedCreditInvoicePDF(invoices, asPaidReceipt = false, forceStandardPDF = false) {
       if (!window.jspdf?.jsPDF) {
         showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
@@ -11467,7 +11909,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       }
 
       const isPaidSelection = AppState.creditFilters.status === 'paid';
-      await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true);
+      await generateClientCreditReportPDF(invoices, isPaidSelection);
     }
 
     async function printSelectedCreditInvoices(safeClientName) {
@@ -12024,7 +12466,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         return;
       }
 
-      await generateConsolidatedCreditPaymentPDF(selectedPayments, true);
+      await generateClientPaymentReportPDF(selectedPayments);
     }
 
     function printSelectedCreditPayments() {
