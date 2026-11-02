@@ -32,8 +32,8 @@ const checks = [
   [pdfFontRegular.size > 300000 && pdfFontBold.size > 300000, 'Faltan los archivos completos de tipografia para los PDF'],
   [app.includes('await generateClientCreditReportPDF(invoices, isPaidSelection)') && app.includes('await generateClientPaymentReportPDF(selectedPayments)'), 'El boton PDF WhatsApp no usa los nuevos formatos'],
   [!app.includes('await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true)') && !app.includes('await generateConsolidatedCreditPaymentPDF(selectedPayments, true)'), 'El boton PDF WhatsApp todavia usa los formatos anteriores'],
-  [workflow.includes('v1.48'), 'El flujo de APK no apunta a v1.48'],
-  [gradle.includes('versionCode 49') && gradle.includes("versionName '1.48.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.49'), 'El flujo de APK no apunta a v1.49'],
+  [gradle.includes('versionCode 50') && gradle.includes("versionName '1.49.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -42,4 +42,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.48 completadas');
+console.log('Verificaciones v1.49 completadas');
