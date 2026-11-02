@@ -11433,7 +11433,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       details.forEach((detail, index) => {
         const route = getPaymentRouteValue(detail.payment.notes);
-        const height = 45 + (route ? 7 : 0);
+        const materialLineCount = Math.max(1, doc.splitTextToSize(safeText(detail.materials || 'Sin detalle'), contentWidth - 52).length);
+        const routeLineCount = route ? Math.max(1, doc.splitTextToSize(safeText(route), contentWidth - 52).length) : 0;
+        const fieldsHeight = 6 + Math.max(6, materialLineCount * 5) + 6 + (route ? Math.max(6, routeLineCount * 5) : 0);
+        const height = 17 + fieldsHeight + 16;
         kit.ensure(height + 4);
         const top = kit.getY();
         doc.setFillColor(...colors.softBlue);
