@@ -102,7 +102,7 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs ERP-Materiales-v1.45-Sincronizacion-Incremental.apk
-          CERT_SHA256="$("$APKSIGNER" verify --print-certs ERP-Materiales-v1.45-Sincronizacion-Incremental.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+          CERT_SHA256="$("$APKSIGNER" verify --print-certs ERP-Materiales-v1.45-Sincronizacion-Incremental.apk | sed -n 's/^.*Signer: certificate SHA-256 digest: //p' | head -1)"
           test "$CERT_SHA256" = "ccb3a55a3c1f97bc16badba3363299c65ff6b453212b983d59321348a223b44b"
       - name: Guardar APK
         uses: actions/upload-artifact@v4
