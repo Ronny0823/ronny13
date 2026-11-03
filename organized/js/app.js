@@ -11609,7 +11609,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       doc.setTextColor(...color.brown);
       doc.setFontSize(22);
       doc.text(details.length === 1 ? 'ABONO RECIBIDO' : 'ABONOS RECIBIDOS', margin + 7, amountTop + 17);
-      doc.text('LE FALTA POR PAGAR', margin + 7, amountTop + 42);
+      doc.text('TOTAL A SALDAR', margin + 7, amountTop + 42);
       doc.setFontSize(23);
       doc.setTextColor(...color.green);
       doc.text(exactCurrency(totalReceived), pageWidth - margin - 7, amountTop + 17, { align: 'right' });

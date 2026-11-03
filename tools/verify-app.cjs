@@ -29,11 +29,12 @@ const checks = [
   [app.includes('createExactClientPdf') && app.includes('drawExactPaidInvoiceCard') && app.includes('drawExactPendingInvoice'), 'Los reportes no reproducen los tres formatos exactos'],
   [app.includes("format: [pageWidth, pageHeight]") && app.includes("const pageHeight = 324"), 'El formato PDF no conserva la proporcion vertical de las referencias'],
   [app.includes('loadExactPdfFontFiles') && app.includes('LiberationSans-Regular.ttf') && app.includes('LiberationSans-Bold.ttf'), 'Los PDF no usan la tipografia visual de las referencias'],
+  [app.includes("doc.text('TOTAL A SALDAR', margin + 7, amountTop + 42)") && app.includes("doc.text('LE FALTA POR PAGAR', margin + 6, pendingTop + 15)"), 'El comprobante de abono no tiene la etiqueta TOTAL A SALDAR o se alteró el estado de cuenta'],
   [pdfFontRegular.size > 300000 && pdfFontBold.size > 300000, 'Faltan los archivos completos de tipografia para los PDF'],
   [app.includes('await generateClientCreditReportPDF(invoices, isPaidSelection)') && app.includes('await generateClientPaymentReportPDF(selectedPayments)'), 'El boton PDF WhatsApp no usa los nuevos formatos'],
   [!app.includes('await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true)') && !app.includes('await generateConsolidatedCreditPaymentPDF(selectedPayments, true)'), 'El boton PDF WhatsApp todavia usa los formatos anteriores'],
-  [workflow.includes('v1.49'), 'El flujo de APK no apunta a v1.49'],
-  [gradle.includes('versionCode 50') && gradle.includes("versionName '1.49.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.50'), 'El flujo de APK no apunta a v1.50'],
+  [gradle.includes('versionCode 51') && gradle.includes("versionName '1.50.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -42,4 +43,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.49 completadas');
+console.log('Verificaciones v1.50 completadas');
