@@ -13831,19 +13831,22 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                   </div>
                   <div class="min-w-0">
                     <div class="text-sm font-semibold text-slate-200">Seleccion de facturas</div>
-                    <div class="text-xs text-slate-500">Marca las que vas a compartir</div>
+                    <div class="text-xs text-slate-500">Marca las que vas a cobrar o compartir</div>
                   </div>
                 </div>
                 <span id="directTripSelectedCount" class="shrink-0 text-xs font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">0 seleccionadas</span>
               </div>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
                 <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-sm font-semibold rounded-lg transition-all">
                   <i data-lucide="check-square" class="w-4 h-4"></i> Seleccionar visibles
                 </button>
                 <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700/40 border border-slate-600/70 text-slate-300 hover:bg-slate-700 text-sm font-semibold rounded-lg transition-all">
                   <i data-lucide="square" class="w-4 h-4"></i> Quitar seleccion
                 </button>
-                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i> Pagar seleccionadas
+                </button>
+                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                   <i data-lucide="send" class="w-4 h-4"></i> PDF WhatsApp
                 </button>
               </div>
@@ -14043,12 +14046,18 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
     function updateDirectTripSelection() {
       const selected = getSelectedDirectTrips();
-      const button = document.getElementById('btnDirectTripPdf');
+      const pdfButton = document.getElementById('btnDirectTripPdf');
+      const paymentButton = document.getElementById('btnDirectTripMultiPayment');
       const counter = document.getElementById('directTripSelectedCount');
       const selectAll = document.getElementById('directTripSelectAll');
       const visible = Array.from(document.querySelectorAll('.direct-trip-check'));
 
-      if (button) button.disabled = selected.length === 0;
+      if (pdfButton) pdfButton.disabled = selected.length === 0;
+      if (paymentButton) {
+        paymentButton.disabled = !selected.some(trip =>
+          (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0) > 0.005
+        );
+      }
       if (counter) {
         counter.textContent = selected.length + (selected.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas');
       }
@@ -14081,7 +14090,208 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       await generateSelectedDirectTripsPDF(selected);
     }
 
-    // Funciones de filtro para Viajes Directos
+    function showSelectedDirectTripPaymentModal() {
+  const selected = getSelectedDirectTrips().filter(trip => {
+    const total = Number(trip.trip_amount) || 0;
+    const paid = Number(trip.amount_paid) || 0;
+    return total - paid > 0.005;
+  });
+
+  if (!selected.length) {
+    showToast('Selecciona una o varias facturas pendientes', 'error');
+    return;
+  }
+
+  const clients = [...new Set(selected.map(trip =>
+    safeText(trip.destination_client).trim().toLowerCase() || '__sin_cliente__'
+  ))];
+  if (clients.length > 1) {
+    showToast('Selecciona facturas de un mismo cliente para registrar el pago', 'error');
+    return;
+  }
+
+  const ordered = selected.slice().sort((a, b) =>
+    new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime()
+  );
+  const totalPending = ordered.reduce((sum, trip) =>
+    sum + Math.max(0, (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0)), 0
+  );
+
+  AppState.selectedDirectTripPaymentIds = ordered.map(trip => trip.__backendId);
+
+  showModal(`
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 sm:p-6 shadow-2xl max-w-2xl mx-auto">
+      <div class="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 class="text-xl font-bold text-slate-100">Pago de varias facturas</h2>
+          <p class="text-sm text-slate-500 mt-1">${ordered.length} factura(s) de ${safeText(ordered[0].destination_client || 'cliente sin nombre')}</p>
+        </div>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-200">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden mb-5">
+        <div class="max-h-56 overflow-y-auto divide-y divide-slate-700/70">
+          ${ordered.map(trip => {
+            const pending = Math.max(0, (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0));
+            return `
+              <div class="flex items-center justify-between gap-3 px-4 py-3">
+                <div class="min-w-0">
+                  <div class="font-mono text-sm font-semibold text-primary-300">${safeText(trip.invoice_number || 'Sin factura')}</div>
+                  <div class="text-xs text-slate-500">${fmt.dateTime(trip.date)} · ${safeText(trip.material_type || 'Sin material')}</div>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="text-xs text-slate-500">Pendiente</div>
+                  <div class="font-mono font-semibold text-rose-300">${fmt.currency(pending)}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="flex items-center justify-between gap-3 px-4 py-3 bg-emerald-500/10 border-t border-emerald-500/20">
+          <span class="font-semibold text-emerald-200">Total pendiente</span>
+          <span class="font-mono text-xl font-bold text-emerald-300">${fmt.currency(totalPending)}</span>
+        </div>
+      </div>
+
+      <form onsubmit="saveSelectedDirectTripPayment(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-400 mb-2">Monto total del pago</label>
+          <div class="relative">
+            <span class="absolute left-3 top-3 text-slate-500">RD$</span>
+            <input type="number" id="multiDirectPaymentAmount" step="0.01" min="0.01" max="${totalPending.toFixed(2)}" required
+              value="${totalPending.toFixed(2)}"
+              class="w-full pl-12 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
+          </div>
+          <p class="text-xs text-slate-500 mt-1">Se aplicará primero a la factura más antigua. Máximo: ${fmt.currency(totalPending)}</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-400 mb-2">Método de pago</label>
+          <select id="multiDirectPaymentMethod" required
+            class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus select-custom">
+            <option value="">Seleccionar...</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="transferencia">Transferencia</option>
+            <option value="cheque">Cheque</option>
+            <option value="deposito">Depósito</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-400 mb-2">Por dónde fue / referencia (opcional)</label>
+          <input type="text" id="multiDirectPaymentChannel" placeholder="Banco, caja, número de cheque o referencia"
+            class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
+        </div>
+
+        <div class="flex gap-3 pt-3">
+          <button type="button" onclick="closeModal()" class="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" class="flex-1 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+            <i data-lucide="badge-dollar-sign" class="w-5 h-5"></i> Aplicar pago
+          </button>
+        </div>
+      </form>
+    </div>
+  `);
+  lucide.createIcons();
+}
+
+    async function saveSelectedDirectTripPayment(e) {
+  e.preventDefault();
+
+  const ids = Array.isArray(AppState.selectedDirectTripPaymentIds)
+    ? AppState.selectedDirectTripPaymentIds
+    : [];
+  const trips = ids
+    .map(id => AppState.data.find(record => record.__backendId === id && record.type === 'direct_trip'))
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+
+  const amount = Number(document.getElementById('multiDirectPaymentAmount')?.value);
+  const method = document.getElementById('multiDirectPaymentMethod')?.value || '';
+  const paymentChannel = document.getElementById('multiDirectPaymentChannel')?.value.trim() || '';
+  const totalPendingCents = trips.reduce((sum, trip) => {
+    const totalCents = Math.round((Number(trip.trip_amount) || 0) * 100);
+    const paidCents = Math.round((Number(trip.amount_paid) || 0) * 100);
+    return sum + Math.max(0, totalCents - paidCents);
+  }, 0);
+  const paymentCents = Math.round(amount * 100);
+
+  if (!trips.length) {
+    showToast('No se encontraron las facturas seleccionadas', 'error');
+    return;
+  }
+  if (!method) {
+    showToast('Selecciona el método de pago', 'error');
+    return;
+  }
+  if (!Number.isFinite(amount) || paymentCents <= 0 || paymentCents > totalPendingCents) {
+    showToast('El monto debe ser mayor que cero y no puede superar lo pendiente', 'error');
+    return;
+  }
+
+  const snapshots = trips.map(trip => ({
+    trip,
+    amount_paid: trip.amount_paid,
+    payment_status: trip.payment_status,
+    payments: Array.isArray(trip.payments) ? trip.payments.map(payment => ({ ...payment })) : trip.payments
+  }));
+  const paymentDate = new Date().toISOString();
+  const batchId = createRecordId('dtrip-pay');
+  let remainingCents = paymentCents;
+  let affectedInvoices = 0;
+
+  try {
+    for (const trip of trips) {
+      if (remainingCents <= 0) break;
+
+      const totalCents = Math.round((Number(trip.trip_amount) || 0) * 100);
+      const currentPaidCents = Math.round((Number(trip.amount_paid) || 0) * 100);
+      const pendingCents = Math.max(0, totalCents - currentPaidCents);
+      const appliedCents = Math.min(remainingCents, pendingCents);
+      if (appliedCents <= 0) continue;
+
+      const appliedAmount = appliedCents / 100;
+      const newPaidCents = currentPaidCents + appliedCents;
+      trip.amount_paid = newPaidCents / 100;
+      trip.payment_status = newPaidCents >= totalCents ? 'pagado' : 'pendiente';
+      if (!Array.isArray(trip.payments)) trip.payments = [];
+      trip.payments.push({
+        date: paymentDate,
+        amount: appliedAmount,
+        method: method,
+        payment_channel: paymentChannel,
+        notes: paymentChannel,
+        batch_id: batchId,
+        multiple_payment: true
+      });
+
+      remainingCents -= appliedCents;
+      affectedInvoices += 1;
+    }
+
+    await AppState.saveUserData();
+
+    AppState.selectedDirectTripPaymentIds = [];
+    closeModal();
+    renderPage();
+    showToast(`Pago de ${fmt.currency(paymentCents / 100)} aplicado a ${affectedInvoices} factura(s)`, 'success');
+  } catch (err) {
+    snapshots.forEach(snapshot => {
+      snapshot.trip.amount_paid = snapshot.amount_paid;
+      snapshot.trip.payment_status = snapshot.payment_status;
+      snapshot.trip.payments = snapshot.payments;
+    });
+    showToast('No se pudo guardar el pago múltiple. No se aplicaron cambios.', 'error');
+    console.error(err);
+  }
+}
+
+
+        // Funciones de filtro para Viajes Directos
     function updateDirectTripFilters() {
       AppState.directTripFilters.search = document.getElementById('directTripFilterSearch')?.value || '';
       AppState.directTripFilters.company = document.getElementById('directTripFilterCompany').value;

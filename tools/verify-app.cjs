@@ -33,8 +33,11 @@ const checks = [
   [pdfFontRegular.size > 300000 && pdfFontBold.size > 300000, 'Faltan los archivos completos de tipografia para los PDF'],
   [app.includes('await generateClientCreditReportPDF(invoices, isPaidSelection)') && app.includes('await generateClientPaymentReportPDF(selectedPayments)'), 'El boton PDF WhatsApp no usa los nuevos formatos'],
   [!app.includes('await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true)') && !app.includes('await generateConsolidatedCreditPaymentPDF(selectedPayments, true)'), 'El boton PDF WhatsApp todavia usa los formatos anteriores'],
-  [workflow.includes('v1.50'), 'El flujo de APK no apunta a v1.50'],
-  [gradle.includes('versionCode 51') && gradle.includes("versionName '1.50.0'"), 'Versión Android incorrecta'],
+  [app.includes('showSelectedDirectTripPaymentModal') && app.includes('saveSelectedDirectTripPayment'), 'Falta el pago multiple de Viajes Directos'],
+  [app.includes("batch_id: batchId") && app.includes("multiple_payment: true"), 'El pago multiple no conserva el grupo de facturas'],
+  [app.includes('await AppState.saveUserData();') && app.includes('No se aplicaron cambios.'), 'El pago multiple no espera el guardado o no revierte en error'],
+  [workflow.includes('v1.51'), 'El flujo de APK no apunta a v1.51'],
+  [gradle.includes('versionCode 52') && gradle.includes("versionName '1.51.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -43,4 +46,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.50 completadas');
+console.log('Verificaciones v1.51 completadas');
