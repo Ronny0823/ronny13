@@ -13866,6 +13866,19 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                 <p class="text-xs text-amber-100/80">Para registrar un pago, marca facturas pendientes del mismo cliente. Para imprimir, puedes incluir pagadas, parciales y pendientes.</p>
               </div>
 
+              <div id="directTripSelectionTotals" class="grid grid-cols-2 gap-2 mb-3">
+                <div class="rounded-xl bg-blue-500/10 border border-blue-500/25 p-3">
+                  <div class="text-[11px] font-bold uppercase tracking-wide text-blue-300 mb-1">Monto total seleccionado</div>
+                  <div id="directTripSelectedTotal" class="font-mono text-lg sm:text-xl font-bold text-blue-200">RD$ 0.00</div>
+                  <div class="text-[11px] text-slate-500 mt-1">Suma de todas las facturas marcadas</div>
+                </div>
+                <div class="rounded-xl bg-amber-500/10 border border-amber-500/25 p-3">
+                  <div class="text-[11px] font-bold uppercase tracking-wide text-amber-300 mb-1">Pendiente seleccionado</div>
+                  <div id="directTripSelectedPending" class="font-mono text-lg sm:text-xl font-bold text-amber-200">RD$ 0.00</div>
+                  <div class="text-[11px] text-slate-500 mt-1">Lo que falta por pagar entre ellas</div>
+                </div>
+              </div>
+
               <div class="grid grid-cols-2 gap-2 mb-2">
                 <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-sm font-semibold rounded-lg transition-all">
                   <i data-lucide="check-square" class="w-4 h-4"></i> Marcar visibles
@@ -14085,6 +14098,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const paymentButton = document.getElementById('btnDirectTripMultiPayment');
       const printButton = document.getElementById('btnDirectTripPrint');
       const counter = document.getElementById('directTripSelectedCount');
+      const selectedTotalElement = document.getElementById('directTripSelectedTotal');
+      const selectedPendingElement = document.getElementById('directTripSelectedPending');
       const selectAll = document.getElementById('directTripSelectAll');
       const visible = Array.from(document.querySelectorAll('.direct-trip-check'));
 
@@ -14098,6 +14113,18 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       if (counter) {
         counter.textContent = selected.length + (selected.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas');
       }
+
+      const selectedTotal = selected.reduce((sum, trip) =>
+        sum + Math.max(0, Number(trip.trip_amount) || 0), 0
+      );
+      const selectedPending = selected.reduce((sum, trip) => {
+        const total = Math.max(0, Number(trip.trip_amount) || 0);
+        const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
+        return sum + Math.max(0, total - paid);
+      }, 0);
+      if (selectedTotalElement) selectedTotalElement.textContent = fmt.currency(selectedTotal);
+      if (selectedPendingElement) selectedPendingElement.textContent = fmt.currency(selectedPending);
+
       if (selectAll) {
         selectAll.checked = visible.length > 0 && visible.every(checkbox => checkbox.checked);
         selectAll.indeterminate = visible.some(checkbox => checkbox.checked) && !selectAll.checked;
