@@ -14157,9 +14157,24 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   return history;
 }
 
+    function summarizeDirectTripPaymentChannels(trips) {
+  const uniqueChannels = new Map();
+  trips.forEach(trip => {
+    getDirectTripPaymentHistory(trip).forEach(payment => {
+      const channel = safeText(payment.channel);
+      if (!channel || channel.toLowerCase() === 'no especificado') return;
+      const key = channel.toLowerCase();
+      if (!uniqueChannels.has(key)) uniqueChannels.set(key, channel);
+    });
+  });
+  const channels = [...uniqueChannels.values()];
+  return channels.length ? channels.join(' / ') : 'No especificado';
+}
+
     function buildSelectedDirectTripsPrintText(trips) {
   const h = BluetoothPrinter.helpers();
   const clientName = trips[0]?.destination_client || 'Cliente sin nombre';
+  const paymentChannelSummary = summarizeDirectTripPaymentChannels(trips);
   const totals = trips.reduce((result, trip) => {
     const total = Math.max(0, Number(trip.trip_amount) || 0);
     const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
@@ -14175,6 +14190,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     h.thickLine,
     'Fecha: ' + fmt.dateTime(new Date().toISOString()),
     ...h.section('CLIENTE', h.wordWrap(clientName)),
+    ...h.wordWrap('Por donde fue el pago: ' + paymentChannelSummary),
     trips.length + (trips.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas')
   ];
 
@@ -14199,7 +14215,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         rows.push('Pago ' + (index + 1) + ': ' + fmt.currency(payment.amount));
         rows.push('Fecha: ' + fmt.dateTime(payment.date));
         rows.push('Metodo: ' + payment.method.toUpperCase());
-        rows.push(...h.wordWrap('Por donde fue: ' + payment.channel));
       });
     }
   });
@@ -14254,6 +14269,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   const isThermal = is58mm || printerType === 'thermal_80';
   const paperWidth = is58mm ? '58mm' : isThermal ? '80mm' : 'auto';
   const clientName = escapeHtml(trips[0]?.destination_client || 'Cliente sin nombre');
+  const paymentChannelSummary = summarizeDirectTripPaymentChannels(trips);
   const logo = AppState.config.company_logo
     ? `<img src="${escapeAttr(AppState.config.company_logo)}" class="logo" alt="Logo">`
     : `<div class="company-name">${escapeHtml(AppState.config.company_name || '')}</div>`;
@@ -14275,7 +14291,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <span>${escapeHtml(fmt.dateTime(payment.date))}</span>
             </div>
             <div><span>Método:</span><strong>${escapeHtml(payment.method.toUpperCase())}</strong></div>
-            <div><span>Por dónde fue:</span><strong>${escapeHtml(payment.channel)}</strong></div>
           </div>
         `).join('')}
       </div>
@@ -14369,6 +14384,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
         <div class="client-box">
           <div><strong>Cliente:</strong> ${clientName}</div>
+          <div><strong>Por dónde fue el pago:</strong> ${escapeHtml(paymentChannelSummary)}</div>
           <div><strong>Fecha del reporte:</strong> ${escapeHtml(fmt.dateTime(new Date().toISOString()))}</div>
           <div><strong>Facturas incluidas:</strong> ${trips.length}</div>
         </div>
@@ -16113,6 +16129,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const contentWidth = pageWidth - (margin * 2);
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
       const clientName = trips[0]?.destination_client || 'Cliente';
+      const paymentChannelSummary = summarizeDirectTripPaymentChannels(trips);
       const totalAmount = trips.reduce((sum, trip) => sum + toFiniteNumber(trip.trip_amount, 0), 0);
       const totalPaid = trips.reduce((sum, trip) => {
         return sum + Math.min(toFiniteNumber(trip.amount_paid, 0), toFiniteNumber(trip.trip_amount, 0));
@@ -16172,6 +16189,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       yPos += 6;
       doc.text('Cliente destino: ' + clientName, margin, yPos);
       yPos += 6;
+      const channelLines = doc.splitTextToSize('Por donde fue el pago: ' + paymentChannelSummary, contentWidth);
+      channelLines.forEach(line => {
+        doc.text(line, margin, yPos);
+        yPos += 5;
+      });
+      yPos += 1;
       doc.text(trips.length + (trips.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas'), margin, yPos);
       yPos += 8;
 
@@ -16195,7 +16218,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         if (trip.notes) details.push('Notas: ' + trip.notes);
         paymentHistory.forEach((payment, index) => {
           details.push('Pago ' + (index + 1) + ': ' + fmt.currency(payment.amount) + ' - ' + fmt.dateTime(payment.date));
-          details.push('Metodo: ' + payment.method.toUpperCase() + ' | Por donde fue: ' + payment.channel);
+          details.push('Metodo: ' + payment.method.toUpperCase());
         });
         const detailLines = details.flatMap(detail => doc.splitTextToSize(detail, contentWidth - 10));
         const cardHeight = 36 + (detailLines.length * 4);
