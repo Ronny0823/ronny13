@@ -13849,7 +13849,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                   <span class="w-6 h-6 rounded-full bg-emerald-500 text-slate-900 text-xs font-bold flex items-center justify-center shrink-0">2</span>
                   <div>
                     <div class="text-xs font-semibold text-slate-200">Elige la acción</div>
-                    <div class="text-[11px] text-slate-500">Registrar pago o crear PDF.</div>
+                    <div class="text-[11px] text-slate-500">Registrar pago, imprimir o crear PDF.</div>
                   </div>
                 </div>
                 <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 flex gap-2">
@@ -13863,18 +13863,23 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
               <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 mb-3 flex items-start gap-2">
                 <i data-lucide="info" class="w-4 h-4 text-amber-300 shrink-0 mt-0.5"></i>
-                <p class="text-xs text-amber-100/80">Para registrar un pago múltiple, selecciona facturas pendientes del mismo cliente.</p>
+                <p class="text-xs text-amber-100/80">Para registrar un pago, marca facturas pendientes del mismo cliente. Para imprimir, puedes incluir pagadas, parciales y pendientes.</p>
               </div>
 
-              <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              <div class="grid grid-cols-2 gap-2 mb-2">
                 <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-sm font-semibold rounded-lg transition-all">
                   <i data-lucide="check-square" class="w-4 h-4"></i> Marcar visibles
                 </button>
                 <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700/40 border border-slate-600/70 text-slate-300 hover:bg-slate-700 text-sm font-semibold rounded-lg transition-all">
                   <i data-lucide="square" class="w-4 h-4"></i> Borrar selección
                 </button>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Registrar el dinero recibido en las facturas marcadas">
                   <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i> Registrar pago
+                </button>
+                <button id="btnDirectTripPrint" onclick="printSelectedDirectTrips()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Imprimir pagadas, parciales o pendientes">
+                  <i data-lucide="printer" class="w-4 h-4"></i> Imprimir seleccionadas
                 </button>
                 <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Crear un PDF con las facturas marcadas">
                   <i data-lucide="send" class="w-4 h-4"></i> Crear PDF WhatsApp
@@ -14078,11 +14083,13 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const selected = getSelectedDirectTrips();
       const pdfButton = document.getElementById('btnDirectTripPdf');
       const paymentButton = document.getElementById('btnDirectTripMultiPayment');
+      const printButton = document.getElementById('btnDirectTripPrint');
       const counter = document.getElementById('directTripSelectedCount');
       const selectAll = document.getElementById('directTripSelectAll');
       const visible = Array.from(document.querySelectorAll('.direct-trip-check'));
 
       if (pdfButton) pdfButton.disabled = selected.length === 0;
+      if (printButton) printButton.disabled = selected.length === 0;
       if (paymentButton) {
         paymentButton.disabled = !selected.some(trip =>
           (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0) > 0.005
@@ -14120,7 +14127,211 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       await generateSelectedDirectTripsPDF(selected);
     }
 
-    function showSelectedDirectTripPaymentModal() {
+    function buildSelectedDirectTripsPrintText(trips) {
+  const h = BluetoothPrinter.helpers();
+  const clientName = trips[0]?.destination_client || 'Cliente sin nombre';
+  const totals = trips.reduce((result, trip) => {
+    const total = Math.max(0, Number(trip.trip_amount) || 0);
+    const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
+    result.total += total;
+    result.paid += paid;
+    result.pending += Math.max(0, total - paid);
+    return result;
+  }, { total: 0, paid: 0, pending: 0 });
+
+  const rows = [
+    ...BluetoothPrinter.thermalHeader('ESTADO DE FACTURAS'),
+    'VIAJES DIRECTOS',
+    h.thickLine,
+    'Fecha: ' + fmt.dateTime(new Date().toISOString()),
+    ...h.section('CLIENTE', h.wordWrap(clientName)),
+    trips.length + (trips.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas')
+  ];
+
+  trips.forEach(trip => {
+    const total = Math.max(0, Number(trip.trip_amount) || 0);
+    const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
+    const pending = Math.max(0, total - paid);
+    const status = pending <= 0 ? 'PAGADA' : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
+
+    rows.push(h.thickLine);
+    rows.push('\x1bE\x01' + String(trip.invoice_number || 'SIN FACTURA') + '\x1bE\x00');
+    rows.push('Fecha: ' + fmt.dateTime(trip.date));
+    rows.push(...h.wordWrap((trip.material_type || 'Sin material') + ' - ' + fmt.number(trip.meters || 0, 2) + ' m3'));
+    rows.push(h.item('Estado:', status));
+    rows.push(h.item('Total:', fmt.currency(total)));
+    rows.push(h.item('Pagado:', fmt.currency(paid)));
+    rows.push(h.item('Pendiente:', fmt.currency(pending)));
+  });
+
+  rows.push(h.thickLine);
+  rows.push(h.item('TOTAL FACTURADO:', fmt.currency(totals.total)));
+  rows.push(h.item('TOTAL PAGADO:', fmt.currency(totals.paid)));
+  rows.push(...h.totalBlock('TOTAL POR PAGAR', fmt.currency(totals.pending)));
+  rows.push(...BluetoothPrinter.thermalFooter(totals.pending > 0 ? 'ESTADO DE CUENTA' : 'CUENTA SALDADA'));
+  return rows.filter(Boolean).join('\n');
+}
+
+    async function printSelectedDirectTrips() {
+  const selected = getSelectedDirectTrips();
+  if (!selected.length) {
+    showToast('Primero marca una o varias facturas para imprimir', 'error');
+    return;
+  }
+
+  const clients = [...new Set(selected.map(trip =>
+    safeText(trip.destination_client).trim().toLowerCase() || '__sin_cliente__'
+  ))];
+  if (clients.length > 1) {
+    showToast('Para imprimir un estado claro, marca facturas del mismo cliente', 'error');
+    return;
+  }
+
+  const trips = selected.slice().sort((a, b) =>
+    new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime()
+  );
+  const totals = trips.reduce((result, trip) => {
+    const total = Math.max(0, Number(trip.trip_amount) || 0);
+    const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
+    result.total += total;
+    result.paid += paid;
+    result.pending += Math.max(0, total - paid);
+    return result;
+  }, { total: 0, paid: 0, pending: 0 });
+
+  if (isBluetoothPrinterSelected()) {
+    try {
+      await BluetoothPrinter.printText(buildSelectedDirectTripsPrintText(trips));
+      showToast(`${trips.length} factura(s) enviadas a la impresora Bluetooth`, 'success');
+      return;
+    } catch (error) {
+      showToast('No se pudo imprimir por Bluetooth. Se abrirá la impresión normal.', 'warning');
+    }
+  }
+
+  const printerType = getEffectivePrinterType();
+  const is58mm = printerType === 'thermal_58';
+  const isThermal = is58mm || printerType === 'thermal_80';
+  const paperWidth = is58mm ? '58mm' : isThermal ? '80mm' : 'auto';
+  const clientName = escapeHtml(trips[0]?.destination_client || 'Cliente sin nombre');
+  const logo = AppState.config.company_logo
+    ? `<img src="${escapeAttr(AppState.config.company_logo)}" class="logo" alt="Logo">`
+    : `<div class="company-name">${escapeHtml(AppState.config.company_name || '')}</div>`;
+
+  const invoiceCards = trips.map(trip => {
+    const total = Math.max(0, Number(trip.trip_amount) || 0);
+    const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
+    const pending = Math.max(0, total - paid);
+    const status = pending <= 0 ? 'PAGADA' : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
+    const statusClass = pending <= 0 ? 'paid' : paid > 0 ? 'partial' : 'pending';
+    return `
+      <section class="invoice-card">
+        <div class="invoice-head">
+          <div>
+            <strong>${escapeHtml(trip.invoice_number || 'Sin número de factura')}</strong>
+            <div class="date">${escapeHtml(fmt.dateTime(trip.date))}</div>
+          </div>
+          <span class="status ${statusClass}">${status}</span>
+        </div>
+        <div class="details">
+          <div><span>Compañía:</span><strong>${escapeHtml(trip.source_company || 'No especificada')}</strong></div>
+          <div><span>Material:</span><strong>${escapeHtml(trip.material_type || 'No especificado')}</strong></div>
+          <div><span>Cantidad:</span><strong>${escapeHtml(fmt.number(trip.meters || 0, 2))} m³</strong></div>
+          <div><span>Vehículo:</span><strong>${escapeHtml(trip.vehicle_plate || 'No especificado')}</strong></div>
+        </div>
+        <div class="money-row"><span>Total de la factura</span><strong>${fmt.currency(total)}</strong></div>
+        <div class="money-row paid-text"><span>Pagado</span><strong>${fmt.currency(paid)}</strong></div>
+        <div class="money-row pending-text"><span>Falta por pagar</span><strong>${fmt.currency(pending)}</strong></div>
+      </section>
+    `;
+  }).join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Estado de facturas - ${clientName}</title>
+        <style>
+          @page { size: ${paperWidth}; margin: ${isThermal ? '3mm' : '10mm'}; }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0 auto;
+            width: ${isThermal ? paperWidth : '100%'};
+            max-width: ${isThermal ? paperWidth : '190mm'};
+            padding: ${isThermal ? '2mm' : '4mm'};
+            color: #111827;
+            background: #fff;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: ${isThermal ? (is58mm ? '10px' : '11px') : '13px'};
+          }
+          .header { text-align: center; border-bottom: 2px solid #d99a00; padding-bottom: 10px; margin-bottom: 12px; }
+          .logo { display: block; max-width: ${isThermal ? '48mm' : '72mm'}; max-height: ${isThermal ? '22mm' : '30mm'}; object-fit: contain; margin: 0 auto 6px; }
+          .company-name { font-size: 22px; font-weight: 800; color: #082b80; margin-bottom: 4px; }
+          .slogan { margin-top: 3px; }
+          .rnc { margin-top: 3px; font-size: 0.9em; }
+          h1 { margin: 12px 0 4px; font-size: ${isThermal ? '1.35em' : '1.8em'}; color: #b77900; }
+          .subtitle { color: #4b5563; }
+          .client-box { border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+          .client-box div { margin: 3px 0; }
+          .summary { border: 2px solid #d99a00; background: #fffbeb; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
+          .summary-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
+          .summary-row.due { border-top: 1px solid #e5c56b; margin-top: 4px; padding-top: 8px; font-size: 1.25em; color: #9a5b00; }
+          .invoice-card { border: 1px solid #cbd5e1; border-radius: 8px; margin: 0 0 10px; overflow: hidden; page-break-inside: avoid; }
+          .invoice-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; background: #f1f5f9; padding: 8px; }
+          .date { color: #64748b; font-size: 0.88em; margin-top: 2px; }
+          .status { border-radius: 999px; padding: 3px 7px; font-size: 0.76em; font-weight: 800; white-space: nowrap; }
+          .status.paid { background: #dcfce7; color: #166534; }
+          .status.partial { background: #fef3c7; color: #92400e; }
+          .status.pending { background: #fee2e2; color: #991b1b; }
+          .details { padding: 7px 8px; border-bottom: 1px solid #e2e8f0; }
+          .details div, .money-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+          .details span { color: #64748b; }
+          .money-row { padding: 5px 8px; }
+          .paid-text { color: #047857; }
+          .pending-text { color: #b45309; font-size: 1.05em; border-top: 1px solid #e2e8f0; }
+          .footer { text-align: center; color: #64748b; border-top: 1px solid #d99a00; margin-top: 14px; padding-top: 8px; font-size: 0.9em; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body>
+        <header class="header">
+          ${logo}
+          <div class="slogan">${escapeHtml(AppState.config.company_slogan || '')}</div>
+          ${AppState.config.company_rfc ? `<div class="rnc">RNC: ${escapeHtml(AppState.config.company_rfc)}</div>` : ''}
+          <h1>ESTADO DE FACTURAS</h1>
+          <div class="subtitle">Viajes Directos</div>
+        </header>
+
+        <div class="client-box">
+          <div><strong>Cliente:</strong> ${clientName}</div>
+          <div><strong>Fecha del reporte:</strong> ${escapeHtml(fmt.dateTime(new Date().toISOString()))}</div>
+          <div><strong>Facturas incluidas:</strong> ${trips.length}</div>
+        </div>
+
+        <div class="summary">
+          <div class="summary-row"><span>Total facturado</span><strong>${fmt.currency(totals.total)}</strong></div>
+          <div class="summary-row"><span>Total pagado</span><strong>${fmt.currency(totals.paid)}</strong></div>
+          <div class="summary-row due"><strong>TOTAL POR PAGAR</strong><strong>${fmt.currency(totals.pending)}</strong></div>
+        </div>
+
+        ${invoiceCards}
+
+        <footer class="footer">
+          ${totals.pending > 0
+            ? 'Este documento muestra el saldo actual de las facturas seleccionadas.'
+            : 'Todas las facturas incluidas en este documento están pagadas.'}
+        </footer>
+      </body>
+    </html>
+  `;
+
+  openPrintDocument(html, { autoClose: false });
+}
+
+
+        function showSelectedDirectTripPaymentModal() {
   const selected = getSelectedDirectTrips().filter(trip => {
     const total = Number(trip.trip_amount) || 0;
     const paid = Number(trip.amount_paid) || 0;
