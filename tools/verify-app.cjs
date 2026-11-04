@@ -39,12 +39,13 @@ const checks = [
   [app.includes('TOTAL POR PAGAR') && app.includes('Falta por pagar') && app.includes('PAGO PARCIAL'), 'La impresion multiple no muestra saldos y estados claros'],
   [app.includes('getDirectTripPaymentHistory') && app.includes('summarizeDirectTripPaymentInfo'), 'Falta el resumen de informacion del pago'],
   [app.includes('INFORMACIÓN DEL PAGO') && app.includes('Fecha del pago:') && app.includes('Método de pago:') && app.includes('Por dónde fue:'), 'Fecha, metodo y por donde fue no aparecen juntos debajo del cliente'],
+  [app.includes('latestPaymentDate') && !app.includes("date: uniqueDates.size ? [...uniqueDates.values()].join(' / ')"), 'La fecha del pago se repite para cada factura seleccionada'],
   [!app.includes('paymentHistoryHtml') && !app.includes("paymentHistory.forEach((payment, index)"), 'La informacion del pago se repite dentro de cada factura'],
   [app.includes('multiDirectPaymentChannel\" required') && app.includes('Indica por dónde se recibió el pago'), 'Viajes Directos permite guardar pagos sin indicar por donde fueron'],
   [app.includes("batch_id: batchId") && app.includes("multiple_payment: true"), 'El pago multiple no conserva el grupo de facturas'],
   [app.includes('await AppState.saveUserData();') && app.includes('No se aplicaron cambios.'), 'El pago multiple no espera el guardado o no revierte en error'],
-  [workflow.includes('v1.56'), 'El flujo de APK no apunta a v1.56'],
-  [gradle.includes('versionCode 57') && gradle.includes("versionName '1.56.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.57'), 'El flujo de APK no apunta a v1.57'],
+  [gradle.includes('versionCode 58') && gradle.includes("versionName '1.57.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -53,4 +54,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.56 completadas');
+console.log('Verificaciones v1.57 completadas');

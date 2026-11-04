@@ -14158,19 +14158,23 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 }
 
     function summarizeDirectTripPaymentInfo(trips) {
-  const uniqueDates = new Map();
+  let latestPaymentDate = '';
+  let latestPaymentTime = -Infinity;
   const uniqueMethods = new Map();
   const uniqueChannels = new Map();
 
   trips.forEach(trip => {
     getDirectTripPaymentHistory(trip).forEach(payment => {
-      const date = safeText(fmt.dateTime(payment.date));
+      const rawDate = payment.date;
+      const timestamp = new Date(rawDate || 0).getTime();
       const method = safeText(payment.method);
       const channel = safeText(payment.channel);
 
-      if (date && date.toLowerCase() !== 'no especificado') {
-        const key = date.toLowerCase();
-        if (!uniqueDates.has(key)) uniqueDates.set(key, date);
+      if (Number.isFinite(timestamp) && timestamp >= latestPaymentTime) {
+        latestPaymentTime = timestamp;
+        latestPaymentDate = rawDate;
+      } else if (!latestPaymentDate && rawDate) {
+        latestPaymentDate = rawDate;
       }
       if (method && method.toLowerCase() !== 'no especificado') {
         const key = method.toLowerCase();
@@ -14184,7 +14188,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   });
 
   return {
-    date: uniqueDates.size ? [...uniqueDates.values()].join(' / ') : 'No registrada',
+    date: latestPaymentDate ? safeText(fmt.dateTime(latestPaymentDate)) : 'No registrada',
     method: uniqueMethods.size ? [...uniqueMethods.values()].join(' / ') : 'No especificado',
     channel: uniqueChannels.size ? [...uniqueChannels.values()].join(' / ') : 'No especificado'
   };
