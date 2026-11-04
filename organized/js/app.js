@@ -14157,24 +14157,43 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   return history;
 }
 
-    function summarizeDirectTripPaymentChannels(trips) {
+    function summarizeDirectTripPaymentInfo(trips) {
+  const uniqueDates = new Map();
+  const uniqueMethods = new Map();
   const uniqueChannels = new Map();
+
   trips.forEach(trip => {
     getDirectTripPaymentHistory(trip).forEach(payment => {
+      const date = safeText(fmt.dateTime(payment.date));
+      const method = safeText(payment.method);
       const channel = safeText(payment.channel);
-      if (!channel || channel.toLowerCase() === 'no especificado') return;
-      const key = channel.toLowerCase();
-      if (!uniqueChannels.has(key)) uniqueChannels.set(key, channel);
+
+      if (date && date.toLowerCase() !== 'no especificado') {
+        const key = date.toLowerCase();
+        if (!uniqueDates.has(key)) uniqueDates.set(key, date);
+      }
+      if (method && method.toLowerCase() !== 'no especificado') {
+        const key = method.toLowerCase();
+        if (!uniqueMethods.has(key)) uniqueMethods.set(key, method.toUpperCase());
+      }
+      if (channel && channel.toLowerCase() !== 'no especificado') {
+        const key = channel.toLowerCase();
+        if (!uniqueChannels.has(key)) uniqueChannels.set(key, channel);
+      }
     });
   });
-  const channels = [...uniqueChannels.values()];
-  return channels.length ? channels.join(' / ') : 'No especificado';
+
+  return {
+    date: uniqueDates.size ? [...uniqueDates.values()].join(' / ') : 'No registrada',
+    method: uniqueMethods.size ? [...uniqueMethods.values()].join(' / ') : 'No especificado',
+    channel: uniqueChannels.size ? [...uniqueChannels.values()].join(' / ') : 'No especificado'
+  };
 }
 
     function buildSelectedDirectTripsPrintText(trips) {
   const h = BluetoothPrinter.helpers();
   const clientName = trips[0]?.destination_client || 'Cliente sin nombre';
-  const paymentChannelSummary = summarizeDirectTripPaymentChannels(trips);
+  const paymentInfo = summarizeDirectTripPaymentInfo(trips);
   const totals = trips.reduce((result, trip) => {
     const total = Math.max(0, Number(trip.trip_amount) || 0);
     const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
@@ -14190,7 +14209,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     h.thickLine,
     'Fecha: ' + fmt.dateTime(new Date().toISOString()),
     ...h.section('CLIENTE', h.wordWrap(clientName)),
-    ...h.wordWrap('Por donde fue el pago: ' + paymentChannelSummary),
+    ...h.section('INFORMACION DEL PAGO', [
+      'Fecha: ' + paymentInfo.date,
+      'Metodo: ' + paymentInfo.method,
+      'Por donde fue: ' + paymentInfo.channel
+    ]),
     trips.length + (trips.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas')
   ];
 
@@ -14199,7 +14222,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
     const pending = Math.max(0, total - paid);
     const status = pending <= 0 ? 'PAGADA' : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
-    const paymentHistory = getDirectTripPaymentHistory(trip);
 
     rows.push(h.thickLine);
     rows.push('\x1bE\x01' + String(trip.invoice_number || 'SIN FACTURA') + '\x1bE\x00');
@@ -14209,14 +14231,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     rows.push(h.item('Total:', fmt.currency(total)));
     rows.push(h.item('Pagado:', fmt.currency(paid)));
     rows.push(h.item('Pendiente:', fmt.currency(pending)));
-    if (paymentHistory.length) {
-      rows.push('PAGOS RECIBIDOS');
-      paymentHistory.forEach((payment, index) => {
-        rows.push('Pago ' + (index + 1) + ': ' + fmt.currency(payment.amount));
-        rows.push('Fecha: ' + fmt.dateTime(payment.date));
-        rows.push('Metodo: ' + payment.method.toUpperCase());
-      });
-    }
   });
 
   rows.push(h.thickLine);
@@ -14269,7 +14283,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   const isThermal = is58mm || printerType === 'thermal_80';
   const paperWidth = is58mm ? '58mm' : isThermal ? '80mm' : 'auto';
   const clientName = escapeHtml(trips[0]?.destination_client || 'Cliente sin nombre');
-  const paymentChannelSummary = summarizeDirectTripPaymentChannels(trips);
+  const paymentInfo = summarizeDirectTripPaymentInfo(trips);
   const logo = AppState.config.company_logo
     ? `<img src="${escapeAttr(AppState.config.company_logo)}" class="logo" alt="Logo">`
     : `<div class="company-name">${escapeHtml(AppState.config.company_name || '')}</div>`;
@@ -14280,21 +14294,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     const pending = Math.max(0, total - paid);
     const status = pending <= 0 ? 'PAGADA' : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
     const statusClass = pending <= 0 ? 'paid' : paid > 0 ? 'partial' : 'pending';
-    const paymentHistory = getDirectTripPaymentHistory(trip);
-    const paymentHistoryHtml = paymentHistory.length ? `
-      <div class="payment-history">
-        <div class="payment-history-title">PAGOS RECIBIDOS</div>
-        ${paymentHistory.map((payment, index) => `
-          <div class="payment-item">
-            <div class="payment-item-head">
-              <strong>Pago ${index + 1}: ${fmt.currency(payment.amount)}</strong>
-              <span>${escapeHtml(fmt.dateTime(payment.date))}</span>
-            </div>
-            <div><span>Método:</span><strong>${escapeHtml(payment.method.toUpperCase())}</strong></div>
-          </div>
-        `).join('')}
-      </div>
-    ` : '';
     return `
       <section class="invoice-card">
         <div class="invoice-head">
@@ -14310,7 +14309,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           <div><span>Cantidad:</span><strong>${escapeHtml(fmt.number(trip.meters || 0, 2))} m³</strong></div>
           <div><span>Vehículo:</span><strong>${escapeHtml(trip.vehicle_plate || 'No especificado')}</strong></div>
         </div>
-        ${paymentHistoryHtml}
         <div class="money-row"><span>Total de la factura</span><strong>${fmt.currency(total)}</strong></div>
         <div class="money-row paid-text"><span>Pagado</span><strong>${fmt.currency(paid)}</strong></div>
         <div class="money-row pending-text"><span>Falta por pagar</span><strong>${fmt.currency(pending)}</strong></div>
@@ -14347,6 +14345,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           .subtitle { color: #4b5563; }
           .client-box { border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
           .client-box div { margin: 3px 0; }
+          .payment-info { margin-top: 8px !important; padding-top: 8px; border-top: 1px solid #cbd5e1; }
+          .payment-info-title { color: #1d4ed8; font-size: 0.85em; font-weight: 800; margin-bottom: 5px !important; }
+          .payment-info-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
           .summary { border: 2px solid #d99a00; background: #fffbeb; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
           .summary-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
           .summary-row.due { border-top: 1px solid #e5c56b; margin-top: 4px; padding-top: 8px; font-size: 1.25em; color: #9a5b00; }
@@ -14360,12 +14361,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           .details { padding: 7px 8px; border-bottom: 1px solid #e2e8f0; }
           .details div, .money-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
           .details span { color: #64748b; }
-          .payment-history { background: #eff6ff; border-top: 1px solid #bfdbfe; border-bottom: 1px solid #bfdbfe; padding: 7px 8px; }
-          .payment-history-title { color: #1d4ed8; font-size: 0.82em; font-weight: 800; margin-bottom: 5px; }
-          .payment-item { border-top: 1px dashed #93c5fd; padding: 5px 0; }
-          .payment-item:first-of-type { border-top: 0; }
-          .payment-item-head, .payment-item div { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
-          .payment-item span { color: #475569; }
           .money-row { padding: 5px 8px; }
           .paid-text { color: #047857; }
           .pending-text { color: #b45309; font-size: 1.05em; border-top: 1px solid #e2e8f0; }
@@ -14384,7 +14379,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
         <div class="client-box">
           <div><strong>Cliente:</strong> ${clientName}</div>
-          <div><strong>Por dónde fue el pago:</strong> ${escapeHtml(paymentChannelSummary)}</div>
+          <div class="payment-info">
+            <div class="payment-info-title">INFORMACIÓN DEL PAGO</div>
+            <div class="payment-info-row"><span>Fecha del pago:</span><strong>${escapeHtml(paymentInfo.date)}</strong></div>
+            <div class="payment-info-row"><span>Método de pago:</span><strong>${escapeHtml(paymentInfo.method)}</strong></div>
+            <div class="payment-info-row"><span>Por dónde fue:</span><strong>${escapeHtml(paymentInfo.channel)}</strong></div>
+          </div>
           <div><strong>Fecha del reporte:</strong> ${escapeHtml(fmt.dateTime(new Date().toISOString()))}</div>
           <div><strong>Facturas incluidas:</strong> ${trips.length}</div>
         </div>
@@ -16129,7 +16129,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const contentWidth = pageWidth - (margin * 2);
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
       const clientName = trips[0]?.destination_client || 'Cliente';
-      const paymentChannelSummary = summarizeDirectTripPaymentChannels(trips);
+      const paymentInfo = summarizeDirectTripPaymentInfo(trips);
       const totalAmount = trips.reduce((sum, trip) => sum + toFiniteNumber(trip.trip_amount, 0), 0);
       const totalPaid = trips.reduce((sum, trip) => {
         return sum + Math.min(toFiniteNumber(trip.amount_paid, 0), toFiniteNumber(trip.trip_amount, 0));
@@ -16189,10 +16189,19 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       yPos += 6;
       doc.text('Cliente destino: ' + clientName, margin, yPos);
       yPos += 6;
-      const channelLines = doc.splitTextToSize('Por donde fue el pago: ' + paymentChannelSummary, contentWidth);
-      channelLines.forEach(line => {
-        doc.text(line, margin, yPos);
-        yPos += 5;
+      doc.setFont(undefined, 'bold');
+      doc.text('INFORMACION DEL PAGO', margin, yPos);
+      doc.setFont(undefined, 'normal');
+      yPos += 5;
+      [
+        'Fecha del pago: ' + paymentInfo.date,
+        'Metodo de pago: ' + paymentInfo.method,
+        'Por donde fue: ' + paymentInfo.channel
+      ].forEach(detail => {
+        doc.splitTextToSize(detail, contentWidth).forEach(line => {
+          doc.text(line, margin, yPos);
+          yPos += 5;
+        });
       });
       yPos += 1;
       doc.text(trips.length + (trips.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas'), margin, yPos);
@@ -16205,7 +16214,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         const status = trip.payment_status === 'pagado' || pending <= 0
           ? 'PAGADO'
           : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
-        const paymentHistory = getDirectTripPaymentHistory(trip);
         const details = [
           'Fecha de factura: ' + fmt.dateTime(trip.date),
           'Compania origen: ' + (trip.source_company || 'No especificada'),
@@ -16216,10 +16224,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           'Estado: ' + status
         ];
         if (trip.notes) details.push('Notas: ' + trip.notes);
-        paymentHistory.forEach((payment, index) => {
-          details.push('Pago ' + (index + 1) + ': ' + fmt.currency(payment.amount) + ' - ' + fmt.dateTime(payment.date));
-          details.push('Metodo: ' + payment.method.toUpperCase());
-        });
         const detailLines = details.flatMap(detail => doc.splitTextToSize(detail, contentWidth - 10));
         const cardHeight = 36 + (detailLines.length * 4);
 
