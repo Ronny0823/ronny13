@@ -34,10 +34,11 @@ const checks = [
   [app.includes('await generateClientCreditReportPDF(invoices, isPaidSelection)') && app.includes('await generateClientPaymentReportPDF(selectedPayments)'), 'El boton PDF WhatsApp no usa los nuevos formatos'],
   [!app.includes('await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true)') && !app.includes('await generateConsolidatedCreditPaymentPDF(selectedPayments, true)'), 'El boton PDF WhatsApp todavia usa los formatos anteriores'],
   [app.includes('showSelectedDirectTripPaymentModal') && app.includes('saveSelectedDirectTripPayment'), 'Falta el pago multiple de Viajes Directos'],
+  [app.includes('updateDirectTripPaymentPreview') && app.includes('Guardar y aplicar el pago') && app.includes('Trabajar con varias facturas'), 'La pantalla de pago multiple no explica ni muestra el reparto'],
   [app.includes("batch_id: batchId") && app.includes("multiple_payment: true"), 'El pago multiple no conserva el grupo de facturas'],
   [app.includes('await AppState.saveUserData();') && app.includes('No se aplicaron cambios.'), 'El pago multiple no espera el guardado o no revierte en error'],
-  [workflow.includes('v1.51'), 'El flujo de APK no apunta a v1.51'],
-  [gradle.includes('versionCode 52') && gradle.includes("versionName '1.51.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.52'), 'El flujo de APK no apunta a v1.52'],
+  [gradle.includes('versionCode 53') && gradle.includes("versionName '1.52.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -46,4 +47,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.51 completadas');
+console.log('Verificaciones v1.52 completadas');

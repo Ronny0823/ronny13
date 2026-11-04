@@ -13827,27 +13827,57 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <div class="flex items-center justify-between gap-3 mb-3">
                 <div class="flex items-center gap-2 min-w-0">
                   <div class="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                    <i data-lucide="files" class="w-4 h-4 text-blue-300"></i>
+                    <i data-lucide="list-checks" class="w-4 h-4 text-blue-300"></i>
                   </div>
                   <div class="min-w-0">
-                    <div class="text-sm font-semibold text-slate-200">Seleccion de facturas</div>
-                    <div class="text-xs text-slate-500">Marca las que vas a cobrar o compartir</div>
+                    <div class="text-sm font-semibold text-slate-100">Trabajar con varias facturas</div>
+                    <div class="text-xs text-slate-500">Sigue estos pasos para registrar un pago o crear un PDF</div>
                   </div>
                 </div>
                 <span id="directTripSelectedCount" class="shrink-0 text-xs font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">0 seleccionadas</span>
               </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 flex gap-2">
+                  <span class="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                  <div>
+                    <div class="text-xs font-semibold text-slate-200">Marca las facturas</div>
+                    <div class="text-[11px] text-slate-500">Usa las casillas de la tabla.</div>
+                  </div>
+                </div>
+                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 flex gap-2">
+                  <span class="w-6 h-6 rounded-full bg-emerald-500 text-slate-900 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                  <div>
+                    <div class="text-xs font-semibold text-slate-200">Elige la acción</div>
+                    <div class="text-[11px] text-slate-500">Registrar pago o crear PDF.</div>
+                  </div>
+                </div>
+                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 flex gap-2">
+                  <span class="w-6 h-6 rounded-full bg-amber-500 text-slate-900 text-xs font-bold flex items-center justify-center shrink-0">3</span>
+                  <div>
+                    <div class="text-xs font-semibold text-slate-200">Revisa y guarda</div>
+                    <div class="text-[11px] text-slate-500">Confirma el reparto del pago.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 mb-3 flex items-start gap-2">
+                <i data-lucide="info" class="w-4 h-4 text-amber-300 shrink-0 mt-0.5"></i>
+                <p class="text-xs text-amber-100/80">Para registrar un pago múltiple, selecciona facturas pendientes del mismo cliente.</p>
+              </div>
+
               <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
                 <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-sm font-semibold rounded-lg transition-all">
-                  <i data-lucide="check-square" class="w-4 h-4"></i> Seleccionar visibles
+                  <i data-lucide="check-square" class="w-4 h-4"></i> Marcar visibles
                 </button>
                 <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700/40 border border-slate-600/70 text-slate-300 hover:bg-slate-700 text-sm font-semibold rounded-lg transition-all">
-                  <i data-lucide="square" class="w-4 h-4"></i> Quitar seleccion
+                  <i data-lucide="square" class="w-4 h-4"></i> Borrar selección
                 </button>
-                <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i> Pagar seleccionadas
+                <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Registrar el dinero recibido en las facturas marcadas">
+                  <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i> Registrar pago
                 </button>
-                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  <i data-lucide="send" class="w-4 h-4"></i> PDF WhatsApp
+                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Crear un PDF con las facturas marcadas">
+                  <i data-lucide="send" class="w-4 h-4"></i> Crear PDF WhatsApp
                 </button>
               </div>
             </div>
@@ -14098,7 +14128,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   });
 
   if (!selected.length) {
-    showToast('Selecciona una o varias facturas pendientes', 'error');
+    showToast('Primero marca una o varias facturas que tengan saldo pendiente', 'error');
     return;
   }
 
@@ -14106,7 +14136,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     safeText(trip.destination_client).trim().toLowerCase() || '__sin_cliente__'
   ))];
   if (clients.length > 1) {
-    showToast('Selecciona facturas de un mismo cliente para registrar el pago', 'error');
+    showToast('Para registrar un solo pago, marca facturas del mismo cliente', 'error');
     return;
   }
 
@@ -14116,6 +14146,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   const totalPending = ordered.reduce((sum, trip) =>
     sum + Math.max(0, (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0)), 0
   );
+  const clientName = safeText(ordered[0].destination_client || 'Cliente sin nombre');
 
   AppState.selectedDirectTripPaymentIds = ordered.map(trip => trip.__backendId);
 
@@ -14123,55 +14154,75 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 sm:p-6 shadow-2xl max-w-2xl mx-auto">
       <div class="flex items-start justify-between gap-4 mb-5">
         <div>
-          <h2 class="text-xl font-bold text-slate-100">Pago de varias facturas</h2>
-          <p class="text-sm text-slate-500 mt-1">${ordered.length} factura(s) de ${safeText(ordered[0].destination_client || 'cliente sin nombre')}</p>
+          <div class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">Pago múltiple</div>
+          <h2 class="text-xl font-bold text-slate-100">Registrar pago a varias facturas</h2>
+          <p class="text-sm text-slate-400 mt-1">Revisa cómo se repartirá el dinero antes de guardarlo.</p>
         </div>
-        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-200">
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-200" aria-label="Cerrar">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
-      <div class="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden mb-5">
-        <div class="max-h-56 overflow-y-auto divide-y divide-slate-700/70">
-          ${ordered.map(trip => {
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div class="rounded-xl bg-blue-500/10 border border-blue-500/20 p-3">
+          <div class="text-xs text-blue-300 mb-1">CLIENTE</div>
+          <div class="font-semibold text-slate-100 truncate">${clientName}</div>
+        </div>
+        <div class="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-right">
+          <div class="text-xs text-amber-300 mb-1">TOTAL A SALDAR</div>
+          <div class="font-mono text-lg font-bold text-amber-200">${fmt.currency(totalPending)}</div>
+        </div>
+      </div>
+
+      <div class="rounded-xl bg-slate-800/50 border border-slate-700 overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-slate-700 bg-slate-800/80">
+          <div class="font-semibold text-slate-200">${ordered.length} factura(s) seleccionada(s)</div>
+          <div class="text-xs text-slate-500 mt-0.5">El pago comienza por la factura más antigua.</div>
+        </div>
+        <div class="max-h-60 overflow-y-auto divide-y divide-slate-700/70">
+          ${ordered.map((trip, index) => {
             const pending = Math.max(0, (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0));
             return `
-              <div class="flex items-center justify-between gap-3 px-4 py-3">
-                <div class="min-w-0">
-                  <div class="font-mono text-sm font-semibold text-primary-300">${safeText(trip.invoice_number || 'Sin factura')}</div>
-                  <div class="text-xs text-slate-500">${fmt.dateTime(trip.date)} · ${safeText(trip.material_type || 'Sin material')}</div>
+              <div class="px-4 py-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="font-mono text-sm font-semibold text-primary-300">${safeText(trip.invoice_number || 'Sin factura')}</div>
+                    <div class="text-xs text-slate-500 mt-0.5">${fmt.dateTime(trip.date)} · ${safeText(trip.material_type || 'Sin material')}</div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div class="text-xs text-slate-500">Debe actualmente</div>
+                    <div class="font-mono font-semibold text-rose-300">${fmt.currency(pending)}</div>
+                  </div>
                 </div>
-                <div class="text-right shrink-0">
-                  <div class="text-xs text-slate-500">Pendiente</div>
-                  <div class="font-mono font-semibold text-rose-300">${fmt.currency(pending)}</div>
+                <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-700/50 text-xs">
+                  <span class="text-slate-500">Se aplicará de este pago:</span>
+                  <span id="multiDirectPaymentApply-${index}" class="font-mono font-bold text-emerald-300">RD$ 0.00</span>
                 </div>
               </div>
             `;
           }).join('')}
         </div>
-        <div class="flex items-center justify-between gap-3 px-4 py-3 bg-emerald-500/10 border-t border-emerald-500/20">
-          <span class="font-semibold text-emerald-200">Total pendiente</span>
-          <span class="font-mono text-xl font-bold text-emerald-300">${fmt.currency(totalPending)}</span>
-        </div>
       </div>
 
       <form onsubmit="saveSelectedDirectTripPayment(event)" class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-slate-400 mb-2">Monto total del pago</label>
+        <div class="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+          <label class="block text-sm font-bold text-emerald-200 mb-2">¿Cuánto dinero entregó el cliente?</label>
           <div class="relative">
             <span class="absolute left-3 top-3 text-slate-500">RD$</span>
             <input type="number" id="multiDirectPaymentAmount" step="0.01" min="0.01" max="${totalPending.toFixed(2)}" required
-              value="${totalPending.toFixed(2)}"
-              class="w-full pl-12 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
+              value="${totalPending.toFixed(2)}" oninput="updateDirectTripPaymentPreview()"
+              class="w-full pl-12 pr-4 py-3 bg-slate-800 border border-emerald-500/30 rounded-lg text-slate-100 text-lg font-mono font-bold input-focus">
           </div>
-          <p class="text-xs text-slate-500 mt-1">Se aplicará primero a la factura más antigua. Máximo: ${fmt.currency(totalPending)}</p>
+          <p class="text-xs text-slate-500 mt-2">Puedes escribir un pago completo o un abono. No puede superar ${fmt.currency(totalPending)}.</p>
         </div>
 
+        <div id="multiDirectPaymentPreview" class="rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-100"></div>
+
         <div>
-          <label class="block text-sm font-medium text-slate-400 mb-2">Método de pago</label>
+          <label class="block text-sm font-medium text-slate-300 mb-2">¿Cómo pagó el cliente?</label>
           <select id="multiDirectPaymentMethod" required
             class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 input-focus select-custom">
-            <option value="">Seleccionar...</option>
+            <option value="">Selecciona el método de pago...</option>
             <option value="efectivo">Efectivo</option>
             <option value="transferencia">Transferencia</option>
             <option value="cheque">Cheque</option>
@@ -14180,23 +14231,90 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-slate-400 mb-2">Por dónde fue / referencia (opcional)</label>
-          <input type="text" id="multiDirectPaymentChannel" placeholder="Banco, caja, número de cheque o referencia"
+          <label class="block text-sm font-medium text-slate-300 mb-2">¿Por dónde se recibió? <span class="text-slate-500 font-normal">(opcional)</span></label>
+          <input type="text" id="multiDirectPaymentChannel" placeholder="Ejemplo: Caja, Banreservas, Cooperativa San José..."
             class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
         </div>
 
-        <div class="flex gap-3 pt-3">
-          <button type="button" onclick="closeModal()" class="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg transition-colors">
+        <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 flex gap-3">
+          <i data-lucide="info" class="w-5 h-5 text-amber-300 shrink-0 mt-0.5"></i>
+          <p class="text-xs text-amber-100/80">Al guardar, cada factura conservará su parte del pago y se sincronizará con los demás equipos.</p>
+        </div>
+
+        <div class="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+          <button type="button" onclick="closeModal()" class="sm:w-1/3 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg transition-colors">
             Cancelar
           </button>
           <button type="submit" class="flex-1 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold rounded-lg transition-all flex items-center justify-center gap-2">
-            <i data-lucide="badge-dollar-sign" class="w-5 h-5"></i> Aplicar pago
+            <i data-lucide="save" class="w-5 h-5"></i> Guardar y aplicar el pago
           </button>
         </div>
       </form>
     </div>
   `);
   lucide.createIcons();
+  updateDirectTripPaymentPreview();
+}
+
+    function updateDirectTripPaymentPreview() {
+  const ids = Array.isArray(AppState.selectedDirectTripPaymentIds)
+    ? AppState.selectedDirectTripPaymentIds
+    : [];
+  const trips = ids
+    .map(id => AppState.data.find(record => record.__backendId === id && record.type === 'direct_trip'))
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+  const amount = Number(document.getElementById('multiDirectPaymentAmount')?.value);
+  const summary = document.getElementById('multiDirectPaymentPreview');
+  const totalPendingCents = trips.reduce((sum, trip) => {
+    const totalCents = Math.round((Number(trip.trip_amount) || 0) * 100);
+    const paidCents = Math.round((Number(trip.amount_paid) || 0) * 100);
+    return sum + Math.max(0, totalCents - paidCents);
+  }, 0);
+
+  let remainingCents = Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100)) : 0;
+  let fullyPaid = 0;
+  let partiallyPaid = 0;
+  let affected = 0;
+
+  trips.forEach((trip, index) => {
+    const totalCents = Math.round((Number(trip.trip_amount) || 0) * 100);
+    const paidCents = Math.round((Number(trip.amount_paid) || 0) * 100);
+    const pendingCents = Math.max(0, totalCents - paidCents);
+    const appliedCents = Math.min(remainingCents, pendingCents);
+    remainingCents -= appliedCents;
+
+    if (appliedCents > 0) affected += 1;
+    if (appliedCents >= pendingCents && pendingCents > 0) fullyPaid += 1;
+    else if (appliedCents > 0) partiallyPaid += 1;
+
+    const label = document.getElementById(`multiDirectPaymentApply-${index}`);
+    if (label) {
+      label.textContent = fmt.currency(appliedCents / 100);
+      label.className = `font-mono font-bold ${appliedCents > 0 ? 'text-emerald-300' : 'text-slate-500'}`;
+    }
+  });
+
+  if (!summary) return;
+  const paymentCents = Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+  if (paymentCents <= 0) {
+    summary.innerHTML = '<strong>Falta el monto:</strong> escribe cuánto dinero entregó el cliente.';
+    summary.className = 'rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100';
+    return;
+  }
+  if (paymentCents > totalPendingCents) {
+    summary.innerHTML = `<strong>Monto demasiado alto:</strong> el cliente solo debe ${fmt.currency(totalPendingCents / 100)} en estas facturas.`;
+    summary.className = 'rounded-lg border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100';
+    return;
+  }
+
+  const untouched = Math.max(0, trips.length - affected);
+  summary.className = 'rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-100';
+  if (paymentCents === totalPendingCents) {
+    summary.innerHTML = `<strong>Resultado:</strong> las ${fullyPaid} factura(s) seleccionada(s) quedarán pagadas completamente.`;
+  } else {
+    summary.innerHTML = `<strong>Resultado:</strong> ${fullyPaid} factura(s) quedarán pagadas, ${partiallyPaid} quedarán con pago parcial y ${untouched} todavía no recibirán parte de este pago.`;
+  }
 }
 
     async function saveSelectedDirectTripPayment(e) {
@@ -14278,7 +14396,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     AppState.selectedDirectTripPaymentIds = [];
     closeModal();
     renderPage();
-    showToast(`Pago de ${fmt.currency(paymentCents / 100)} aplicado a ${affectedInvoices} factura(s)`, 'success');
+    showToast(`Pago guardado: ${fmt.currency(paymentCents / 100)} distribuido entre ${affectedInvoices} factura(s)`, 'success');
   } catch (err) {
     snapshots.forEach(snapshot => {
       snapshot.trip.amount_paid = snapshot.amount_paid;
