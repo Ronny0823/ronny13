@@ -14127,6 +14127,36 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       await generateSelectedDirectTripsPDF(selected);
     }
 
+    function getDirectTripPaymentHistory(trip) {
+  const storedPayments = Array.isArray(trip?.payments) ? trip.payments : [];
+  const history = storedPayments.map(payment => {
+    const amount = Math.max(0, Number(payment?.amount) || 0);
+    return {
+      date: payment?.date || trip?.date || new Date().toISOString(),
+      amount,
+      method: safeText(payment?.method || trip?.payment_method) || 'No especificado',
+      channel: safeText(
+        payment?.payment_channel ||
+        payment?.channel ||
+        payment?.payment_source ||
+        payment?.notes ||
+        trip?.payment_notes
+      ) || 'No especificado'
+    };
+  }).filter(payment => payment.amount > 0);
+
+  if (!history.length && (Number(trip?.amount_paid) || 0) > 0) {
+    history.push({
+      date: trip?.date || new Date().toISOString(),
+      amount: Math.max(0, Number(trip.amount_paid) || 0),
+      method: safeText(trip?.payment_method) || 'No especificado',
+      channel: safeText(trip?.payment_notes || trip?.payment_channel) || 'No especificado'
+    });
+  }
+
+  return history;
+}
+
     function buildSelectedDirectTripsPrintText(trips) {
   const h = BluetoothPrinter.helpers();
   const clientName = trips[0]?.destination_client || 'Cliente sin nombre';
@@ -14153,6 +14183,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
     const pending = Math.max(0, total - paid);
     const status = pending <= 0 ? 'PAGADA' : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
+    const paymentHistory = getDirectTripPaymentHistory(trip);
 
     rows.push(h.thickLine);
     rows.push('\x1bE\x01' + String(trip.invoice_number || 'SIN FACTURA') + '\x1bE\x00');
@@ -14162,6 +14193,15 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     rows.push(h.item('Total:', fmt.currency(total)));
     rows.push(h.item('Pagado:', fmt.currency(paid)));
     rows.push(h.item('Pendiente:', fmt.currency(pending)));
+    if (paymentHistory.length) {
+      rows.push('PAGOS RECIBIDOS');
+      paymentHistory.forEach((payment, index) => {
+        rows.push('Pago ' + (index + 1) + ': ' + fmt.currency(payment.amount));
+        rows.push('Fecha: ' + fmt.dateTime(payment.date));
+        rows.push('Metodo: ' + payment.method.toUpperCase());
+        rows.push(...h.wordWrap('Por donde fue: ' + payment.channel));
+      });
+    }
   });
 
   rows.push(h.thickLine);
@@ -14224,6 +14264,22 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     const pending = Math.max(0, total - paid);
     const status = pending <= 0 ? 'PAGADA' : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
     const statusClass = pending <= 0 ? 'paid' : paid > 0 ? 'partial' : 'pending';
+    const paymentHistory = getDirectTripPaymentHistory(trip);
+    const paymentHistoryHtml = paymentHistory.length ? `
+      <div class="payment-history">
+        <div class="payment-history-title">PAGOS RECIBIDOS</div>
+        ${paymentHistory.map((payment, index) => `
+          <div class="payment-item">
+            <div class="payment-item-head">
+              <strong>Pago ${index + 1}: ${fmt.currency(payment.amount)}</strong>
+              <span>${escapeHtml(fmt.dateTime(payment.date))}</span>
+            </div>
+            <div><span>Método:</span><strong>${escapeHtml(payment.method.toUpperCase())}</strong></div>
+            <div><span>Por dónde fue:</span><strong>${escapeHtml(payment.channel)}</strong></div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
     return `
       <section class="invoice-card">
         <div class="invoice-head">
@@ -14239,6 +14295,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           <div><span>Cantidad:</span><strong>${escapeHtml(fmt.number(trip.meters || 0, 2))} m³</strong></div>
           <div><span>Vehículo:</span><strong>${escapeHtml(trip.vehicle_plate || 'No especificado')}</strong></div>
         </div>
+        ${paymentHistoryHtml}
         <div class="money-row"><span>Total de la factura</span><strong>${fmt.currency(total)}</strong></div>
         <div class="money-row paid-text"><span>Pagado</span><strong>${fmt.currency(paid)}</strong></div>
         <div class="money-row pending-text"><span>Falta por pagar</span><strong>${fmt.currency(pending)}</strong></div>
@@ -14288,6 +14345,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           .details { padding: 7px 8px; border-bottom: 1px solid #e2e8f0; }
           .details div, .money-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
           .details span { color: #64748b; }
+          .payment-history { background: #eff6ff; border-top: 1px solid #bfdbfe; border-bottom: 1px solid #bfdbfe; padding: 7px 8px; }
+          .payment-history-title { color: #1d4ed8; font-size: 0.82em; font-weight: 800; margin-bottom: 5px; }
+          .payment-item { border-top: 1px dashed #93c5fd; padding: 5px 0; }
+          .payment-item:first-of-type { border-top: 0; }
+          .payment-item-head, .payment-item div { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+          .payment-item span { color: #475569; }
           .money-row { padding: 5px 8px; }
           .paid-text { color: #047857; }
           .pending-text { color: #b45309; font-size: 1.05em; border-top: 1px solid #e2e8f0; }
@@ -14442,8 +14505,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-slate-300 mb-2">¿Por dónde se recibió? <span class="text-slate-500 font-normal">(opcional)</span></label>
-          <input type="text" id="multiDirectPaymentChannel" placeholder="Ejemplo: Caja, Banreservas, Cooperativa San José..."
+          <label class="block text-sm font-medium text-slate-300 mb-2">¿Por dónde se recibió el pago?</label>
+          <input type="text" id="multiDirectPaymentChannel" required placeholder="Ejemplo: Caja, Banreservas, Cooperativa San José..."
             class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
         </div>
 
@@ -14555,6 +14618,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   }
   if (!method) {
     showToast('Selecciona el método de pago', 'error');
+    return;
+  }
+  if (!paymentChannel) {
+    showToast('Indica por dónde se recibió el pago', 'error');
     return;
   }
   if (!Number.isFinite(amount) || paymentCents <= 0 || paymentCents > totalPendingCents) {
@@ -15159,8 +15226,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-slate-400 mb-2">Notas (opcional)</label>
-              <input type="text" id="paymentNotes" placeholder="Referencia, numero de cheque, etc."
+              <label class="block text-sm font-medium text-slate-400 mb-2">¿Por dónde se recibió el pago?</label>
+              <input type="text" id="paymentNotes" required placeholder="Ejemplo: Caja, Banreservas, Cooperativa San José..."
                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus">
             </div>
 
@@ -15187,6 +15254,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const amount = parseFloat(document.getElementById('paymentAmount').value);
       const method = document.getElementById('paymentMethod').value;
       const notes = document.getElementById('paymentNotes').value.trim();
+
+      if (!notes) {
+        showToast('Indica por dónde se recibió el pago', 'error');
+        return;
+      }
 
       const currentPaid = trip.amount_paid || 0;
       const totalAmount = trip.trip_amount || 0;
@@ -16110,6 +16182,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         const status = trip.payment_status === 'pagado' || pending <= 0
           ? 'PAGADO'
           : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
+        const paymentHistory = getDirectTripPaymentHistory(trip);
         const details = [
           'Fecha de factura: ' + fmt.dateTime(trip.date),
           'Compania origen: ' + (trip.source_company || 'No especificada'),
@@ -16120,6 +16193,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           'Estado: ' + status
         ];
         if (trip.notes) details.push('Notas: ' + trip.notes);
+        paymentHistory.forEach((payment, index) => {
+          details.push('Pago ' + (index + 1) + ': ' + fmt.currency(payment.amount) + ' - ' + fmt.dateTime(payment.date));
+          details.push('Metodo: ' + payment.method.toUpperCase() + ' | Por donde fue: ' + payment.channel);
+        });
         const detailLines = details.flatMap(detail => doc.splitTextToSize(detail, contentWidth - 10));
         const cardHeight = 36 + (detailLines.length * 4);
 
