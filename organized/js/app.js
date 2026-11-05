@@ -724,8 +724,7 @@ markSettingsDirty(username){if(username)SupabaseSync.originalSetItem(this.key(us
 hasPending(username){return this.readSet(username,'pending').size>0||this.readSet(username,'deleted').size>0||localStorage.getItem(this.key(username,'settings_dirty'))==='1'},
 async pullAndMerge(username){
 if(!SupabaseSync.client||!username||navigator.onLine===false)return false;
-const pending=this.readSet(username,'pending'),localKey=`erp_data_${username}`,localParsed=SupabaseSync.parseStoredValue(localStorage.getItem(localKey)||'[]',[]),localById=new Map();
-(Array.isArray(localParsed)?localParsed:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)localById.set(id,record)});
+const localKey=`erp_data_${username}`;
 let cursor=this.readCursor(username)||{at:'1970-01-01T00:00:00.000Z',id:''};
 const remoteRows=[];
 for(;;){
@@ -738,17 +737,24 @@ const last=page[page.length-1];
 cursor={at:new Date(last.server_updated_at).toISOString(),id:String(last.record_id||'')};
 if(page.length<this.pageSize)break;
 }
-remoteRows.forEach(row=>{const id=String(row.record_id||'');if(!id)return;if(row.deleted_at){localById.delete(id);pending.delete(id);return}const remoteRecord=row.payload&&typeof row.payload==='object'?{...row.payload,__backendId:row.payload.__backendId||id,type:row.payload.type||row.record_type}:{__backendId:id,type:row.record_type||'unknown'};const remoteUpdatedAt=row.client_updated_at||row.server_updated_at||new Date(0).toISOString();remoteRecord[SupabaseSync.recordUpdatedField]=remoteUpdatedAt;remoteRecord[SupabaseSync.recordHashField]=SupabaseSync.recordHash(remoteRecord);const localRecord=localById.get(id);if(pending.has(id))return;if(!localRecord){localById.set(id,remoteRecord);return}const localTime=SupabaseSync.getRecordTimestamp(localRecord),remoteTime=Date.parse(remoteUpdatedAt)||0;if(localTime>remoteTime&&SupabaseSync.recordSignature(localRecord)!==SupabaseSync.recordSignature(remoteRecord)){pending.add(id);return}if(remoteTime>=localTime)localById.set(id,remoteRecord)});
+// Releer los cambios locales hechos mientras se descargaban las páginas.
+const pending=this.readSet(username,'pending'),deleted=SupabaseSync.getDeletedIds(username);
+const localRecords=SupabaseSync.parseStoredValue(localStorage.getItem(localKey)||'[]',[]);
+const localById=new Map();
+(Array.isArray(localRecords)?localRecords:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)localById.set(id,record)});
+remoteRows.forEach(row=>{const id=String(row.record_id||'');if(!id)return;if(deleted.has(id)){localById.delete(id);return}if(row.deleted_at){localById.delete(id);pending.delete(id);return}const remoteRecord=row.payload&&typeof row.payload==='object'?{...row.payload,__backendId:row.payload.__backendId||id,type:row.payload.type||row.record_type}:{__backendId:id,type:row.record_type||'unknown'};const remoteUpdatedAt=row.client_updated_at||row.server_updated_at||new Date(0).toISOString();remoteRecord[SupabaseSync.recordUpdatedField]=remoteUpdatedAt;remoteRecord[SupabaseSync.recordHashField]=SupabaseSync.recordHash(remoteRecord);const localRecord=localById.get(id);if(pending.has(id))return;if(!localRecord){localById.set(id,remoteRecord);return}const localTime=SupabaseSync.getRecordTimestamp(localRecord),remoteTime=Date.parse(remoteUpdatedAt)||0;if(localTime>remoteTime&&SupabaseSync.recordSignature(localRecord)!==SupabaseSync.recordSignature(remoteRecord)){pending.add(id);return}if(remoteTime>=localTime)localById.set(id,remoteRecord)});
 SupabaseSync.originalSetItem(localKey,JSON.stringify(Array.from(localById.values())));this.writeSet(username,'pending',pending);this.writeCursor(username,cursor);
-if(localStorage.getItem(this.key(username,'settings_dirty'))!=='1'){const{data,error}=await SupabaseSync.client.from(this.settingsTable).select('config,updated_at').maybeSingle();if(error)throw error;if(data?.config){const current=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_config_${username}`),{});SupabaseSync.originalSetItem(`erp_config_${username}`,JSON.stringify({...current,...data.config}))}}
+if(localStorage.getItem(this.key(username,'settings_dirty'))!=='1'){const{data,error}=await SupabaseSync.client.from(this.settingsTable).select('config,updated_at').maybeSingle();if(error)throw error;if(data?.config&&localStorage.getItem(this.key(username,'settings_dirty'))!=='1'){const current=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_config_${username}`),{});SupabaseSync.originalSetItem(`erp_config_${username}`,JSON.stringify({...current,...data.config}))}}
 return remoteRows.length>0},
-async pushSettings(username){if(!username||localStorage.getItem(this.key(username,'settings_dirty'))!=='1')return true;const config=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_config_${username}`),{});const{error}=await SupabaseSync.client.from(this.settingsTable).upsert({config,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;SupabaseSync.originalRemoveItem(this.key(username,'settings_dirty'));return true},
+async pushSettings(username){if(!username||localStorage.getItem(this.key(username,'settings_dirty'))!=='1')return true;const configKey=`erp_config_${username}`,raw=localStorage.getItem(configKey);const config=SupabaseSync.parseStoredValue(raw,{});const{error}=await SupabaseSync.client.from(this.settingsTable).upsert({config,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;if(localStorage.getItem(configKey)===raw)SupabaseSync.originalRemoveItem(this.key(username,'settings_dirty'));return true},
 async flush(username=AppState.currentUser){
 if(!SupabaseSync.client||!username||navigator.onLine===false)return false;if(this.flushing)return this.flushing;
 this.flushing=(async()=>{const pending=this.readSet(username,'pending'),deleted=this.readSet(username,'deleted'),records=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_data_${username}`),[]),byId=new Map();(Array.isArray(records)?records:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)byId.set(id,record)});const deviceId=this.getDeviceId(),queuedRecords=Array.from(pending).map(id=>byId.get(id)).filter(Boolean),sentSignatures=new Map(queuedRecords.map(record=>[SupabaseSync.getRecordId(record),SupabaseSync.recordSignature(record)]));
 for(let i=0;i<queuedRecords.length;i+=200){const batch=queuedRecords.slice(i,i+200).map(record=>({record_id:SupabaseSync.getRecordId(record),record_type:record.type||'unknown',payload:record,client_updated_at:record[SupabaseSync.recordUpdatedField]||new Date().toISOString()}));const{error}=await SupabaseSync.client.rpc('sync_erp_records',{p_records:batch,p_deleted_ids:[],p_device_id:deviceId});if(error)throw error}
 const deletedIds=Array.from(deleted);for(let i=0;i<deletedIds.length;i+=500){const{error}=await SupabaseSync.client.rpc('sync_erp_records',{p_records:[],p_deleted_ids:deletedIds.slice(i,i+500),p_device_id:deviceId});if(error)throw error}
-const latest=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_data_${username}`),[]),latestById=new Map();(Array.isArray(latest)?latest:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)latestById.set(id,record)});sentSignatures.forEach((signature,id)=>{const current=latestById.get(id);if(current&&SupabaseSync.recordSignature(current)===signature)pending.delete(id)});deletedIds.forEach(id=>deleted.delete(id));this.writeSet(username,'pending',pending);this.writeSet(username,'deleted',deleted);await this.pushSettings(username);return !this.hasPending(username)})();
+const latest=SupabaseSync.parseStoredValue(localStorage.getItem(`erp_data_${username}`),[]),latestById=new Map();(Array.isArray(latest)?latest:[]).forEach(record=>{const id=SupabaseSync.getRecordId(record);if(id)latestById.set(id,record)});const latestPending=this.readSet(username,'pending'),latestDeleted=this.readSet(username,'deleted');
+sentSignatures.forEach((signature,id)=>{const current=latestById.get(id);if(current&&SupabaseSync.recordSignature(current)===signature)latestPending.delete(id)});
+deletedIds.forEach(id=>latestDeleted.delete(id));this.writeSet(username,'pending',latestPending);this.writeSet(username,'deleted',latestDeleted);await this.pushSettings(username);return !this.hasPending(username)})();
 try{return await this.flushing}catch(error){console.warn('Sincronizacion por registro pendiente:',error.message||error);return false}finally{this.flushing=null}}
 }})();
 
@@ -1740,7 +1746,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       },
 
       async saveUserData() {
-        if (!this.currentUser) return false;
+        if (!this.currentUser) throw new Error('No hay una sesión para guardar los datos');
         this.invalidateDataCache();
         const username = this.currentUser;
         const dataKey = `erp_data_${username}`;
@@ -1768,13 +1774,41 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         }
         RecordSyncV2.queueRecords(username, changedRecords);
         DataBackup.saveSafetyBackup(username);
-        updateSyncStatus('syncing');
-        const [legacyOk, recordsOk] = await Promise.all([SupabaseSync.flush(), RecordSyncV2.flush(username)]);
-        const ok = legacyOk !== false && recordsOk !== false;
-        updateSyncStatus(ok ? 'synced' : (navigator.onLine === false ? 'offline' : 'pending'));
-        return ok;
+        updateSyncStatus(navigator.onLine === false ? 'offline' : 'pending');
+        scheduleSavedDataSync(username);
       }
     };
+
+    let savedDataSyncTimer = null;
+    let savedDataSyncRunning = false;
+    let savedDataSyncUser = null;
+
+    function scheduleSavedDataSync(username) {
+      savedDataSyncUser = username;
+      if (savedDataSyncRunning || savedDataSyncTimer !== null) return;
+
+      savedDataSyncTimer = setTimeout(async () => {
+        savedDataSyncTimer = null;
+        const user = savedDataSyncUser;
+        savedDataSyncUser = null;
+        if (!user || AppState.currentUser !== user || AuthSystem.currentUser?.username !== user || !SupabaseSync.client || navigator.onLine === false) return;
+
+        savedDataSyncRunning = true;
+        try {
+          const [legacyOk, recordsOk] = await Promise.all([SupabaseSync.flush(), RecordSyncV2.flush(user)]);
+          if (AppState.currentUser === user && AuthSystem.currentUser?.username === user && !savedDataSyncUser) {
+            const synced = legacyOk && recordsOk && !RecordSyncV2.hasPending(user);
+            updateSyncStatus(synced ? 'synced' : (navigator.onLine === false ? 'offline' : 'pending'));
+          }
+        } catch (error) {
+          if (AuthSystem.currentUser?.username === user) updateSyncStatus(navigator.onLine === false ? 'offline' : 'pending');
+          console.warn('La sincronización de los cambios guardados sigue pendiente:', error.message || error);
+        } finally {
+          savedDataSyncRunning = false;
+          if (savedDataSyncUser) scheduleSavedDataSync(savedDataSyncUser);
+        }
+      }, 100);
+    }
 
     document.addEventListener('DOMContentLoaded', async () => {
       await AuthSystem.init();
@@ -2494,7 +2528,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             SupabaseSync.flush(),
             RecordSyncV2.flush(username)
           ]);
-          const flushed = legacyFlushed !== false && recordsFlushed !== false;
+          const flushed = legacyFlushed !== false && recordsFlushed !== false && !RecordSyncV2.hasPending(username);
           if (!flushed && (SupabaseSync.hasDirtyDataKey(username) || RecordSyncV2.hasPending(username))) {
             updateSyncStatus(navigator.onLine === false ? 'offline' : 'pending');
             if (!silent) showToast('Hay datos guardados en este telefono pendientes de subir. No se reemplazaron con la nube.', 'warning');
@@ -4524,13 +4558,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         
         AppState.data.push(invoiceData);
         
-        const cloudSynced = await AppState.saveUserData();
-        if (cloudSynced === false) {
-          showToast(`Venta ${invNum} guardada en este telefono. Se subira automaticamente cuando vuelva el internet.`, 'warning');
-        } else {
-          showToast(`OK Venta registrada - Factura ${invNum}`, 'success');
-        }
-        
+        await AppState.saveUserData();
+        showToast(`Venta guardada - Factura ${invNum}`, 'success');
+
         if (shouldPrint || AppState.config.auto_print) {
           const printerType = getEffectivePrinterType();
 
@@ -10453,12 +10483,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           }
         }
 
-        const cloudSynced = await AppState.saveUserData();
-        if (cloudSynced === false) {
-          showToast('Factura actualizada en este telefono. Se sincronizara automaticamente al volver el internet.', 'warning');
-        } else {
-          showToast('Factura actualizada y sincronizada correctamente', 'success');
-        }
+        await AppState.saveUserData();
+        showToast('Factura actualizada correctamente', 'success');
         closeModal();
         renderPage();
       } catch (err) {
