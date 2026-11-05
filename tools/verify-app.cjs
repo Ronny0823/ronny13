@@ -48,8 +48,8 @@ const checks = [
   [app.includes('multiDirectPaymentChannel\" required') && app.includes('Indica por dónde se recibió el pago'), 'Viajes Directos permite guardar pagos sin indicar por donde fueron'],
   [app.includes("batch_id: batchId") && app.includes("multiple_payment: true"), 'El pago multiple no conserva el grupo de facturas'],
   [app.includes('await AppState.saveUserData();') && app.includes('No se aplicaron cambios.'), 'El pago multiple no espera el guardado o no revierte en error'],
-  [workflow.includes('v1.61'), 'El flujo de APK no apunta a v1.61'],
-  [gradle.includes('versionCode 62') && gradle.includes("versionName '1.61.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.62'), 'El flujo de APK no apunta a v1.62'],
+  [gradle.includes('versionCode 63') && gradle.includes("versionName '1.62.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -58,4 +58,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.61 completadas');
+console.log('Verificaciones v1.62 completadas');

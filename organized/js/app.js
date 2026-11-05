@@ -10104,7 +10104,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       if (!rec) return;
       
       try {
-        const linkedInvoiceNumber = rec.invoice_number || '';
+        const isSaleOrInvoice = rec.type === 'sale' || rec.type === 'invoice';
+        const linkedInvoiceNumber = isSaleOrInvoice ? rec.invoice_number || '' : '';
         const linkedSaleId = rec.type === 'sale'
           ? rec.__backendId
           : AppState.data.find(r => r.type === 'sale' && linkedInvoiceNumber && r.invoice_number === linkedInvoiceNumber)?.__backendId;
@@ -15134,10 +15135,23 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     async function saveDirectTrip(e, editId) {
       e.preventDefault();
 
+      const existing = editId && AppState.data.find(record =>
+        record.type === 'direct_trip' && record.__backendId === editId
+      );
+      if (editId && !existing) {
+        showToast('El viaje directo ya no está disponible', 'error');
+        return;
+      }
+
       const dateValue = document.getElementById('tripDate').value;
       const amount = parseFloat(document.getElementById('tripAmount').value);
-      const amountPaid = parseFloat(document.getElementById('tripAmountPaid')?.value || 0);
-      const paymentStatus = document.getElementById('tripPaymentStatus').value;
+      const editPaymentDetails = document.getElementById('tripPaymentStatus').value === 'pagado';
+      const amountPaid = editPaymentDetails
+        ? Number(document.getElementById('tripAmountPaid')?.value || 0)
+        : toFiniteNumber(existing?.amount_paid, 0);
+
+      const paidCents = Math.round(amountPaid * 100);
+      const totalCents = Math.round(amount * 100);
 
       // Validaciones
       if (!dateValue) {
@@ -15145,7 +15159,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         return;
       }
 
-      if (paymentStatus === 'pagado' && amountPaid > amount) {
+      if (!Number.isFinite(amountPaid) || amountPaid < 0 || paidCents > totalCents) {
         showToast('El monto pagado no puede ser mayor al monto total', 'error');
         return;
       }
@@ -15161,21 +15175,18 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         destination_client: document.getElementById('tripDestinationClient').value.trim(),
         meters: parseFloat(document.getElementById('tripMeters').value),
         trip_amount: amount,
-        payment_status: paymentStatus,
-        amount_paid: paymentStatus === 'pagado' ? amountPaid : 0,
-        payment_method: paymentStatus === 'pagado' ? document.getElementById('tripPaymentMethod').value : '',
-        payment_notes: paymentStatus === 'pagado' ? document.getElementById('tripPaymentNotes').value.trim() : '',
+        payment_status: paidCents === totalCents && (paidCents > 0 || editPaymentDetails) ? 'pagado' : 'pendiente',
+        amount_paid: amountPaid,
+        payment_method: editPaymentDetails ? document.getElementById('tripPaymentMethod').value : (existing?.payment_method || ''),
+        payment_notes: editPaymentDetails ? document.getElementById('tripPaymentNotes').value.trim() : (existing?.payment_notes || ''),
         notes: document.getElementById('tripNotes').value.trim()
       };
 
       try {
-        if (editId) {
-          const existing = AppState.data.find(r => r.__backendId === editId);
-          if (existing) {
-            Object.assign(existing, data);
-            await AppState.saveUserData();
-            showToast('Viaje directo actualizado correctamente');
-          }
+        if (existing) {
+          Object.assign(existing, data);
+          await AppState.saveUserData();
+          showToast('Viaje directo actualizado correctamente');
         } else {
           data.__backendId = createRecordId('dtrip');
           AppState.data.push(data);
