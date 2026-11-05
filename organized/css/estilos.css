@@ -590,3 +590,61 @@
     }
 
   
+
+/* Viajes Directos */
+.direct-trip-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.5rem;
+}
+
+.direct-trip-panels > details[open] {
+  grid-column: 1 / -1;
+}
+
+.direct-trip-selection {
+  position: sticky;
+  bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 15;
+}
+
+.direct-trip-mobile {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .direct-trip-table thead,
+  .direct-trip-table td:nth-child(n+3):nth-child(-n+6),
+  .direct-trip-table td:nth-child(8) {
+    display: none;
+  }
+
+  .direct-trip-table tr {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+    gap: 0.35rem 0.5rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid #334155;
+  }
+
+  .direct-trip-table tr:last-child { border-bottom: 0; }
+  .direct-trip-table td {
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .direct-trip-table td:nth-child(1) { grid-area: 1 / 1; }
+  .direct-trip-table td:nth-child(10) { grid-area: 1 / 2; }
+  .direct-trip-table td:nth-child(9) { grid-area: 1 / 3; }
+  .direct-trip-table td:nth-child(7) { grid-area: 2 / 2; font-weight: 600; }
+  .direct-trip-table td:nth-child(2) { grid-area: 3 / 2; font-size: 0.75rem; }
+  .direct-trip-table td:nth-child(11) { grid-area: 2 / 3 / span 2; text-align: right; }
+  .direct-trip-table td:nth-child(12) { grid-area: 4 / 2 / 5 / 4; }
+  .direct-trip-table td.direct-trip-empty { grid-area: 1 / 1 / 2 / 4; padding: 2rem 0; }
+
+  .direct-trip-mobile { display: revert; }
+}

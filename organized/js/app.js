@@ -4846,7 +4846,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                     </div>
                     <div class="mt-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
                       <span class="text-sm text-slate-400">Seleccionados: <span id="selectedPaymentCount" class="font-bold text-primary-400">0</span></span>
-                      <div class="grid grid-cols-2 gap-2">
+                <div class="grid grid-cols-2 gap-2">
                         <button onclick="printSelectedCreditPayments()" data-credit-action="print-selected-payments" id="btnPrintSelectedPayments" disabled
                           class="py-2 px-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                           <i data-lucide="printer" class="w-4 h-4"></i> Imprimir
@@ -13768,6 +13768,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
     function renderDirectTrips(container) {
       const trips = getRecords('direct_trip');
+      const selectedIds = new Set(getSelectedDirectTrips().map(trip => trip.__backendId));
 
       // Obtener companias unicas para el filtro
       const companies = [...new Set(trips.map(t => t.source_company).filter(Boolean))].sort();
@@ -13805,185 +13806,122 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         .filter(t => t.payment_status === 'pendiente')
         .reduce((a, t) => a + ((t.trip_amount || 0) - (t.amount_paid || 0)), 0);
 
+      const filtersOpen = document.getElementById('directTripFiltersPanel')?.open;
+      const summaryOpen = document.getElementById('directTripSummaryPanel')?.open;
+      const hasAdvancedFilters = AppState.directTripFilters.company || AppState.directTripFilters.dateFrom ||
+        AppState.directTripFilters.dateTo || AppState.directTripFilters.status !== 'all';
+
       container.innerHTML = `
-        <div class="space-y-6 animate-fade-in">
-          <div class="space-y-4">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 class="text-2xl font-bold text-slate-100">Viajes Directos</h2>
-                <p class="text-slate-500 text-sm mt-1">Gestion de viajes de otras companias</p>
+        <div class="space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-xl font-bold text-slate-100">Viajes Directos</h2>
+            <button onclick="showDirectTripModal()" class="inline-flex items-center gap-1 px-3 py-2.5 bg-primary-500 hover:bg-primary-400 text-slate-900 text-sm font-semibold rounded-lg">
+              <i data-lucide="plus" class="w-4 h-4"></i> Nuevo viaje
+            </button>
+          </div>
+          <div class="relative">
+            <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+            <input type="text" inputmode="search" aria-label="Buscar viajes" id="directTripFilterSearch" value="${escapeAttr(AppState.directTripFilters.search || '')}" oninput="updateDirectTripFilters()" placeholder="Compania, chofer, cliente, factura..."
+              class="w-full pl-9 pr-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+          </div>
+
+          <div class="direct-trip-panels">
+            <details id="directTripFiltersPanel" class="glass rounded-lg border border-slate-700/50" ${filtersOpen ? 'open' : ''}>
+              <summary class="cursor-pointer px-3 py-2.5 text-sm font-semibold text-primary-300">Filtros${hasAdvancedFilters ? ' · activos' : ''}</summary>
+              <div class="p-3 border-t border-slate-700/50">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Compañía de origen</label>
+                    <select id="directTripFilterCompany" onchange="updateDirectTripFilters()"
+                      class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
+                      <option value="">Todas las compañías</option>
+                      ${companies.map(c => `<option value="${c}" ${AppState.directTripFilters.company === c ? 'selected' : ''}>${c}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Desde</label>
+                    <input type="date" id="directTripFilterDateFrom" value="${AppState.directTripFilters.dateFrom}" onchange="updateDirectTripFilters()"
+                      class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+                    <input type="date" id="directTripFilterDateTo" value="${AppState.directTripFilters.dateTo}" onchange="updateDirectTripFilters()"
+                      class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Estado Pago</label>
+                    <select id="directTripFilterStatus" onchange="updateDirectTripFilters()"
+                      class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
+                      <option value="all" ${AppState.directTripFilters.status === 'all' ? 'selected' : ''}>Todos</option>
+                      <option value="pendiente" ${AppState.directTripFilters.status === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+                      <option value="pagado" ${AppState.directTripFilters.status === 'pagado' ? 'selected' : ''}>Pagado</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2 mt-3">
+                  <div class="w-full sm:w-48">
+                    <label class="block text-xs text-slate-500 mb-1">Período rápido</label>
+                    <select id="directTripQuickFilter" onchange="setDirectTripQuickFilter(this.value)"
+                      class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
+                      <option value="" ${!AppState.directTripFilters.quickPeriod ? 'selected' : ''}>Seleccionar</option>
+                      <option value="today" ${AppState.directTripFilters.quickPeriod === 'today' ? 'selected' : ''}>Hoy</option>
+                      <option value="week" ${AppState.directTripFilters.quickPeriod === 'week' ? 'selected' : ''}>Semana</option>
+                      <option value="month" ${AppState.directTripFilters.quickPeriod === 'month' ? 'selected' : ''}>Mes</option>
+                    </select>
+                  </div>
+                  <div class="flex items-end">
+                    <button onclick="clearDirectTripFilters()" class="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1">
+                      <i data-lucide="x-circle" class="w-3 h-3"></i> Limpiar
+                    </button>
+                  </div>
+                </div>
+
+                ${hasAdvancedFilters ? `
+                  <div class="mt-3 flex items-center gap-2">
+                    <span class="text-xs text-slate-500">- Mostrando ${filteredTrips.length} de ${trips.length} viajes</span>
+                  </div>
+                ` : ''}
               </div>
-              <div class="flex items-stretch gap-2 w-full sm:w-auto">
-                <button onclick="showDirectTripModal()" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-500 hover:bg-primary-400 text-slate-900 font-semibold rounded-lg transition-all hover:shadow-lg hover:shadow-primary-500/20">
-                  <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Viaje
-                </button>
+
+            </details>
+            <details id="directTripSummaryPanel" class="glass rounded-lg border border-slate-700/50" ${summaryOpen ? 'open' : ''}>
+              <summary class="cursor-pointer px-3 py-2.5 text-sm font-semibold text-slate-200">Resumen</summary>
+              <div class="p-3 space-y-2 border-t border-slate-700/50">
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="glass rounded-xl p-3 border-l-4 border-primary-500">
+                    <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Total Viajes</div>
+                    <div class="text-sm font-bold text-slate-100 font-mono">${totalTrips}</div>
+                  </div>
+                  <div class="glass rounded-xl p-3 border-l-4 border-blue-500">
+                    <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Metros cúbicos</div>
+                    <div class="text-sm font-bold text-blue-400 font-mono">${fmt.number(totalMeters, 2)}</div>
+                  </div>
+                  <div class="glass rounded-xl p-3 border-l-4 border-emerald-500">
+                    <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Monto Total</div>
+                    <div class="text-sm font-bold text-emerald-400 font-mono">${fmt.currency(totalAmount)}</div>
+                  </div>
+                  <div class="glass rounded-xl p-3 border-l-4 border-rose-500">
+                    <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Por Cobrar</div>
+                    <div class="text-sm font-bold text-rose-400 font-mono">${fmt.currency(pendingAmount)}</div>
+                  </div>
+                </div>
+
                 <button onclick="exportDirectTripsExcel()" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold rounded-lg transition-all">
                   <i data-lucide="download" class="w-4 h-4"></i> Excel
                 </button>
               </div>
-            </div>
-
-            <div class="glass rounded-xl p-3 border border-slate-700/50">
-              <div class="mb-2" style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px;">
-                <div class="min-w-0" style="display:flex;align-items:center;gap:8px;">
-                  <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                    <i data-lucide="list-checks" class="w-4 h-4 text-blue-300"></i>
-                  </div>
-                  <div class="min-w-0">
-                    <div class="text-sm font-semibold text-slate-100">Varias facturas</div>
-                    <div class="text-[11px] text-slate-500">Selecciona, revisa el total y elige qué hacer</div>
-                  </div>
-                </div>
-                <span id="directTripSelectedCount" class="shrink-0 text-[11px] font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-1">0 seleccionadas</span>
-              </div>
-
-              <div class="mb-2" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;">
-                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-1.5 py-2 text-center">
-                  <div class="text-[11px] font-semibold text-blue-300">1. Marca</div>
-                </div>
-                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-1.5 py-2 text-center">
-                  <div class="text-[11px] font-semibold text-emerald-300">2. Revisa total</div>
-                </div>
-                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-1.5 py-2 text-center">
-                  <div class="text-[11px] font-semibold text-amber-300">3. Elige acción</div>
-                </div>
-              </div>
-
-              <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 px-2.5 py-2 mb-2 flex items-start gap-2">
-                <i data-lucide="info" class="w-3.5 h-3.5 text-amber-300 shrink-0 mt-0.5"></i>
-                <p class="text-[11px] leading-4 text-amber-100/80">Pago: facturas pendientes del mismo cliente. Impresión o PDF: pagadas, parciales o pendientes.</p>
-              </div>
-
-              <div id="directTripSelectionTotals" class="mb-2" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
-                <div class="rounded-lg bg-blue-500/10 border border-blue-500/25 px-2.5 py-2">
-                  <div class="text-[9px] font-bold uppercase tracking-wide text-blue-300">Total seleccionado</div>
-                  <div id="directTripSelectedTotal" class="font-mono text-base font-bold text-blue-200 mt-0.5">RD$ 0.00</div>
-                </div>
-                <div class="rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-2">
-                  <div class="text-[9px] font-bold uppercase tracking-wide text-amber-300">Pendiente</div>
-                  <div id="directTripSelectedPending" class="font-mono text-base font-bold text-amber-200 mt-0.5">RD$ 0.00</div>
-                </div>
-              </div>
-
-              <div class="mb-2" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
-                <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-1.5 px-2 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-xs font-semibold rounded-lg transition-all">
-                  <i data-lucide="check-square" class="w-3.5 h-3.5"></i> Marcar visibles
-                </button>
-                <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center justify-center gap-1.5 px-2 py-2 bg-slate-700/40 border border-slate-600/70 text-slate-300 hover:bg-slate-700 text-xs font-semibold rounded-lg transition-all">
-                  <i data-lucide="square" class="w-3.5 h-3.5"></i> Borrar selección
-                </button>
-              </div>
-
-              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
-                <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Registrar el dinero recibido en las facturas marcadas">
-                  <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i>
-                  <span>Registrar pago</span>
-                </button>
-                <button id="btnDirectTripPrint" onclick="printSelectedDirectTrips()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Imprimir pagadas, parciales o pendientes">
-                  <i data-lucide="printer" class="w-4 h-4"></i>
-                  <span>Imprimir</span>
-                </button>
-                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Crear un PDF con las facturas marcadas">
-                  <i data-lucide="send" class="w-4 h-4"></i>
-                  <span>PDF WhatsApp</span>
-                </button>
-              </div>
-            </div>
+            </details>
           </div>
 
-          <!-- Estadisticas -->
-          <div class="md:grid-cols-4" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
-            <div class="glass rounded-xl p-3 border-l-4 border-primary-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Total Viajes</div>
-              <div class="text-xl font-bold text-slate-100 font-mono">${totalTrips}</div>
-            </div>
-            <div class="glass rounded-xl p-3 border-l-4 border-blue-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Metros3 Totales</div>
-              <div class="text-xl font-bold text-blue-400 font-mono">${fmt.number(totalMeters, 2)}</div>
-            </div>
-            <div class="glass rounded-xl p-3 border-l-4 border-emerald-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Monto Total</div>
-              <div class="text-xl font-bold text-emerald-400 font-mono">${fmt.currency(totalAmount)}</div>
-            </div>
-            <div class="glass rounded-xl p-3 border-l-4 border-rose-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Por Cobrar</div>
-              <div class="text-xl font-bold text-rose-400 font-mono">${fmt.currency(pendingAmount)}</div>
-            </div>
-          </div>
-
-          <!-- Filtros -->
-          <div class="glass rounded-xl p-4 border border-slate-700/50">
-            <div class="flex items-center gap-2 mb-4 text-primary-400">
-              <i data-lucide="filter" class="w-4 h-4"></i>
-              <span class="text-sm font-medium">Filtrar Viajes</span>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
-              <div class="md:col-span-2">
-                <label class="block text-xs text-slate-500 mb-1">Buscar</label>
-                <div class="relative">
-                  <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
-                  <input type="text" id="directTripFilterSearch" value="${AppState.directTripFilters.search || ''}" oninput="updateDirectTripFilters()" placeholder="Compania, chofer, cliente, factura..."
-                    class="w-full pl-9 pr-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
-                </div>
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Compania Origen</label>
-                <select id="directTripFilterCompany" onchange="updateDirectTripFilters()"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
-                  <option value="">Todas las companias</option>
-                  ${companies.map(c => `<option value="${c}" ${AppState.directTripFilters.company === c ? 'selected' : ''}>${c}</option>`).join('')}
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Desde</label>
-                <input type="date" id="directTripFilterDateFrom" value="${AppState.directTripFilters.dateFrom}" onchange="updateDirectTripFilters()"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Hasta</label>
-                <input type="date" id="directTripFilterDateTo" value="${AppState.directTripFilters.dateTo}" onchange="updateDirectTripFilters()"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Estado Pago</label>
-                <select id="directTripFilterStatus" onchange="updateDirectTripFilters()"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
-                  <option value="all" ${AppState.directTripFilters.status === 'all' ? 'selected' : ''}>Todos</option>
-                  <option value="pendiente" ${AppState.directTripFilters.status === 'pendiente' ? 'selected' : ''}>Pendiente</option>
-                  <option value="pagado" ${AppState.directTripFilters.status === 'pagado' ? 'selected' : ''}>Pagado</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-2 mt-3">
-              <div class="w-full sm:w-48">
-                <label class="block text-xs text-slate-500 mb-1">Periodo rapido</label>
-                <select id="directTripQuickFilter" onchange="setDirectTripQuickFilter(this.value)"
-                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
-                  <option value="" ${!AppState.directTripFilters.quickPeriod ? 'selected' : ''}>Seleccionar</option>
-                  <option value="today" ${AppState.directTripFilters.quickPeriod === 'today' ? 'selected' : ''}>Hoy</option>
-                  <option value="week" ${AppState.directTripFilters.quickPeriod === 'week' ? 'selected' : ''}>Semana</option>
-                  <option value="month" ${AppState.directTripFilters.quickPeriod === 'month' ? 'selected' : ''}>Mes</option>
-                </select>
-              </div>
-              <div class="flex items-end">
-              <button onclick="clearDirectTripFilters()" class="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1">
-                <i data-lucide="x-circle" class="w-3 h-3"></i> Limpiar
-              </button>
-              </div>
-            </div>
-
-            ${AppState.directTripFilters.company || AppState.directTripFilters.dateFrom || AppState.directTripFilters.dateTo || AppState.directTripFilters.status !== 'all' ? `
-              <div class="mt-3 flex items-center gap-2">
-                <span class="text-xs text-slate-500">- Mostrando ${filteredTrips.length} de ${trips.length} viajes</span>
-              </div>
-            ` : ''}
+          <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <h3 class="font-semibold text-slate-100">Facturas <span class="text-slate-400">(${filteredTrips.length})</span></h3>
+            ${filteredTrips.length ? `<button onclick="toggleAllDirectTrips(true)" class="px-2 py-2 text-primary-300">Marcar visibles</button>` : ''}
           </div>
 
           <!-- Tabla de Viajes -->
           <div class="glass rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
-              <table class="w-full data-table">
+              <table class="w-full data-table direct-trip-table">
                 <thead>
                   <tr>
                     <th class="text-center">
@@ -14005,7 +13943,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                 <tbody>
                   ${filteredTrips.length === 0 ? `
                     <tr>
-                      <td colspan="12" class="text-center py-12 text-slate-500">
+                      <td colspan="12" class="direct-trip-empty text-center py-12 text-slate-500">
                         <div class="flex flex-col items-center gap-3">
                           <i data-lucide="route" class="w-12 h-12 opacity-30"></i>
                           <p>${trips.length === 0 ? 'Sin viajes directos registrados' : 'No hay viajes con los filtros seleccionados'}</p>
@@ -14018,8 +13956,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                     return `
                     <tr class="${t.payment_status === 'pagado' ? 'bg-emerald-500/5' : ''}">
                       <td class="text-center">
-                        <input type="checkbox" class="direct-trip-check w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
-                          data-trip-id="${escapeAttr(t.__backendId)}" data-client="${escapeAttr(t.destination_client || '')}" onchange="updateDirectTripSelection()">
+                        <input aria-label="Seleccionar factura ${escapeAttr(t.invoice_number || t.destination_client || '')}" type="checkbox" class="direct-trip-check w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
+                          data-trip-id="${escapeAttr(t.__backendId)}" ${selectedIds.has(t.__backendId) ? 'checked' : ''} onchange="updateDirectTripSelection()">
                       </td>
                       <td class="text-slate-400 text-sm">${fmt.dateTime(t.date)}</td>
                       <td class="font-medium text-slate-200">${t.source_company}</td>
@@ -14029,13 +13967,20 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                       <td class="text-slate-300">${t.destination_client}</td>
                       <td class="text-right font-mono text-blue-400">${fmt.number(t.meters, 2)}</td>
                       <td class="text-right font-mono text-emerald-400">${fmt.currency(t.trip_amount)}</td>
-                      <td class="font-mono text-xs text-primary-400">${t.invoice_number || '-'}</td>
+                      <td class="font-mono text-xs text-primary-400">
+                        <span class="direct-trip-mobile">Factura </span>${escapeHtml(t.invoice_number || 'Sin número')}
+                        <details class="direct-trip-mobile mt-1 text-slate-400">
+                          <summary class="cursor-pointer">Datos del viaje</summary>
+                          <div>${escapeHtml(t.source_company || '-')} · ${escapeHtml(t.driver_name || '-')}</div>
+                          <div>${escapeHtml(t.vehicle_plate || '-')} · ${escapeHtml(t.material_type || '-')} · ${fmt.number(t.meters, 2)} m³</div>
+                        </details>
+                      </td>
                       <td>
                         <span class="status-badge ${t.payment_status === 'pagado' ? 'bg-emerald-500/10 text-emerald-400' : remaining > 0 && t.amount_paid > 0 ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}">
                           <div class="w-1.5 h-1.5 rounded-full ${t.payment_status === 'pagado' ? 'bg-emerald-400' : remaining > 0 && t.amount_paid > 0 ? 'bg-amber-400' : 'bg-rose-400'}"></div>
                           ${t.payment_status === 'pagado' ? 'Pagado' : remaining > 0 && t.amount_paid > 0 ? 'Parcial' : 'Pendiente'}
                         </span>
-                        ${t.amount_paid > 0 ? `<div class="text-xs text-slate-500 mt-1">Pagado: ${fmt.currency(t.amount_paid)}</div>` : ''}
+                        ${remaining > 0 && t.payment_status !== 'pagado' ? `<div class="text-xs text-amber-200 mt-1">Saldo: ${fmt.currency(remaining)}</div>` : ''}
                       </td>
                       <td class="text-right">
                         <div class="flex items-center justify-end gap-2">
@@ -14069,9 +14014,41 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               </table>
             </div>
           </div>
+          <section id="directTripSelectionBar" hidden aria-label="Resumen de facturas seleccionadas" class="direct-trip-selection no-print rounded-xl border border-slate-700 bg-slate-900 p-3 shadow-xl">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <strong id="directTripSelectedCount" class="text-sm text-primary-300" aria-live="polite"></strong>
+              <button onclick="toggleAllDirectTrips(false)" class="text-xs text-slate-300 underline">Borrar selección</button>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-2 text-sm">
+              <div>
+                <div class="text-xs text-slate-400">Monto total seleccionado</div>
+                <strong id="directTripSelectedTotal" class="text-slate-100"></strong>
+              </div>
+              <div>
+                <div class="text-xs text-amber-300">Total a saldar</div>
+                <strong id="directTripSelectedPending" class="text-amber-200"></strong>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Registrar el dinero recibido en las facturas marcadas">
+                <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i>
+                <span>Registrar pago</span>
+              </button>
+              <button id="btnDirectTripPrint" onclick="printSelectedDirectTrips()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Imprimir pagadas, parciales o pendientes">
+                <i data-lucide="printer" class="w-4 h-4"></i>
+                <span>Imprimir</span>
+              </button>
+              <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Crear un PDF con las facturas marcadas">
+                <i data-lucide="send" class="w-4 h-4"></i>
+                <span>PDF WhatsApp</span>
+              </button>
+            </div>
+            <p id="directTripPaymentHint" hidden class="mt-2 text-xs text-amber-200"></p>
+          </section>
         </div>
       `;
 
+      updateDirectTripSelection();
       lucide.createIcons();
     }
 
@@ -14095,11 +14072,17 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       if (pdfButton) pdfButton.disabled = selected.length === 0;
       if (printButton) printButton.disabled = selected.length === 0;
-      if (paymentButton) {
-        paymentButton.disabled = !selected.some(trip =>
-          (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0) > 0.005
-        );
-      }
+      document.getElementById('directTripSelectionBar').hidden = selected.length === 0;
+      const hasPending = selected.some(trip =>
+        (Number(trip.trip_amount) || 0) - (Number(trip.amount_paid) || 0) > 0.005
+      );
+      const mixedClients = hasMixedDirectTripClients(selected);
+      const hint = document.getElementById('directTripPaymentHint');
+      paymentButton.disabled = !hasPending || mixedClients;
+      hint.hidden = !paymentButton.disabled;
+      hint.textContent = mixedClients
+        ? 'Hay varios clientes en la selección. El pago se registra por cliente.'
+        : 'Las facturas seleccionadas no tienen saldo pendiente.';
       if (counter) {
         counter.textContent = selected.length + (selected.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas');
       }
@@ -14128,16 +14111,14 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       updateDirectTripSelection();
     }
 
+    function hasMixedDirectTripClients(trips) {
+      return new Set(trips.map(trip => safeText(trip.destination_client).trim().toLowerCase())).size > 1;
+    }
+
     async function shareSelectedDirectTripsPDF() {
       const selected = getSelectedDirectTrips();
       if (!selected.length) {
         showToast('Selecciona una o varias facturas de Viaje Directo', 'error');
-        return;
-      }
-
-      const clients = [...new Set(selected.map(trip => safeText(trip.destination_client).trim().toLowerCase()).filter(Boolean))];
-      if (clients.length > 1) {
-        showToast('Selecciona facturas de un mismo cliente para crear el PDF', 'error');
         return;
       }
 
@@ -14213,7 +14194,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
     function buildSelectedDirectTripsPrintText(trips) {
   const h = BluetoothPrinter.helpers();
-  const clientName = trips[0]?.destination_client || 'Cliente sin nombre';
+  const mixedClients = hasMixedDirectTripClients(trips);
+  const clientName = mixedClients ? 'Varios clientes' : trips[0]?.destination_client || 'Cliente sin nombre';
   const paymentInfo = summarizeDirectTripPaymentInfo(trips);
   const totals = trips.reduce((result, trip) => {
     const total = Math.max(0, Number(trip.trip_amount) || 0);
@@ -14246,6 +14228,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
     rows.push(h.thickLine);
     rows.push('\x1bE\x01' + String(trip.invoice_number || 'SIN FACTURA') + '\x1bE\x00');
+    if (mixedClients) rows.push(...h.wordWrap('Cliente: ' + (trip.destination_client || 'Cliente sin nombre')));
     rows.push('Fecha: ' + fmt.dateTime(trip.date));
     rows.push(...h.wordWrap((trip.material_type || 'Sin material') + ' - ' + fmt.number(trip.meters || 0, 2) + ' m3'));
     rows.push(h.item('Estado:', status));
@@ -14266,14 +14249,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   const selected = getSelectedDirectTrips();
   if (!selected.length) {
     showToast('Primero marca una o varias facturas para imprimir', 'error');
-    return;
-  }
-
-  const clients = [...new Set(selected.map(trip =>
-    safeText(trip.destination_client).trim().toLowerCase() || '__sin_cliente__'
-  ))];
-  if (clients.length > 1) {
-    showToast('Para imprimir un estado claro, marca facturas del mismo cliente', 'error');
     return;
   }
 
@@ -14303,7 +14278,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   const is58mm = printerType === 'thermal_58';
   const isThermal = is58mm || printerType === 'thermal_80';
   const paperWidth = is58mm ? '58mm' : isThermal ? '80mm' : 'auto';
-  const clientName = escapeHtml(trips[0]?.destination_client || 'Cliente sin nombre');
+  const mixedClients = hasMixedDirectTripClients(trips);
+  const clientName = escapeHtml(mixedClients ? 'Varios clientes' : trips[0]?.destination_client || 'Cliente sin nombre');
   const paymentInfo = summarizeDirectTripPaymentInfo(trips);
   const logo = AppState.config.company_logo
     ? `<img src="${escapeAttr(AppState.config.company_logo)}" class="logo" alt="Logo">`
@@ -14325,6 +14301,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           <span class="status ${statusClass}">${status}</span>
         </div>
         <div class="details">
+          ${mixedClients ? `<div><span>Cliente:</span><strong>${escapeHtml(trip.destination_client || 'Cliente sin nombre')}</strong></div>` : ''}
           <div><span>Compañía:</span><strong>${escapeHtml(trip.source_company || 'No especificada')}</strong></div>
           <div><span>Material:</span><strong>${escapeHtml(trip.material_type || 'No especificado')}</strong></div>
           <div><span>Cantidad:</span><strong>${escapeHtml(fmt.number(trip.meters || 0, 2))} m³</strong></div>
@@ -16149,7 +16126,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const margin = 20;
       const contentWidth = pageWidth - (margin * 2);
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
-      const clientName = trips[0]?.destination_client || 'Cliente';
+      const mixedClients = hasMixedDirectTripClients(trips);
+      const clientName = mixedClients ? 'Varios clientes' : trips[0]?.destination_client || 'Cliente';
       const paymentInfo = summarizeDirectTripPaymentInfo(trips);
       const totalAmount = trips.reduce((sum, trip) => sum + toFiniteNumber(trip.trip_amount, 0), 0);
       const totalPaid = trips.reduce((sum, trip) => {
@@ -16244,6 +16222,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           'Metros3: ' + fmt.number(trip.meters, 2),
           'Estado: ' + status
         ];
+        if (mixedClients) details.unshift('Cliente destino: ' + (trip.destination_client || 'Cliente sin nombre'));
         if (trip.notes) details.push('Notas: ' + trip.notes);
         const detailLines = details.flatMap(detail => doc.splitTextToSize(detail, contentWidth - 10));
         const cardHeight = 36 + (detailLines.length * 4);
