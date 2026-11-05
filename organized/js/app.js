@@ -13823,99 +13823,89 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               </div>
             </div>
 
-            <div class="glass rounded-xl p-3 sm:p-4 border border-slate-700/50">
-              <div class="flex items-center justify-between gap-3 mb-3">
-                <div class="flex items-center gap-2 min-w-0">
-                  <div class="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
+            <div class="glass rounded-xl p-3 border border-slate-700/50">
+              <div class="mb-2" style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px;">
+                <div class="min-w-0" style="display:flex;align-items:center;gap:8px;">
+                  <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
                     <i data-lucide="list-checks" class="w-4 h-4 text-blue-300"></i>
                   </div>
                   <div class="min-w-0">
-                    <div class="text-sm font-semibold text-slate-100">Trabajar con varias facturas</div>
-                    <div class="text-xs text-slate-500">Sigue estos pasos para registrar un pago o crear un PDF</div>
+                    <div class="text-sm font-semibold text-slate-100">Varias facturas</div>
+                    <div class="text-[11px] text-slate-500">Selecciona, revisa el total y elige qué hacer</div>
                   </div>
                 </div>
-                <span id="directTripSelectedCount" class="shrink-0 text-xs font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">0 seleccionadas</span>
+                <span id="directTripSelectedCount" class="shrink-0 text-[11px] font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-1">0 seleccionadas</span>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
-                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 flex gap-2">
-                  <span class="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
-                  <div>
-                    <div class="text-xs font-semibold text-slate-200">Marca las facturas</div>
-                    <div class="text-[11px] text-slate-500">Usa las casillas de la tabla.</div>
-                  </div>
+              <div class="mb-2" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;">
+                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-1.5 py-2 text-center">
+                  <div class="text-[11px] font-semibold text-blue-300">1. Marca</div>
                 </div>
-                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 flex gap-2">
-                  <span class="w-6 h-6 rounded-full bg-emerald-500 text-slate-900 text-xs font-bold flex items-center justify-center shrink-0">2</span>
-                  <div>
-                    <div class="text-xs font-semibold text-slate-200">Elige la acción</div>
-                    <div class="text-[11px] text-slate-500">Registrar pago, imprimir o crear PDF.</div>
-                  </div>
+                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-1.5 py-2 text-center">
+                  <div class="text-[11px] font-semibold text-emerald-300">2. Revisa total</div>
                 </div>
-                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2 flex gap-2">
-                  <span class="w-6 h-6 rounded-full bg-amber-500 text-slate-900 text-xs font-bold flex items-center justify-center shrink-0">3</span>
-                  <div>
-                    <div class="text-xs font-semibold text-slate-200">Revisa y guarda</div>
-                    <div class="text-[11px] text-slate-500">Confirma el reparto del pago.</div>
-                  </div>
+                <div class="rounded-lg bg-slate-800/60 border border-slate-700 px-1.5 py-2 text-center">
+                  <div class="text-[11px] font-semibold text-amber-300">3. Elige acción</div>
                 </div>
               </div>
 
-              <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 mb-3 flex items-start gap-2">
-                <i data-lucide="info" class="w-4 h-4 text-amber-300 shrink-0 mt-0.5"></i>
-                <p class="text-xs text-amber-100/80">Para registrar un pago, marca facturas pendientes del mismo cliente. Para imprimir, puedes incluir pagadas, parciales y pendientes.</p>
+              <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 px-2.5 py-2 mb-2 flex items-start gap-2">
+                <i data-lucide="info" class="w-3.5 h-3.5 text-amber-300 shrink-0 mt-0.5"></i>
+                <p class="text-[11px] leading-4 text-amber-100/80">Pago: facturas pendientes del mismo cliente. Impresión o PDF: pagadas, parciales o pendientes.</p>
               </div>
 
-              <div id="directTripSelectionTotals" class="grid grid-cols-2 gap-2 mb-3">
-                <div class="rounded-xl bg-blue-500/10 border border-blue-500/25 p-3">
-                  <div class="text-[11px] font-bold uppercase tracking-wide text-blue-300 mb-1">Monto total seleccionado</div>
-                  <div id="directTripSelectedTotal" class="font-mono text-lg sm:text-xl font-bold text-blue-200">RD$ 0.00</div>
-                  <div class="text-[11px] text-slate-500 mt-1">Suma de todas las facturas marcadas</div>
+              <div id="directTripSelectionTotals" class="mb-2" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+                <div class="rounded-lg bg-blue-500/10 border border-blue-500/25 px-2.5 py-2">
+                  <div class="text-[9px] font-bold uppercase tracking-wide text-blue-300">Total seleccionado</div>
+                  <div id="directTripSelectedTotal" class="font-mono text-base font-bold text-blue-200 mt-0.5">RD$ 0.00</div>
                 </div>
-                <div class="rounded-xl bg-amber-500/10 border border-amber-500/25 p-3">
-                  <div class="text-[11px] font-bold uppercase tracking-wide text-amber-300 mb-1">Pendiente seleccionado</div>
-                  <div id="directTripSelectedPending" class="font-mono text-lg sm:text-xl font-bold text-amber-200">RD$ 0.00</div>
-                  <div class="text-[11px] text-slate-500 mt-1">Lo que falta por pagar entre ellas</div>
+                <div class="rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-2">
+                  <div class="text-[9px] font-bold uppercase tracking-wide text-amber-300">Pendiente</div>
+                  <div id="directTripSelectedPending" class="font-mono text-base font-bold text-amber-200 mt-0.5">RD$ 0.00</div>
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-2 mb-2">
-                <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-sm font-semibold rounded-lg transition-all">
-                  <i data-lucide="check-square" class="w-4 h-4"></i> Marcar visibles
+              <div class="mb-2" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+                <button onclick="toggleAllDirectTrips(true)" class="inline-flex items-center justify-center gap-1.5 px-2 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 text-xs font-semibold rounded-lg transition-all">
+                  <i data-lucide="check-square" class="w-3.5 h-3.5"></i> Marcar visibles
                 </button>
-                <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700/40 border border-slate-600/70 text-slate-300 hover:bg-slate-700 text-sm font-semibold rounded-lg transition-all">
-                  <i data-lucide="square" class="w-4 h-4"></i> Borrar selección
+                <button onclick="toggleAllDirectTrips(false)" class="inline-flex items-center justify-center gap-1.5 px-2 py-2 bg-slate-700/40 border border-slate-600/70 text-slate-300 hover:bg-slate-700 text-xs font-semibold rounded-lg transition-all">
+                  <i data-lucide="square" class="w-3.5 h-3.5"></i> Borrar selección
                 </button>
               </div>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Registrar el dinero recibido en las facturas marcadas">
-                  <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i> Registrar pago
+
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
+                <button id="btnDirectTripMultiPayment" onclick="showSelectedDirectTripPaymentModal()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Registrar el dinero recibido en las facturas marcadas">
+                  <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i>
+                  <span>Registrar pago</span>
                 </button>
-                <button id="btnDirectTripPrint" onclick="printSelectedDirectTrips()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Imprimir pagadas, parciales o pendientes">
-                  <i data-lucide="printer" class="w-4 h-4"></i> Imprimir seleccionadas
+                <button id="btnDirectTripPrint" onclick="printSelectedDirectTrips()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Imprimir pagadas, parciales o pendientes">
+                  <i data-lucide="printer" class="w-4 h-4"></i>
+                  <span>Imprimir</span>
                 </button>
-                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-sm font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Crear un PDF con las facturas marcadas">
-                  <i data-lucide="send" class="w-4 h-4"></i> Crear PDF WhatsApp
+                <button id="btnDirectTripPdf" onclick="shareSelectedDirectTripsPDF()" disabled class="inline-flex flex-col items-center justify-center gap-1 px-1 py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Crear un PDF con las facturas marcadas">
+                  <i data-lucide="send" class="w-4 h-4"></i>
+                  <span>PDF WhatsApp</span>
                 </button>
               </div>
             </div>
           </div>
 
           <!-- Estadisticas -->
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="glass rounded-xl p-4 border-l-4 border-primary-500">
+          <div class="md:grid-cols-4" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+            <div class="glass rounded-xl p-3 border-l-4 border-primary-500">
               <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Total Viajes</div>
               <div class="text-xl font-bold text-slate-100 font-mono">${totalTrips}</div>
             </div>
-            <div class="glass rounded-xl p-4 border-l-4 border-blue-500">
+            <div class="glass rounded-xl p-3 border-l-4 border-blue-500">
               <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Metros3 Totales</div>
               <div class="text-xl font-bold text-blue-400 font-mono">${fmt.number(totalMeters, 2)}</div>
             </div>
-            <div class="glass rounded-xl p-4 border-l-4 border-emerald-500">
+            <div class="glass rounded-xl p-3 border-l-4 border-emerald-500">
               <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Monto Total</div>
               <div class="text-xl font-bold text-emerald-400 font-mono">${fmt.currency(totalAmount)}</div>
             </div>
-            <div class="glass rounded-xl p-4 border-l-4 border-rose-500">
+            <div class="glass rounded-xl p-3 border-l-4 border-rose-500">
               <div class="text-slate-400 text-xs font-semibold uppercase mb-1">Por Cobrar</div>
               <div class="text-xl font-bold text-rose-400 font-mono">${fmt.currency(pendingAmount)}</div>
             </div>
