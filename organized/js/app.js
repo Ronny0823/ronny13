@@ -5598,7 +5598,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         ${isFullPayment ? '<div class="center full-payment">LIQUIDACION COMPLETA</div>' : '<div class="center partial-payment">ABONO PARCIAL</div>'}
         <div class="line"></div>
         <div>Fecha: ${fmt.dateTime(payment.date)}</div>
-        <div>Recibo #: ${payment.__backendId.replace('pay_', isFullPayment ? 'TOT-' : 'ABO-')}</div>
+        ${!isFullPayment ? `<div>Recibo #: ${payment.__backendId.replace('pay_', 'ABO-')}</div>` : ''}
         <div>Cliente: ${payment.client_name}</div>
         <div class="line"></div>
         <div>Factura ref: ${payment.invoice_number}</div>
@@ -5627,7 +5627,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
           <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
             <div>
-              <strong>Recibo #:</strong> ${payment.__backendId.replace('pay_', isFullPayment ? 'TOT-' : 'ABO-')}<br>
+              ${!isFullPayment ? `<strong>Recibo #:</strong> ${payment.__backendId.replace('pay_', 'ABO-')}<br>` : ''}
               <strong>Fecha:</strong> ${fmt.dateTime(payment.date)}
             </div>
             <div style="text-align: right;">
@@ -8784,7 +8784,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           ...this.thermalHeader(receiptTitle, isFullPayment ? 'LIQUIDACION COMPLETA' : 'ABONO PARCIAL'),
           ...h.section('RECIBO', [
             'Fecha: ' + fmt.dateTime(payment.date),
-            'No: ' + payment.__backendId.replace('pay_', isFullPayment ? 'TOT-' : 'ABO-')
+            ...(!isFullPayment ? ['No: ' + payment.__backendId.replace('pay_', 'ABO-')] : [])
           ]),
           ...h.section('CLIENTE', h.wordWrap(payment.client_name || '')),
           ...h.section('DETALLE', [
@@ -10840,9 +10840,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const effectiveRoute = getPaymentRouteValue(notes)
         || (paymentRoutes.length === 1 ? paymentRoutes[0] : paymentRoutes.length > 1 ? paymentRoutes.join(' / ') : '');
       const receiptDate = latestPayment?.date || new Date().toISOString();
-      const receiptNumber = latestPayment?.__backendId
-        ? latestPayment.__backendId.replace('pay_', 'TOT-')
-        : 'TOT-' + Date.now();
       const rows = sales.flatMap(sale => {
         const invoice = AppState.data.find(record => record.type === 'invoice' && record.invoice_number === sale.invoice_number);
         const items = invoice ? getInvoiceItems(invoice) : (Array.isArray(sale.items) && sale.items.length ? sale.items : [{
@@ -10880,8 +10877,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         previousPaid,
         effectiveMethod,
         effectiveRoute,
-        receiptDate,
-        receiptNumber
+        receiptDate
       };
     }
 
@@ -10908,7 +10904,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <span class="badge">${data.sales.length} factura(s)</span>
             </div>
           </div>
-          <div class="muted">Recibo: ${data.receiptNumber}</div>
           ${data.effectiveRoute ? `<div class="muted">Por donde fue: ${data.effectiveRoute}</div>` : ''}
           <table>
             <thead>
@@ -10952,7 +10947,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         ...BluetoothPrinter.thermalHeader('RECIBO DE PAGO TOTAL', 'LIQUIDACION COMPLETA'),
         ...h.section('RECIBO', [
           'Fecha: ' + fmt.dateTime(data.receiptDate),
-          'No: ' + data.receiptNumber,
           'Facturas: ' + data.sales.length,
           data.effectiveMethod ? 'Metodo: ' + data.effectiveMethod : ''
         ]),
@@ -15813,9 +15807,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         doc.text(receiptTitle, pageWidth/2, yPos, { align: 'center' });
         yPos += 4;
         doc.setFontSize(8);
-        doc.text(payment.__backendId.replace('pay_', isFullPayment ? 'TOT-' : 'ABO-'), pageWidth/2, yPos, { align: 'center' });
+        if (!isFullPayment) {
+          doc.text(payment.__backendId.replace('pay_', 'ABO-'), pageWidth/2, yPos, { align: 'center' });
+          yPos += 4;
+        }
         doc.setFont(undefined, 'normal');
-        yPos += 4;
         doc.setFontSize(8);
         doc.setFont(undefined, 'bold');
         doc.text('FECHA: ' + fmt.dateTime(payment.date), margin, yPos);
@@ -15910,8 +15906,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         yPos += 6;
         doc.setFontSize(12);
         doc.setTextColor(0, 0, 0);
-        doc.text(payment.__backendId.replace('pay_', isFullPayment ? 'TOT-' : 'ABO-'), pageWidth/2, yPos, { align: 'center' });
-        yPos += 6;
+        if (!isFullPayment) {
+          doc.text(payment.__backendId.replace('pay_', 'ABO-'), pageWidth/2, yPos, { align: 'center' });
+          yPos += 6;
+        }
         doc.setFontSize(10);
         doc.text('Fecha: ' + fmt.dateTime(payment.date), margin, yPos);
         yPos += 5;
