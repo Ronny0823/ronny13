@@ -7205,7 +7205,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         if (index === headerRow) return { hpt: 38 };
         if (index < headerRow) return { hpt: 25 };
         const lines = Math.max(1, ...row.map((value, column) =>
-          typeof value === 'string' ? Math.ceil(value.length / (widths[column] - 2)) : 1
+          typeof value === 'string' ? value.split(/\r?\n/).reduce((sum, line) =>
+            sum + Math.max(1, Math.ceil(line.length / (widths[column] - 2))), 0) : 1
         ));
         return { hpt: Math.max(34, lines * 14 + 8) };
       });
@@ -7243,7 +7244,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           }
           if (r > headerRow && moneyColumns.includes(c)) cell.s.numFmt = moneyFormat;
           if (tableBody && c === statusColumn) {
-            const paid = cell.v === 'Saldado' || cell.v === 'Pago total';
+            const paid = cell.v === 'Saldado' || cell.v === 'Pago total' || cell.v === 'Pago';
             const partial = cell.v === 'Abono parcial' || cell.v === 'Abono';
             cell.s.font.color = { rgb: paid ? '166534' : partial ? '92400E' : '991B1B' };
             cell.s.fill = { fgColor: { rgb: paid ? 'DCFCE7' : partial ? 'FEF3C7' : 'FEE2E2' } };
@@ -7381,8 +7382,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const entries = getFilteredReportPayments().slice().sort((a, b) =>
         new Date(a.payment.date) - new Date(b.payment.date)
       );
+      const movementType = payment => {
+        if (payment.is_partial_multiple) return 'Abono';
+        return payment.is_full_payment || payment.is_multiple_payment ? 'Pago' : 'Abono';
+      };
       const totalReceived = entries.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
-      const fullPayments = entries.filter(({ payment }) => payment.is_full_payment);
+      const fullPayments = entries.filter(({ payment }) => movementType(payment) === 'Pago');
       const fullAmount = fullPayments.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
       const generatedAt = fmt.dateTime(new Date().toISOString());
       const periodLabel = getReportPeriodLabel();
@@ -7401,7 +7406,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           asDate(payment.date),
           payment.client_name || sale?.client_name || 'Sin cliente',
           payment.invoice_number || sale?.invoice_number || 'Sin número',
-          payment.is_full_payment ? 'Pago total' : 'Abono',
+          movementType(payment),
           amount,
           method,
           getPaymentRouteLabel(payment) || 'No indicado'
@@ -7413,12 +7418,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         ['Fechas consultadas', periodLabel],
         ['Búsqueda', searchLabel],
         ['Reporte generado el ' + generatedAt],
-        ['Total recibido (RD$)', '', 'Pagos totales (RD$)', '', 'Abonos (RD$)'],
+        ['Total recibido (RD$)', '', 'Pagos (RD$)', '', 'Abonos (RD$)'],
         [totalReceived, '', fullAmount, '', totalReceived - fullAmount],
-        [entries.length + ' movimientos. Pagos totales ' + fullPayments.length + '. Abonos ' +
+        [entries.length + ' movimientos. Pagos ' + fullPayments.length + '. Abonos ' +
           (entries.length - fullPayments.length) + '. Incluye pagos de facturas anteriores.'],
         [],
-        ['Fecha y hora del pago', 'Cliente', 'Número de factura', 'Tipo de pago', 'Monto recibido (RD$)', 'Método de pago', 'Por dónde fue'],
+        ['Fecha y hora del pago', 'Cliente', 'Número de factura', 'Tipo de movimiento', 'Monto recibido (RD$)', 'Método de pago', 'Por dónde fue'],
         ...movementRows
       ];
       if (!entries.length) rows.push(['No hay pagos ni abonos para las fechas y búsqueda seleccionadas']);
@@ -7481,15 +7486,28 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       if (!entries.length) sheet['!merges'].push({ s: { r: 10, c: 0 }, e: { r: 10, c: 6 } });
 
       const allPayments = getRecords('payment');
+      const invoiceDescription = sale => {
+        if (!sale) return 'Sin detalle de factura';
+        const invoice = findInvoiceForSale(sale);
+        const items = invoice ? getInvoiceItems(invoice)
+          : Array.isArray(sale.items) && sale.items.length ? sale.items
+          : [{ material_name: sale.material_name, quantity: sale.sale_quantity }];
+        return items.map(item => {
+          const name = safeText(item.material_name) || 'Sin descripción';
+          if (item.quantity == null || item.quantity === '') return name;
+          const quantity = toFiniteNumber(item.quantity, NaN);
+          return Number.isFinite(quantity) ? name + ' (cantidad ' + fmt.quantity(quantity) + ')' : name;
+        }).join('\n');
+      };
       const detailRows = [
         [],
-        ['SALDOS Y OBSERVACIONES DE CADA PAGO'],
+        ['DETALLE DE CADA PAGO Y ABONO'],
         ['Fechas consultadas', periodLabel],
         ['Búsqueda', searchLabel],
         ['Reporte generado el ' + generatedAt],
         ['El saldo se calcula con los pagos registrados hasta la fecha y hora de cada movimiento.'],
         [],
-        ['Fecha y hora del pago', 'Cliente', 'Número de factura', 'Monto recibido (RD$)', 'Total factura (RD$)', 'Pagado hasta esa fecha (RD$)', 'Saldo tras ese pago (RD$)', 'Placa', 'Observación'],
+        ['Fecha y hora del pago', 'Cliente', 'Número de factura', 'Tipo de movimiento', 'Monto recibido (RD$)', 'Total factura (RD$)', 'Pagado hasta esa fecha (RD$)', 'Saldo tras ese pago (RD$)', 'Placa', 'Detalle de la factura', 'Observación'],
         ...entries.map(({ payment, sale }) => {
           const paymentDate = asDate(payment.date);
           const canCalculateBalance = sale && paymentDate instanceof Date;
@@ -7501,31 +7519,33 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             paymentDate,
             payment.client_name || sale?.client_name || 'Sin cliente',
             payment.invoice_number || sale?.invoice_number || 'Sin número',
+            movementType(payment),
             toFiniteNumber(payment.amount, 0),
             saleTotal,
             paidBefore,
             canCalculateBalance ? Math.max(0, saleTotal - paidBefore) : '',
             sale?.vehicle_plate || 'No indicada',
+            invoiceDescription(sale),
             payment.notes || (sale ? '' : 'Factura de origen no disponible')
           ];
         })
       ];
       if (!entries.length) detailRows.push(['No hay pagos ni abonos para las fechas y búsqueda seleccionadas']);
       const detailTotalRow = detailRows.length;
-      detailRows.push(['TOTAL RECIBIDO', '', '', totalReceived]);
+      detailRows.push(['TOTAL RECIBIDO', '', '', '', totalReceived]);
       const detailSheet = XLSX.utils.aoa_to_sheet(detailRows, { cellDates: true });
-      styleReportExcelSheet(detailSheet, detailRows, 7, detailTotalRow, [24, 32, 23, 24, 24, 24, 24, 18, 38], [3, 4, 5, 6]);
+      styleReportExcelSheet(detailSheet, detailRows, 7, detailTotalRow, [24, 32, 23, 20, 24, 24, 24, 24, 18, 44, 38], [4, 5, 6, 7], 3);
       entries.forEach((entry, index) => {
         formatDateCell(detailSheet, index + 8, 0);
-        [2, 7].forEach(column => {
+        [2, 3, 8].forEach(column => {
           detailSheet[XLSX.utils.encode_cell({ r: index + 8, c: column })].s.alignment.horizontal = 'center';
         });
       });
       detailSheet['!merges'].push(
-        { s: { r: 5, c: 0 }, e: { r: 5, c: 8 } },
-        { s: { r: detailTotalRow, c: 0 }, e: { r: detailTotalRow, c: 2 } }
+        { s: { r: 5, c: 0 }, e: { r: 5, c: 10 } },
+        { s: { r: detailTotalRow, c: 0 }, e: { r: detailTotalRow, c: 3 } }
       );
-      if (!entries.length) detailSheet['!merges'].push({ s: { r: 8, c: 0 }, e: { r: 8, c: 8 } });
+      if (!entries.length) detailSheet['!merges'].push({ s: { r: 8, c: 0 }, e: { r: 8, c: 10 } });
 
       XLSX.utils.book_append_sheet(workbook, sheet, 'Pagos y abonos');
       XLSX.utils.book_append_sheet(workbook, detailSheet, 'Saldos y observaciones');
