@@ -4492,20 +4492,20 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const firstItem = saleItems[0];
       const materialLabel = saleItems.length === 1 ? firstItem.material_name : 'Varios productos';
       const quantityTotal = saleItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
-      const invNum = await generateInvoiceNum();
-      const now = buildSaleDateTime(saleDate);
-      const saleId = createRecordId('sale');
-      const invoiceId = createRecordId('inv');
-      
       AppState.saleSaving = true;
-      btn.disabled = true;
-      printBtn.disabled = true;
-      btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Procesando...`;
-      printBtn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Procesando...`;
-      lucide.createIcons();
       let saleCompleted = false;
-      
+
       try {
+        btn.disabled = true;
+        printBtn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Procesando...`;
+        printBtn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Procesando...`;
+        lucide.createIcons();
+
+        const invNum = await generateInvoiceNum();
+        const now = buildSaleDateTime(saleDate);
+        const saleId = createRecordId('sale');
+        const invoiceId = createRecordId('inv');
         const saleData = {
           __backendId: saleId,
           invoice_id: invoiceId,
@@ -5299,6 +5299,20 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           return;
         }
         
+        const saleTotal = toFiniteNumber(sale.sale_total, 0);
+        const paidBefore = getRecords('payment')
+          .filter(payment => payment.sale_id === saleId)
+          .reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
+        const available = Math.max(0, saleTotal - paidBefore);
+        if (safeAmount > available + 0.000001) {
+          showToast(`El saldo pendiente actual es ${fmt.currency(available)}.`, 'error');
+          return;
+        }
+        const totalPaid = paidBefore + safeAmount;
+        const remaining = Math.max(0, saleTotal - totalPaid);
+        const isFullPayment = remaining < 0.005;
+        const paymentLabel = isFullPayment ? 'Pago total' : 'Abono';
+
         const paymentData = {
           type: 'payment',
           sale_id: saleId,
@@ -5307,34 +5321,30 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           amount: safeAmount,
           method: method,
           payment_channel: notes,
-          notes: notes || 'Pago total - Liquidacion completa',
+          notes: notes || (isFullPayment ? 'Pago total - Liquidacion completa' : ''),
           date: document.getElementById('entryDate')?.value || new Date().toISOString(),
-          is_full_payment: true,
+          is_full_payment: isFullPayment,
           __backendId: createRecordId('pay')
         };
         
         AppState.data.push(paymentData);
         
-        const payments = getRecords('payment').filter(p => p.sale_id === saleId);
-        const totalPaid = payments.reduce((sum, p) => sum + toFiniteNumber(p.amount, 0), 0);
-        const remaining = Math.max(0, (sale.sale_total || 0) - totalPaid);
-
-        sale.payment_status = remaining <= 0.01 ? 'pagada' : 'pendiente';
-        sale.remaining_balance = remaining;
+        sale.payment_status = isFullPayment ? 'pagada' : 'pendiente';
+        sale.remaining_balance = isFullPayment ? 0 : remaining;
         sale.amount_paid = totalPaid;
 
         const invoice = findInvoiceForSale(sale);
         if (invoice) {
-          invoice.payment_status = remaining <= 0.01 ? 'pagada' : 'pendiente';
-          invoice.status = remaining <= 0.01 ? 'pagada' : 'pendiente';
+          invoice.payment_status = sale.payment_status;
+          invoice.status = sale.payment_status;
         }
         
         await AppState.saveUserData();
         
-        showToast(`Pago total de ${fmt.currency(safeAmount)} registrado correctamente`, 'success');
+        showToast(`${paymentLabel} de ${fmt.currency(safeAmount)} registrado correctamente`, 'success');
         
         setTimeout(() => {
-          if (confirm('Deseas imprimir el recibo de pago total?')) {
+          if (confirm(`Deseas imprimir el recibo de ${paymentLabel.toLowerCase()}?`)) {
             printPaymentReceipt(paymentData.__backendId);
           }
         }, 300);
@@ -6094,7 +6104,20 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const reportSearch = (AppState.reportFilters.search || '').toLowerCase().trim();
       const salesById = Object.fromEntries(getRecords('sale').map(s => [s.__backendId, s]));
 
-      return getRecords('payment')
+      const payments = getRecords('payment');
+      const totalsBySale = new Map();
+      const paidAtMovement = new Map();
+      const datedPayments = payments
+        .map(payment => ({ payment, time: Date.parse(payment.date || '') }))
+        .filter(({ payment, time }) => salesById[payment.sale_id] && Number.isFinite(time))
+        .sort((a, b) => a.time - b.time);
+      for (const { payment } of datedPayments) {
+        const total = (totalsBySale.get(payment.sale_id) || 0) + toFiniteNumber(payment.amount, 0);
+        totalsBySale.set(payment.sale_id, total);
+        paidAtMovement.set(payment, total);
+      }
+
+      return payments
         .map(payment => ({ payment, sale: salesById[payment.sale_id] || null }))
         .filter(({ payment }) => matchesReportPeriodDate(payment.date))
         .filter(({ payment, sale }) => {
@@ -6105,6 +6128,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             (payment.notes || '').toLowerCase().includes(reportSearch) ||
             (sale?.vehicle_plate || '').toLowerCase().includes(reportSearch) ||
             (sale?.material_name || '').toLowerCase().includes(reportSearch);
+        })
+        .map(({ payment, sale }) => {
+          const paid = paidAtMovement.get(payment);
+          return { payment, sale, paidAtMovement: paid, movementType: getReceivedPaymentType(payment, sale, paid) };
         });
     }
 
@@ -6507,8 +6534,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         : [];
       const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const totalPayments = filteredPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0);
-      const fullPayments = filteredPayments.filter(item => item.payment.is_full_payment);
-      const partialPayments = filteredPayments.filter(item => !item.payment.is_full_payment);
+      const fullPayments = filteredPayments.filter(item => item.movementType === 'Pago');
+      const partialPayments = filteredPayments.filter(item => item.movementType === 'Abono');
       const paymentsByMethod = filteredPayments.reduce((acc, { payment }) => {
         const method = payment.method || 'sin metodo';
         acc[method] = (acc[method] || 0) + (toFiniteNumber(payment.amount, 0) || 0);
@@ -6736,11 +6763,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             <h3 class="text-base font-semibold text-slate-100">Detalle de los pagos</h3>
             ${recentPayments.length ? `
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                ${recentPayments.slice(0, AppState.reportFilters.showAllPayments ? undefined : 10).map(({ payment, sale }) => `
+                ${recentPayments.slice(0, AppState.reportFilters.showAllPayments ? undefined : 10).map(({ payment, sale, movementType }) => `
                   <article class="glass rounded-xl p-4 border border-slate-700">
                     <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
                       <h4 class="font-semibold text-slate-100 break-words">${escapeHtml(payment.client_name || sale?.client_name || 'Sin cliente')}</h4>
-                      <span class="text-xs px-2 py-1 rounded-full ${payment.is_full_payment ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}">${payment.is_full_payment ? 'Pago total' : 'Abono'}</span>
+                      <span class="text-xs px-2 py-1 rounded-full ${movementType === 'Pago' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}">${movementType === 'Pago' ? 'Pago total' : 'Abono'}</span>
                     </div>
                     <p class="text-xs text-slate-400 pb-3 border-b border-slate-700">Factura ${escapeHtml(payment.invoice_number || sale?.invoice_number || 'Sin número')} · ${fmt.dateTime(payment.date)}</p>
                     <dl class="space-y-2 text-sm mt-3">
@@ -7376,9 +7403,14 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       return workbook;
     }
 
-    function getReceivedPaymentType(payment) {
+    function getReceivedPaymentType(payment, sale, paidAtMovement) {
       if (payment.is_partial_multiple) return 'Abono';
-      return payment.is_full_payment || payment.is_multiple_payment ? 'Pago' : 'Abono';
+      if (payment.is_multiple_payment) return 'Pago';
+      if (!payment.is_full_payment) return 'Abono';
+      // Los pagos individuales antiguos podían quedar marcados como totales aunque dejaran saldo.
+      const saleTotal = toFiniteNumber(sale?.sale_total, 0);
+      if (saleTotal > 0 && Number.isFinite(paidAtMovement) && saleTotal - paidAtMovement >= 0.005) return 'Abono';
+      return 'Pago';
     }
 
     function exportReceivedPaymentsReport({ download = true } = {}) {
@@ -7391,7 +7423,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         new Date(a.payment.date) - new Date(b.payment.date)
       );
       const totalReceived = entries.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
-      const fullPayments = entries.filter(({ payment }) => getReceivedPaymentType(payment) === 'Pago');
+      const fullPayments = entries.filter(({ movementType }) => movementType === 'Pago');
       const fullAmount = fullPayments.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
       const generatedAt = fmt.dateTime(new Date().toISOString());
       const periodLabel = getReportPeriodLabel();
@@ -7402,7 +7434,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         const date = new Date(value || '');
         return Number.isNaN(date.getTime()) ? 'No indicada' : date;
       };
-      const movementRows = entries.map(({ payment, sale }) => {
+      const movementRows = entries.map(({ payment, sale, movementType }) => {
         const amount = toFiniteNumber(payment.amount, 0);
         const method = getPaymentMethodLabel(payment);
         methods.set(method, (methods.get(method) || 0) + amount);
@@ -7410,7 +7442,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           asDate(payment.date),
           payment.client_name || sale?.client_name || 'Sin cliente',
           payment.invoice_number || sale?.invoice_number || 'Sin número',
-          getReceivedPaymentType(payment),
+          movementType,
           amount,
           method,
           getPaymentRouteLabel(payment) || 'No indicado'
@@ -7489,7 +7521,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       }
       if (!entries.length) sheet['!merges'].push({ s: { r: 10, c: 0 }, e: { r: 10, c: 6 } });
 
-      const allPayments = getRecords('payment');
       const invoiceDescription = sale => {
         if (!sale) return 'Sin detalle de factura';
         const invoice = findInvoiceForSale(sale);
@@ -7512,25 +7543,26 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         ['El saldo se calcula con los pagos registrados hasta la fecha y hora de cada movimiento.'],
         [],
         ['Fecha y hora del pago', 'Cliente', 'Número de factura', 'Tipo de movimiento', 'Monto recibido (RD$)', 'Total factura (RD$)', 'Pagado hasta esa fecha (RD$)', 'Saldo tras ese pago (RD$)', 'Placa', 'Detalle de la factura', 'Observación'],
-        ...entries.map(({ payment, sale }) => {
+        ...entries.map(({ payment, sale, paidAtMovement, movementType }) => {
           const paymentDate = asDate(payment.date);
-          const canCalculateBalance = sale && paymentDate instanceof Date;
-          const paidBefore = canCalculateBalance ? allPayments
-            .filter(item => item.sale_id === sale.__backendId && new Date(item.date) <= paymentDate)
-            .reduce((sum, item) => sum + toFiniteNumber(item.amount, 0), 0) : '';
+          const canCalculateBalance = sale && Number.isFinite(paidAtMovement);
+          const paidBefore = canCalculateBalance ? paidAtMovement : '';
+          const notes = movementType === 'Abono' && payment.notes === 'Pago total - Liquidacion completa'
+            ? ''
+            : payment.notes;
           const saleTotal = sale ? toFiniteNumber(sale.sale_total, 0) : '';
           return [
             paymentDate,
             payment.client_name || sale?.client_name || 'Sin cliente',
             payment.invoice_number || sale?.invoice_number || 'Sin número',
-            getReceivedPaymentType(payment),
+            movementType,
             toFiniteNumber(payment.amount, 0),
             saleTotal,
             paidBefore,
             canCalculateBalance ? Math.max(0, saleTotal - paidBefore) : '',
             sale?.vehicle_plate || 'No indicada',
             invoiceDescription(sale),
-            payment.notes || (sale ? '' : 'Factura de origen no disponible')
+            notes || (sale ? '' : 'Factura de origen no disponible')
           ];
         })
       ];
@@ -7575,7 +7607,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const cash = sumSales(cashSales);
       const credit = sumSales(creditSales);
       const receipts = paymentEntries.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
-      const fullPayments = paymentEntries.filter(({ payment }) => getReceivedPaymentType(payment) === 'Pago');
+      const fullPayments = paymentEntries.filter(({ movementType }) => movementType === 'Pago');
       const fullAmount = fullPayments.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
       const allPayments = getRecords('payment');
       const creditBalances = creditSales.map(sale => getCreditSalePaymentSnapshot(sale, allPayments));
@@ -7663,8 +7695,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           price: sale.price,
           subtotal: sale.sale_subtotal
         }];
-        const date = new Date(sale.date || '');
-        return items.map((item, index) => [
+        const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(sale.date || '');
+        const date = new Date(dateOnly ? sale.date + 'T00:00:00' : (sale.date || ''));
+        return items.map((item, index) => ({ dateOnly, values: [
           Number.isNaN(date.getTime()) ? 'No indicada' : date,
           sale.invoice_number || 'Sin número',
           sale.client_name || 'Sin cliente',
@@ -7678,7 +7711,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           sale.note || '',
           sale.payment_type === 'credito' ? 'Crédito' : 'Contado',
           sale.payment_status === 'pagada' ? 'Pagada' : 'Pendiente'
-        ]);
+        ] }));
       });
       const detailRows = [
         [],
@@ -7689,7 +7722,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         ['Cada fila es un producto. El total de cada factura y su impuesto aparecen una sola vez.'],
         [],
         ['Fecha y hora de venta', 'Número de factura', 'Cliente', 'Placa', 'Material o servicio', 'Cantidad', 'Precio unitario (RD$)', 'Subtotal producto (RD$)', 'Impuesto factura (RD$)', 'Total factura (RD$)', 'Nota', 'Tipo de venta', 'Estado'],
-        ...saleRows
+        ...saleRows.map(row => row.values)
       ];
       if (!sales.length) detailRows.push(['No hay ventas para las fechas y búsqueda seleccionadas']);
       const totalRow = detailRows.length;
@@ -7701,10 +7734,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         { s: { r: totalRow, c: 0 }, e: { r: totalRow, c: 8 } }
       );
       if (!sales.length) salesSheet['!merges'].push({ s: { r: 8, c: 0 }, e: { r: 8, c: 12 } });
-      saleRows.forEach((row, index) => {
+      saleRows.forEach(({ dateOnly }, index) => {
         const cell = salesSheet[XLSX.utils.encode_cell({ r: index + 8, c: 0 })];
         if (cell.t === 'd') {
-          cell.z = 'dd/mm/yyyy hh:mm';
+          cell.z = dateOnly ? 'dd/mm/yyyy' : 'dd/mm/yyyy hh:mm';
           cell.s.numFmt = cell.z;
           cell.s.alignment.horizontal = 'center';
         }
