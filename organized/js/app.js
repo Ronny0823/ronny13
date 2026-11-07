@@ -6464,6 +6464,13 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         return;
       }
 
+      const excelLabels = {
+        resumen: 'Excel del resumen',
+        ventas: 'Excel de ventas',
+        pagos: 'Excel de pagos y abonos',
+        clientes: 'Excel del estado de clientes'
+      };
+
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
       const emptyCustomerPaymentStatus = { clients: [], paidClients: [], pendingClients: [], paidInvoices: 0, pendingInvoices: 0, totalPaidAmount: 0, totalPendingAmount: 0 };
@@ -6569,9 +6576,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <h2 class="text-xl sm:text-2xl font-bold text-slate-100">${selectedReport.title}</h2>
               <p class="text-sm text-slate-400 mt-1">${selectedReport.description}</p>
             </div>
-            ${activeReportTab !== 'pendientes' ? `
-              <button type="button" onclick="exportReport()" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-500 text-slate-950 rounded-lg text-sm font-semibold">
-                <i data-lucide="download" class="w-4 h-4"></i> Descargar Excel
+            ${excelLabels[activeReportTab] ? `
+              <button type="button" onclick="exportReport('${activeReportTab}')" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-500 text-slate-950 rounded-lg text-sm font-semibold">
+                <i data-lucide="download" class="w-4 h-4"></i> ${excelLabels[activeReportTab]}
               </button>
             ` : ''}
           </div>
@@ -7183,11 +7190,20 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       });
     }
 
-    function exportReport() {
+    function exportReport(section = 'resumen') {
       if (!window.XLSX) {
         showExcelLibraryError();
         return;
       }
+
+      const sections = {
+        resumen: { label: 'Resumen del negocio', sheets: ['Reporte ventas', 'Reporte pagos', 'Resumen pagos', 'Estado clientes'] },
+        ventas: { label: 'Ventas realizadas', sheets: ['Reporte ventas'] },
+        pagos: { label: 'Pagos y abonos recibidos', sheets: ['Reporte pagos', 'Resumen pagos'] },
+        clientes: { label: 'Estado de cada cliente', sheets: ['Estado clientes'] }
+      };
+      const selectedSection = sections[section];
+      if (!selectedSection) return;
 
       const sales = getFilteredReportSales();
       const paymentEntries = getFilteredReportPayments();
@@ -7387,7 +7403,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       sheet['!autofilter'] = { ref: `A1:N${Math.max(salesEndRow, 1)}` };
       sheet['!rows'] = [{ hpt: 24 }];
 
-      XLSX.utils.book_append_sheet(workbook, sheet, 'Reporte ventas');
+      if (selectedSection.sheets.includes('Reporte ventas')) {
+        XLSX.utils.book_append_sheet(workbook, sheet, 'Reporte ventas');
+      }
       
       const paymentsSheetRows = [
         ['Fecha', 'Hora', 'Factura', 'Cliente', 'Placa', 'Metodo', 'Tipo', 'Monto', 'Total Venta', 'Pagado Acumulado', 'Saldo Despues', 'Notas'],
@@ -7399,7 +7417,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 30 }
       ];
       paymentsSheet['!autofilter'] = { ref: `A1:L${Math.max(paymentRows.length + 1, 1)}` };
-      XLSX.utils.book_append_sheet(workbook, paymentsSheet, 'Reporte pagos');
+      if (selectedSection.sheets.includes('Reporte pagos')) {
+        XLSX.utils.book_append_sheet(workbook, paymentsSheet, 'Reporte pagos');
+      }
 
       const paymentSummaryRows = [
         ['RESUMEN DE PAGOS'],
@@ -7415,7 +7435,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       ];
       const paymentSummarySheet = XLSX.utils.aoa_to_sheet(paymentSummaryRows);
       paymentSummarySheet['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 16 }];
-      XLSX.utils.book_append_sheet(workbook, paymentSummarySheet, 'Resumen pagos');
+      if (selectedSection.sheets.includes('Resumen pagos')) {
+        XLSX.utils.book_append_sheet(workbook, paymentSummarySheet, 'Resumen pagos');
+      }
 
       const customerStatusRows = [
         ['RESUMEN ESTADO DE CLIENTES'],
@@ -7445,10 +7467,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 12 },
         { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 34 }
       ];
-      XLSX.utils.book_append_sheet(workbook, customerStatusSheet, 'Estado clientes');
+      if (selectedSection.sheets.includes('Estado clientes')) {
+        XLSX.utils.book_append_sheet(workbook, customerStatusSheet, 'Estado clientes');
+      }
 
-      XLSX.writeFile(workbook, `reporte_ventas_${new Date().toISOString().split('T')[0]}.xlsx`);
-      showToast(`Reporte Excel exportado: ${sales.length} ventas, ${paymentEntries.length} pagos y ${customerPaymentStatus.clients.length} clientes`);
+      XLSX.writeFile(workbook, `reporte_${section}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showToast(`Excel descargado: ${selectedSection.label}`);
     }
 
     function exportCurrentMonthPaymentStatusReport() {
