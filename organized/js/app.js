@@ -1683,7 +1683,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       supplierFilters: { search: '', material: '', status: '', dateFrom: '', dateTo: '' },
       creditFilters: { client: '', dateFrom: '', dateTo: '', status: 'all' },
       invoiceFilters: { client: '', dateFrom: '', dateTo: '' },
-      reportFilters: { period: '', dateFrom: '', dateTo: '', search: '', tab: 'resumen' },
+      reportFilters: { period: '', dateFrom: '', dateTo: '', search: '', tab: 'inicio' },
       pendingClientReportFilters: { dateFrom: '', dateTo: '' },
       dailyMetersFilters: { search: '', dateFrom: '', dateTo: '', quickPeriod: '' },
       directTripFilters: { search: '', company: '', dateFrom: '', dateTo: '', status: 'all', quickPeriod: '' },
@@ -1926,6 +1926,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     function navigate(page) {
+      if (page === 'reports') AppState.reportFilters.tab = 'inicio';
       AppState.currentPage = page;
       
       if (window.innerWidth <= 900) {
@@ -6424,29 +6425,54 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     function renderReports(container) {
-      const activeReportTab = AppState.reportFilters.tab || 'resumen';
+      const reports = [
+        { id: 'resumen', title: 'Resumen del negocio', description: 'Ventas, dinero recibido y saldo por cobrar', icon: 'layout-dashboard', color: 'text-primary-400' },
+        { id: 'ventas', title: 'Ventas realizadas', description: 'Facturas, clientes, materiales y montos', icon: 'receipt-text', color: 'text-blue-400' },
+        { id: 'pagos', title: 'Pagos y abonos recibidos', description: 'Quién pagó, cuánto, cuándo y por dónde', icon: 'wallet-cards', color: 'text-emerald-400' },
+        { id: 'pendientes', title: 'Clientes con saldo pendiente', description: 'Quién debe y cuánto falta por pagar', icon: 'coins', color: 'text-amber-400' },
+        { id: 'clientes', title: 'Estado de cada cliente', description: 'Facturas saldadas, con abonos o pendientes', icon: 'users', color: 'text-blue-400' },
+        { id: 'graficas', title: 'Materiales, clientes y gráficas', description: 'Qué se vende más y cómo van las ventas', icon: 'bar-chart-3', color: 'text-purple-400' }
+      ];
+      const activeReportTab = AppState.reportFilters.tab === 'cobranza' ? 'pagos' : AppState.reportFilters.tab;
+      const selectedReport = reports.find(report => report.id === activeReportTab);
+      if (!selectedReport) {
+        container.innerHTML = `
+          <div class="space-y-5">
+            <div>
+              <h2 class="text-2xl font-bold text-slate-100">Reportes y análisis</h2>
+              <h3 class="text-xl font-bold text-slate-100 mt-4">¿Qué quieres consultar?</h3>
+              <p class="text-sm text-slate-400 mt-2">Cada opción te dice qué información muestra.</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              ${reports.map(report => `
+                <button type="button" onclick="setReportTab('${report.id}')"
+                  class="glass rounded-xl p-4 border border-slate-700 hover:border-primary-500 text-left flex items-center gap-3 transition-colors">
+                  <span class="p-3 rounded-xl bg-slate-800 shrink-0 ${report.color}">
+                    <i data-lucide="${report.icon}" class="w-6 h-6"></i>
+                  </span>
+                  <span class="flex-1 min-w-0">
+                    <span class="block text-base font-semibold text-slate-100">${report.title}</span>
+                    <span class="block text-sm text-slate-400 mt-1">${report.description}</span>
+                  </span>
+                  <i data-lucide="arrow-right" class="w-5 h-5 text-slate-400 shrink-0"></i>
+                </button>
+              `).join('')}
+            </div>
+            <p class="text-sm text-slate-400">Elige una opción para ver su detalle.</p>
+          </div>
+        `;
+        return;
+      }
+
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
       const emptyCustomerPaymentStatus = { clients: [], paidClients: [], pendingClients: [], paidInvoices: 0, pendingInvoices: 0, totalPaidAmount: 0, totalPendingAmount: 0 };
-      const customerPaymentStatus = activeReportTab === 'cobranza'
+      const customerPaymentStatus = activeReportTab === 'clientes'
         ? getReportCustomerPaymentStatus(filteredSales, filteredPayments)
         : emptyCustomerPaymentStatus;
-      const pendingClientPaymentReport = activeReportTab === 'cobranza' ? getPendingClientPaymentReport() : null;
-      const reportTabs = [
-        { id: 'resumen', label: 'Resumen', icon: 'layout-dashboard' },
-        { id: 'cobranza', label: 'Cobranza', icon: 'wallet-cards' },
-        { id: 'ventas', label: 'Ventas', icon: 'receipt-text' },
-        { id: 'graficas', label: 'Graficas', icon: 'bar-chart-3' }
-      ];
-      const reportTabButton = tab => `
-        <button type="button" onclick="setReportTab('${tab.id}')"
-          class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${activeReportTab === tab.id ? 'bg-primary-500 text-slate-950' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700'}">
-          <i data-lucide="${tab.icon}" class="w-4 h-4"></i>
-          <span>${tab.label}</span>
-        </button>
-      `;
+      const pendingClientPaymentReport = activeReportTab === 'pendientes' ? getPendingClientPaymentReport() : null;
 
-      const recentPayments = activeReportTab === 'cobranza'
+      const recentPayments = activeReportTab === 'pagos'
         ? filteredPayments.slice().sort((a, b) => new Date(b.payment.date) - new Date(a.payment.date))
         : [];
       const recentSales = activeReportTab === 'ventas'
@@ -6476,7 +6502,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       }, 0);
       const paidCredit = Math.max(0, creditRevenue - pendingCredit);
       const bestSale = filteredSales.slice().sort((a, b) => (b.sale_total || 0) - (a.sale_total || 0))[0];
-      
+
       const salesByDay = {};
       filteredSales.forEach(s => {
         const day = s.date?.split('T')[0];
@@ -6488,7 +6514,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const bestDay = sortedDayEntries[0];
       const activeDays = Object.keys(salesByDay).length;
       const dailyAverage = activeDays > 0 ? totalRevenue / activeDays : 0;
-      
+
       const materialSales = {};
       filteredSales.forEach(s => {
         if (Array.isArray(s.items) && s.items.length) {
@@ -6501,13 +6527,13 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         }
       });
       const topMaterials = Object.entries(materialSales).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      
+
       const clientSales = {};
       filteredSales.forEach(s => {
         clientSales[s.client_name] = (clientSales[s.client_name] || 0) + (s.sale_total || 0);
       });
       const topClients = Object.entries(clientSales).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      
+
       const salesWithIva = filteredSales.filter(s => s.iva_enabled);
       const totalIva = salesWithIva.reduce((a, s) => a + (s.sale_tax || 0), 0);
       const collectionRate = creditRevenue > 0 ? (paidCredit / creditRevenue) * 100 : 100;
@@ -6518,41 +6544,62 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         pendingCredit > 0 ? { icon: 'alert-triangle', label: 'Credito por cobrar', value: `${fmt.currency(pendingCredit)} pendiente`, color: 'rose' } : { icon: 'shield-check', label: 'Cartera limpia', value: 'Sin saldo pendiente en el filtro', color: 'emerald' }
       ].filter(Boolean);
 
+      const now = new Date();
+      const periodStart = {
+        today: getLocalDateKey(now),
+        week: getLocalDateKey(new Date(now - 7 * 86400000)),
+        month: getLocalDateKey(new Date(now.getFullYear(), now.getMonth(), 1)),
+        year: getLocalDateKey(new Date(now.getFullYear(), 0, 1))
+      }[AppState.reportFilters.period];
+      const from = AppState.reportFilters.dateFrom;
+      const to = AppState.reportFilters.dateTo;
+      let periodLabel = 'Todo el historial';
+      if (from && to) periodLabel = 'Del ' + formatDateKey(from) + ' al ' + formatDateKey(to);
+      else if (from || to) periodLabel = 'Fecha ' + formatDateKey(from || to);
+      else if (periodStart) periodLabel = 'Desde el ' + formatDateKey(periodStart);
+      else if (AppState.reportFilters.period === 'custom') periodLabel = 'Elige una fecha o un intervalo de fechas';
+
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <button type="button" onclick="setReportTab('inicio')" class="inline-flex items-center gap-2 py-2 text-slate-300 hover:text-primary-400 text-sm font-semibold">
+            <i data-lucide="arrow-left" class="w-5 h-5"></i> Volver a reportes
+          </button>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 class="text-2xl font-bold text-slate-100">Reportes y Analisis</h2>
-              <p class="text-slate-500 text-sm mt-1">Metricas y estadisticas del negocio</p>
+              <h2 class="text-xl sm:text-2xl font-bold text-slate-100">${selectedReport.title}</h2>
+              <p class="text-sm text-slate-400 mt-1">${selectedReport.description}</p>
             </div>
-            <button onclick="exportReport()" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors text-sm font-medium">
-              <i data-lucide="download" class="w-4 h-4"></i> Exportar Excel
-            </button>
+            ${activeReportTab !== 'pendientes' ? `
+              <button type="button" onclick="exportReport()" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-500 text-slate-950 rounded-lg text-sm font-semibold">
+                <i data-lucide="download" class="w-4 h-4"></i> Descargar Excel
+              </button>
+            ` : ''}
           </div>
 
+          ${activeReportTab !== 'pendientes' ? `
           <div class="glass rounded-xl p-4 border border-slate-700/50">
             <div class="flex items-center gap-2 mb-4 text-primary-400">
               <i data-lucide="calendar-range" class="w-4 h-4"></i>
-              <span class="text-sm font-medium">Periodo del Reporte</span>
+              <span class="text-sm font-medium">¿De qué fechas?</span>
             </div>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
               <div class="md:col-span-3">
                 <div class="relative">
                   <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
-                  <input type="text" id="reportFilterSearch" value="${AppState.reportFilters.search || ''}" oninput="updateReportSearch()" placeholder="Buscar cliente, material, factura..."
+                  <input type="text" id="reportFilterSearch" value="${escapeAttr(AppState.reportFilters.search || '')}" aria-label="Buscar en este reporte" oninput="updateReportSearch()" placeholder="${activeReportTab === 'pagos' ? 'Buscar cliente, factura o pago' : 'Buscar cliente, material o factura'}"
                     class="w-full pl-9 pr-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
                 </div>
               </div>
               <div>
                 <select id="reportPeriodSelect" onchange="setReportPeriod(this.value)"
                   class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
-                  <option value="" ${!AppState.reportFilters.period ? 'selected' : ''}>Seleccionar</option>
+                  <option value="" ${!AppState.reportFilters.period ? 'selected' : ''}>Todo el historial</option>
                   <option value="today" ${AppState.reportFilters.period === 'today' ? 'selected' : ''}>Hoy</option>
                   <option value="week" ${AppState.reportFilters.period === 'week' ? 'selected' : ''}>Semana</option>
                   <option value="month" ${AppState.reportFilters.period === 'month' ? 'selected' : ''}>Mes</option>
                   <option value="year" ${AppState.reportFilters.period === 'year' ? 'selected' : ''}>Año</option>
-                  <option value="custom" ${AppState.reportFilters.period === 'custom' ? 'selected' : ''}>Custom</option>
+                  <option value="custom" ${AppState.reportFilters.period === 'custom' ? 'selected' : ''}>Elegir fechas</option>
                 </select>
               </div>
             </div>
@@ -6571,30 +6618,26 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                 </div>
               </div>
             ` : ''}
-            
+
             <div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
               <i data-lucide="info" class="w-3 h-3"></i>
-              <span>Mostrando ${filteredSales.length} venta(s) y ${filteredPayments.length} pago(s)/abono(s)</span>
+              <span>${escapeHtml(periodLabel)}</span>
             </div>
           </div>
 
-          <div class="glass rounded-xl p-3 border border-slate-700/50">
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
-              ${reportTabs.map(reportTabButton).join('')}
-            </div>
-          </div>
+          ` : ''}
 
-          ${activeReportTab === 'cobranza' ? renderPendingClientPaymentReportCard(pendingClientPaymentReport) : ''}
+          ${activeReportTab === 'pendientes' ? renderPendingClientPaymentReportCard(pendingClientPaymentReport) : ''}
 
           <div class="${activeReportTab === 'resumen' ? 'space-y-4' : 'hidden'}">
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Cuadre del Periodo</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Dinero recibido en el período</div>
               <div class="text-2xl font-bold text-emerald-400 font-mono">${fmt.currency(periodCashTotal)}</div>
               <div class="text-xs text-slate-500 mt-1">Contado ${fmt.currency(cashRevenue)} + pagos/abonos ${fmt.currency(totalPayments)}</div>
             </div>
             <div class="glass rounded-xl p-5 border-l-4 border-blue-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ticket Promedio</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Promedio por venta</div>
               <div class="text-2xl font-bold text-blue-400 font-mono">${fmt.currency(avgTicket)}</div>
               <div class="text-xs text-slate-500 mt-1">Promedio diario: ${fmt.currency(dailyAverage)}</div>
             </div>
@@ -6604,9 +6647,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <div class="text-xs text-slate-500 mt-1">${totalTransactions} venta(s) en el periodo</div>
             </div>
             <div class="glass rounded-xl p-5 border-l-4 border-purple-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Credito pendiente</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Saldo por cobrar</div>
               <div class="text-2xl font-bold text-purple-400 font-mono">${fmt.currency(pendingCredit)}</div>
-              <div class="text-xs text-slate-500 mt-1">Cobranza: ${collectionRate.toFixed(0)}%</div>
+              <div class="text-xs text-slate-500 mt-1">Saldo actual de las ventas a crédito del período · Cobrado ${collectionRate.toFixed(0)}%</div>
             </div>
           </div>
 
@@ -6628,12 +6671,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="glass rounded-xl p-5 border-l-4 border-amber-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">IVA Recaudado</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Impuesto facturado</div>
               <div class="text-2xl font-bold text-amber-400 font-mono">${fmt.currency(totalIva)}</div>
-              <div class="text-xs text-slate-500 mt-1">${salesWithIva.length} ventas con IVA</div>
+              <div class="text-xs text-slate-500 mt-1">${salesWithIva.length} ventas con impuesto</div>
             </div>
             <div class="glass rounded-xl p-5 border-l-4 border-cyan-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Credito vendido</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ventas a crédito</div>
               <div class="text-2xl font-bold text-cyan-400 font-mono">${fmt.currency(creditRevenue)}</div>
               <div class="text-xs text-slate-500 mt-1">Cobrado: ${fmt.currency(paidCredit)}</div>
             </div>
@@ -6661,7 +6704,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <div class="text-xs text-slate-500 mt-1">${fmt.currency(partialPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0))}</div>
             </div>
             <div class="glass rounded-xl p-5 border-l-4 border-violet-500">
-              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Metodo principal</div>
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Método de pago más usado</div>
               <div class="text-2xl font-bold text-violet-400 font-mono truncate">${topPaymentMethod ? topPaymentMethod[0] : '-'}</div>
               <div class="text-xs text-slate-500 mt-1">${topPaymentMethod ? fmt.currency(topPaymentMethod[1]) : 'Sin pagos'}</div>
             </div>
@@ -6669,49 +6712,37 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
           </div>
 
-          <div class="${activeReportTab === 'cobranza' ? 'space-y-6' : 'hidden'}">
-          <div class="glass rounded-xl p-6">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="font-semibold text-slate-200 flex items-center gap-2">
-                <i data-lucide="receipt-text" class="w-5 h-5 text-emerald-400"></i> Personas que pagaron o abonaron
-              </h3>
-              <span class="text-xs text-slate-500">${filteredPayments.length} en el cuadre</span>
+          <div class="${activeReportTab === 'pagos' ? 'space-y-4' : 'hidden'}">
+            <div class="rounded-xl p-5 border border-emerald-500/30 bg-emerald-500/10">
+              <h3 class="text-sm font-semibold text-emerald-200">Total recibido en pagos y abonos</h3>
+              <div id="reportPaymentsTotal" class="text-3xl font-bold font-mono text-emerald-400 mt-2">${fmt.currency(totalPayments)}</div>
+              <p class="text-sm text-slate-300 mt-2">${filteredPayments.length} movimientos en este período</p>
+              <p class="text-xs text-slate-400 mt-1">Incluye pagos de facturas anteriores. Las ventas al contado se consultan en Resumen del negocio.</p>
             </div>
-            ${filteredPayments.length === 0 ? '<p class="text-slate-500 text-sm">No hay pagos ni abonos en este periodo</p>' : `
-              <div class="overflow-x-auto rounded-xl border border-slate-700/70 bg-slate-950/30">
-                <table class="w-full text-sm">
-                  <thead class="bg-slate-900/90">
-                    <tr class="text-left text-xs uppercase text-slate-400 border-b border-slate-700">
-                      <th class="py-3 px-4">Persona</th>
-                      <th class="py-3 px-4">Factura</th>
-                      <th class="py-3 px-4">Tipo</th>
-                      <th class="py-3 px-4">Por donde pago</th>
-                      <th class="py-3 px-4 text-right">Monto</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${recentPayments.slice(0, 10).map(({ payment, sale }) => `
-                      <tr class="border-b border-slate-800/70 hover:bg-slate-800/35 transition-colors">
-                        <td class="py-3 px-4 text-slate-200 font-semibold">${escapeHtml(payment.client_name || sale?.client_name || 'Sin cliente')}</td>
-                        <td class="py-3 px-4 text-slate-400 font-mono">${escapeHtml(payment.invoice_number || sale?.invoice_number || 'S/F')}</td>
-                        <td class="py-3 px-4">
-                          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${payment.is_full_payment ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'}">
-                            ${payment.is_full_payment ? 'Pago total' : 'Abono'}
-                          </span>
-                        </td>
-                        <td class="py-3 px-4">
-                          <div class="text-slate-200 font-medium">${escapeHtml(payment.notes || payment.method || '-')}</div>
-                          <div class="text-xs text-slate-500 mt-0.5">${escapeHtml(payment.method || '')}</div>
-                        </td>
-                        <td class="py-3 px-4 text-right font-mono text-emerald-400 font-bold">${fmt.currency(payment.amount || 0)}</td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
+            <h3 class="text-base font-semibold text-slate-100">Detalle de los pagos</h3>
+            ${recentPayments.length ? `
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                ${recentPayments.slice(0, AppState.reportFilters.showAllPayments ? undefined : 10).map(({ payment, sale }) => `
+                  <article class="glass rounded-xl p-4 border border-slate-700">
+                    <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+                      <h4 class="font-semibold text-slate-100 break-words">${escapeHtml(payment.client_name || sale?.client_name || 'Sin cliente')}</h4>
+                      <span class="text-xs px-2 py-1 rounded-full ${payment.is_full_payment ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}">${payment.is_full_payment ? 'Pago total' : 'Abono'}</span>
+                    </div>
+                    <p class="text-xs text-slate-400 pb-3 border-b border-slate-700">Factura ${escapeHtml(payment.invoice_number || sale?.invoice_number || 'Sin número')} · ${fmt.dateTime(payment.date)}</p>
+                    <dl class="space-y-2 text-sm mt-3">
+                      <div class="flex justify-between gap-3"><dt class="text-slate-400">Monto recibido</dt><dd class="font-mono text-emerald-300 font-bold">${fmt.currency(payment.amount)}</dd></div>
+                      <div class="flex justify-between gap-3"><dt class="text-slate-400">Método</dt><dd class="text-slate-200 text-right">${escapeHtml(getPaymentMethodLabel(payment))}</dd></div>
+                      <div class="flex justify-between gap-3"><dt class="text-slate-400 shrink-0">Por dónde fue</dt><dd class="text-slate-200 text-right break-words">${escapeHtml(getPaymentRouteLabel(payment) || 'No indicado')}</dd></div>
+                    </dl>
+                  </article>
+                `).join('')}
               </div>
-            `}
+              <p class="text-xs text-slate-400 text-center">Mostrando ${AppState.reportFilters.showAllPayments ? recentPayments.length : Math.min(recentPayments.length, 10)} de ${recentPayments.length} movimientos</p>
+              ${recentPayments.length > 10 && !AppState.reportFilters.showAllPayments ? '<button type="button" onclick="showAllReportPayments()" class="w-full py-3 rounded-lg border border-slate-600 text-slate-200 text-sm font-semibold">Ver todos los movimientos</button>' : ''}
+            ` : '<p class="text-sm text-slate-400 py-4">No hay pagos ni abonos en las fechas seleccionadas.</p>'}
           </div>
 
+          <div class="${activeReportTab === 'clientes' ? 'space-y-6' : 'hidden'}">
           <div class="glass rounded-xl p-6">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
@@ -6727,7 +6758,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
               <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
-                <div class="text-xs uppercase text-slate-500 font-semibold">Clientes que pagaron</div>
+                <div class="text-xs uppercase text-slate-500 font-semibold">Clientes saldados</div>
                 <div class="text-2xl font-bold text-emerald-400 font-mono mt-1">${customerPaymentStatus.paidClients.length}</div>
                 <div class="text-xs text-slate-500 mt-1">${customerPaymentStatus.paidInvoices} factura(s) pagada(s)</div>
               </div>
@@ -6739,7 +6770,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <div class="rounded-lg border border-sky-500/20 bg-sky-500/5 p-4">
                 <div class="text-xs uppercase text-slate-500 font-semibold">Monto pagado</div>
                 <div class="text-2xl font-bold text-sky-400 font-mono mt-1">${fmt.currency(customerPaymentStatus.totalPaidAmount)}</div>
-                <div class="text-xs text-slate-500 mt-1">Segun ventas, pagos y abonos del filtro</div>
+                <div class="text-xs text-slate-500 mt-1">Saldo actual de las ventas incluidas en el filtro</div>
               </div>
               <div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
                 <div class="text-xs uppercase text-slate-500 font-semibold">Monto pendiente</div>
@@ -6770,7 +6801,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                           <td class="py-3 pr-3 text-slate-300 font-medium">${escapeHtml(client.clientName)}</td>
                           <td class="py-3 pr-3">
                             <span class="text-xs px-2 py-1 rounded-full ${client.status === 'PAGADO' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
-                              ${client.status === 'PAGADO' ? 'Pago' : 'No ha pagado'}
+                              ${client.status === 'PAGADO' ? 'Saldado' : client.paidAmount > 0 ? 'Abono parcial' : 'Pendiente'}
                             </span>
                           </td>
                           <td class="py-3 pr-3 text-slate-400">${client.paidInvoices}/${client.invoiceCount} pagada(s)</td>
@@ -6848,55 +6879,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
           </div>
 
-          <div class="${activeReportTab === 'cobranza' ? 'space-y-6' : 'hidden'}">
-          <div class="glass rounded-xl p-6">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="font-semibold text-slate-200 flex items-center gap-2">
-                <i data-lucide="wallet-cards" class="w-5 h-5 text-emerald-400"></i> Pagos del Periodo
-              </h3>
-              <span class="text-xs text-slate-500">${Math.min(filteredPayments.length, 8)} de ${filteredPayments.length} pagos</span>
-            </div>
-            ${filteredPayments.length === 0 ? '<p class="text-slate-500 text-sm">Sin pagos para mostrar</p>' : `
-              <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-xs uppercase text-slate-500 border-b border-slate-800">
-                      <th class="py-2 pr-3">Fecha</th>
-                      <th class="py-2 pr-3">Factura</th>
-                      <th class="py-2 pr-3">Cliente</th>
-                      <th class="py-2 pr-3">Metodo</th>
-                      <th class="py-2 pr-3">Tipo</th>
-                      <th class="py-2 text-right">Monto</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${recentPayments.slice(0, 8).map(({ payment, sale }) => `
-                      <tr class="border-b border-slate-800/70">
-                        <td class="py-3 pr-3 text-slate-300 font-medium">${fmt.date(payment.date)}</td>
-                        <td class="py-3 pr-3 text-slate-400">${payment.invoice_number || sale?.invoice_number || 'S/F'}</td>
-                        <td class="py-3 pr-3 text-slate-400">${payment.client_name || sale?.client_name || 'Sin cliente'}</td>
-                        <td class="py-3 pr-3 text-slate-400">${payment.method || '-'}</td>
-                        <td class="py-3 pr-3">
-                          <span class="text-xs px-2 py-1 rounded-full ${payment.is_full_payment ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}">
-                            ${payment.is_full_payment ? 'Pago total' : 'Abono'}
-                          </span>
-                        </td>
-                        <td class="py-3 text-right font-mono text-emerald-400">${fmt.currency(payment.amount || 0)}</td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-              </div>
-            `}
-          </div>
-
-          </div>
-
           <div class="${activeReportTab === 'ventas' ? 'space-y-6' : 'hidden'}">
           <div class="glass rounded-xl p-6">
             <div class="flex items-center justify-between mb-4">
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
-                <i data-lucide="activity" class="w-5 h-5 text-primary-400"></i> Movimiento Ejecutivo
+                <i data-lucide="activity" class="w-5 h-5 text-primary-400"></i> Ventas realizadas
               </h3>
               <span class="text-xs text-slate-500">${Math.min(filteredSales.length, 8)} de ${filteredSales.length} registros</span>
             </div>
@@ -6971,13 +6958,24 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     function setReportTab(tab) {
-      const nextTab = tab || 'resumen';
+      const nextTab = tab || 'inicio';
       if (AppState.reportFilters.tab === nextTab) return;
       AppState.reportFilters.tab = nextTab;
+      AppState.reportFilters.showAllPayments = false;
       const container = document.getElementById('content-area');
       renderReports(container);
       lucide.createIcons();
       enhanceSearchInputs(container);
+      enhanceWebDateFilterInputs(container);
+      document.getElementById('mainContent')?.scrollTo({ top: 0 });
+    }
+
+    function showAllReportPayments() {
+      AppState.reportFilters.showAllPayments = true;
+      renderReports(document.getElementById('content-area'));
+      lucide.createIcons();
+      enhanceSearchInputs(document.getElementById('content-area'));
+      enhanceWebDateFilterInputs(document.getElementById('content-area'));
     }
 
     function updatePendingClientReportDates() {
