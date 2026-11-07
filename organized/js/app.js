@@ -6178,6 +6178,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const pendingClients = clients.filter(client => client.status === 'PENDIENTE');
 
       return {
+        sales: Array.from(reportSalesById.values()),
         clients,
         paidClients,
         pendingClients,
@@ -6424,6 +6425,25 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       `;
     }
 
+    function getReportPeriodLabel() {
+      const now = new Date();
+      const periodStart = {
+        today: getLocalDateKey(now),
+        week: getLocalDateKey(new Date(now - 7 * 86400000)),
+        month: getLocalDateKey(new Date(now.getFullYear(), now.getMonth(), 1)),
+        year: getLocalDateKey(new Date(now.getFullYear(), 0, 1))
+      }[AppState.reportFilters.period];
+      const from = AppState.reportFilters.dateFrom;
+      const to = AppState.reportFilters.dateTo;
+      let periodLabel = 'Todo el historial';
+      if (from && to) periodLabel = 'Del ' + formatDateKey(from) + ' al ' + formatDateKey(to);
+      else if (from || to) periodLabel = 'Fecha ' + formatDateKey(from || to);
+      else if (periodStart) periodLabel = 'Desde el ' + formatDateKey(periodStart);
+      else if (AppState.reportFilters.period === 'custom') periodLabel = 'Elige una fecha o un intervalo de fechas';
+
+      return periodLabel;
+    }
+
     function renderReports(container) {
       const reports = [
         { id: 'resumen', title: 'Resumen del negocio', description: 'Ventas, dinero recibido y saldo por cobrar', icon: 'layout-dashboard', color: 'text-primary-400' },
@@ -6551,20 +6571,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         pendingCredit > 0 ? { icon: 'alert-triangle', label: 'Credito por cobrar', value: `${fmt.currency(pendingCredit)} pendiente`, color: 'rose' } : { icon: 'shield-check', label: 'Cartera limpia', value: 'Sin saldo pendiente en el filtro', color: 'emerald' }
       ].filter(Boolean);
 
-      const now = new Date();
-      const periodStart = {
-        today: getLocalDateKey(now),
-        week: getLocalDateKey(new Date(now - 7 * 86400000)),
-        month: getLocalDateKey(new Date(now.getFullYear(), now.getMonth(), 1)),
-        year: getLocalDateKey(new Date(now.getFullYear(), 0, 1))
-      }[AppState.reportFilters.period];
-      const from = AppState.reportFilters.dateFrom;
-      const to = AppState.reportFilters.dateTo;
-      let periodLabel = 'Todo el historial';
-      if (from && to) periodLabel = 'Del ' + formatDateKey(from) + ' al ' + formatDateKey(to);
-      else if (from || to) periodLabel = 'Fecha ' + formatDateKey(from || to);
-      else if (periodStart) periodLabel = 'Desde el ' + formatDateKey(periodStart);
-      else if (AppState.reportFilters.period === 'custom') periodLabel = 'Elige una fecha o un intervalo de fechas';
+      const periodLabel = getReportPeriodLabel();
 
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
@@ -6757,9 +6764,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               </h3>
               <div class="flex flex-col sm:flex-row sm:items-center gap-3">
                 <span class="text-xs text-slate-500">${customerPaymentStatus.clients.length} cliente(s) en el filtro</span>
-                <button onclick="exportCurrentMonthPaymentStatusReport()" class="inline-flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors text-xs font-semibold">
-                  <i data-lucide="download" class="w-4 h-4"></i> Descargar mes actual
-                </button>
               </div>
             </div>
 
@@ -7190,9 +7194,189 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       });
     }
 
+    function exportClientStatusReport() {
+      if (!window.XLSX) {
+        showExcelLibraryError();
+        return;
+      }
+
+      const sales = getFilteredReportSales();
+      const payments = getFilteredReportPayments();
+      const report = getReportCustomerPaymentStatus(sales, payments);
+      const clients = report.clients.slice().sort((a, b) =>
+        b.pendingAmount - a.pendingAmount || a.clientName.localeCompare(b.clientName)
+      );
+      const stateLabel = (paid, pending) => pending <= 0.01
+        ? 'Saldado'
+        : paid > 0 ? 'Abono parcial' : 'Pendiente de pago';
+      const generatedAt = fmt.dateTime(new Date().toISOString());
+      const periodLabel = getReportPeriodLabel();
+      const searchLabel = AppState.reportFilters.search || 'Todos los clientes';
+      const totalAmount = clients.reduce((sum, client) => sum + client.totalAmount, 0);
+      const moneyFormat = '"RD$" #,##0.00';
+
+      const rows = [
+        [],
+        ['ESTADO DE CADA CLIENTE'],
+        ['Fechas consultadas', periodLabel],
+        ['Búsqueda', searchLabel],
+        ['Saldos calculados al ' + generatedAt],
+        ['Total facturado (RD$)', '', 'Total pagado (RD$)', '', 'Falta por cobrar (RD$)'],
+        [totalAmount, '', report.totalPaidAmount, '', report.totalPendingAmount],
+        ['Incluye las ventas del filtro y las facturas con cobros en ese filtro. Los pagos y saldos son acumulados hasta hoy.'],
+        [],
+        ['Cliente', 'Estado actual', 'Total facturado (RD$)', 'Pagado (RD$)', 'Falta por pagar (RD$)', 'Facturas saldadas', 'Facturas por pagar'],
+        ...clients.map(client => [
+          client.clientName,
+          stateLabel(client.paidAmount, client.pendingAmount),
+          client.totalAmount,
+          client.paidAmount,
+          client.pendingAmount,
+          client.paidInvoices,
+          client.pendingInvoices
+        ])
+      ];
+      if (!clients.length) rows.push(['No hay clientes para las fechas y búsqueda seleccionadas']);
+      const totalsRow = rows.length;
+      rows.push(['TOTAL', '', totalAmount, report.totalPaidAmount, report.totalPendingAmount, report.paidInvoices, report.pendingInvoices]);
+
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      const detailSales = report.sales.slice().sort((a, b) =>
+        String(a.client_name || '').localeCompare(String(b.client_name || '')) ||
+        String(a.date || '').localeCompare(String(b.date || ''))
+      );
+      const allPayments = getRecords('payment');
+      const details = detailSales.map(sale => {
+        const snapshot = sale.payment_type === 'credito'
+          ? getCreditSalePaymentSnapshot(sale, allPayments)
+          : { saleTotal: toFiniteNumber(sale.sale_total, 0), paidAmount: toFiniteNumber(sale.sale_total, 0), pendingAmount: 0 };
+        const date = new Date(getLocalDateKey(sale.date) + 'T12:00:00');
+        return [
+          sale.client_name || 'Sin cliente',
+          sale.invoice_number || 'Sin número',
+          Number.isNaN(date.getTime()) ? 'No indicada' : date,
+          snapshot.saleTotal,
+          snapshot.paidAmount,
+          snapshot.pendingAmount,
+          stateLabel(snapshot.paidAmount, snapshot.pendingAmount)
+        ];
+      });
+      const detailRows = [
+        [],
+        ['DETALLE DE FACTURAS POR CLIENTE'],
+        ['Fechas consultadas', periodLabel],
+        ['Búsqueda', searchLabel],
+        ['Saldos calculados al ' + generatedAt],
+        ['Cada fila es una factura. Pagado y falta por pagar muestran su estado actual.'],
+        [],
+        ['Cliente', 'Número de factura', 'Fecha de factura', 'Total factura (RD$)', 'Pagado (RD$)', 'Falta por pagar (RD$)', 'Estado actual'],
+        ...details
+      ];
+      if (!details.length) detailRows.push(['No hay facturas para las fechas y búsqueda seleccionadas']);
+      const detailTotalsRow = detailRows.length;
+      detailRows.push(['TOTAL', '', '', totalAmount, report.totalPaidAmount, report.totalPendingAmount]);
+      const detailSheet = XLSX.utils.aoa_to_sheet(detailRows, { cellDates: true });
+
+      const styleSheet = (target, tableRows, headerRow, totalRow, widths, moneyColumns, statusColumn) => {
+        target['!ref'] = 'A1:G' + tableRows.length;
+        target['!cols'] = widths.map(width => ({ wch: width }));
+        target['!rows'] = tableRows.map((row, index) => {
+          if (index === 0) return { hpt: 9 };
+          if (index === 1) return { hpt: 28 };
+          if (index === headerRow) return { hpt: 38 };
+          if (index < headerRow) return { hpt: 25 };
+          const lines = Math.max(1, ...row.map((value, column) =>
+            typeof value === 'string' ? Math.ceil(value.length / (widths[column] - 2)) : 1
+          ));
+          return { hpt: Math.max(34, lines * 14 + 8) };
+        });
+        target['!merges'] = [
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+          { s: { r: 2, c: 1 }, e: { r: 2, c: 6 } },
+          { s: { r: 3, c: 1 }, e: { r: 3, c: 6 } },
+          { s: { r: 4, c: 0 }, e: { r: 4, c: 6 } }
+        ];
+        target['!autofilter'] = { ref: XLSX.utils.encode_range({
+          s: { r: headerRow, c: 0 }, e: { r: Math.max(headerRow, totalRow - 1), c: 6 }
+        }) };
+        for (let r = 0; r < tableRows.length; r++) {
+          for (let c = 0; c < 7; c++) {
+            const address = XLSX.utils.encode_cell({ r, c });
+            const cell = target[address] || (target[address] = { t: 's', v: '' });
+            const tableBody = r > headerRow && r < totalRow;
+            cell.s = {
+              font: { name: 'Arial', sz: 11, color: { rgb: '1E293B' } },
+              fill: { fgColor: { rgb: 'FFFFFF' } },
+              alignment: { vertical: 'center', horizontal: cell.t === 'n' ? 'right' : 'left', wrapText: true }
+            };
+            if (tableBody && r % 2 === 0) cell.s.fill = { fgColor: { rgb: 'F1F5F9' } };
+            if (r === 1) cell.s.font = { name: 'Arial', sz: 16, bold: true, color: { rgb: '0F172A' } };
+            if (r === headerRow) {
+              cell.s.font.bold = true;
+              cell.s.font.color = { rgb: 'FFFFFF' };
+              cell.s.fill = { fgColor: { rgb: '1E3A5F' } };
+              cell.s.alignment.horizontal = 'center';
+            }
+            if (r === totalRow) {
+              cell.s.font.bold = true;
+              cell.s.fill = { fgColor: { rgb: 'E2E8F0' } };
+              cell.s.border = { top: { style: 'thin', color: { rgb: '94A3B8' } } };
+            }
+            if (r > headerRow && moneyColumns.includes(c)) cell.s.numFmt = moneyFormat;
+            if (tableBody && c === statusColumn) {
+              const paid = cell.v === 'Saldado';
+              const partial = cell.v === 'Abono parcial';
+              cell.s.font.color = { rgb: paid ? '166534' : partial ? '92400E' : '991B1B' };
+              cell.s.fill = { fgColor: { rgb: paid ? 'DCFCE7' : partial ? 'FEF3C7' : 'FEE2E2' } };
+            }
+          }
+        }
+      };
+
+      styleSheet(sheet, rows, 9, totalsRow, [34, 24, 22, 22, 23, 18, 18], [2, 3, 4], 1);
+      [5, 6].forEach(r => {
+        [[0, 1], [2, 3], [4, 6]].forEach(([first, last]) => {
+          sheet['!merges'].push({ s: { r, c: first }, e: { r, c: last } });
+          const cell = sheet[XLSX.utils.encode_cell({ r, c: first })];
+          cell.s.font.bold = true;
+          if (r === 6) {
+            cell.s.font.sz = 14;
+            cell.s.numFmt = moneyFormat;
+            cell.s.alignment.horizontal = 'left';
+          }
+        });
+      });
+      sheet['!merges'].push({ s: { r: 7, c: 0 }, e: { r: 7, c: 6 } });
+      sheet['!rows'][7] = { hpt: 32 };
+      if (!clients.length) sheet['!merges'].push({ s: { r: 10, c: 0 }, e: { r: 10, c: 6 } });
+
+      styleSheet(detailSheet, detailRows, 7, detailTotalsRow, [34, 23, 20, 22, 22, 23, 24], [3, 4, 5], 6);
+      detailSheet['!merges'].push({ s: { r: 5, c: 0 }, e: { r: 5, c: 6 } });
+      details.forEach((row, index) => {
+        if (row[2] instanceof Date) {
+          const dateCell = detailSheet[XLSX.utils.encode_cell({ r: index + 8, c: 2 })];
+          dateCell.s.numFmt = 'dd/mm/yyyy';
+          dateCell.z = 'dd/mm/yyyy';
+          dateCell.s.alignment.horizontal = 'center';
+        }
+      });
+      if (!details.length) detailSheet['!merges'].push({ s: { r: 8, c: 0 }, e: { r: 8, c: 6 } });
+
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Estado de clientes');
+      XLSX.utils.book_append_sheet(workbook, detailSheet, 'Detalle de facturas');
+      XLSX.writeFile(workbook, 'estado_de_clientes_' + getLocalDateKey(new Date()) + '.xlsx');
+      showToast('Excel descargado con el estado de clientes y el detalle de sus facturas');
+    }
+
     function exportReport(section = 'resumen') {
       if (!window.XLSX) {
         showExcelLibraryError();
+        return;
+      }
+
+      if (section === 'clientes') {
+        exportClientStatusReport();
         return;
       }
 
