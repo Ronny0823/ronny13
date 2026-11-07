@@ -7194,6 +7194,65 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       });
     }
 
+    function styleReportExcelSheet(target, tableRows, headerRow, totalRow, widths, moneyColumns, statusColumn = -1) {
+      const moneyFormat = '"RD$" #,##0.00';
+      const lastColumn = widths.length - 1;
+      target['!ref'] = 'A1:' + XLSX.utils.encode_col(lastColumn) + tableRows.length;
+      target['!cols'] = widths.map(width => ({ wch: width }));
+      target['!rows'] = tableRows.map((row, index) => {
+        if (index === 0) return { hpt: 9 };
+        if (index === 1) return { hpt: 28 };
+        if (index === headerRow) return { hpt: 38 };
+        if (index < headerRow) return { hpt: 25 };
+        const lines = Math.max(1, ...row.map((value, column) =>
+          typeof value === 'string' ? Math.ceil(value.length / (widths[column] - 2)) : 1
+        ));
+        return { hpt: Math.max(34, lines * 14 + 8) };
+      });
+      target['!merges'] = [
+        { s: { r: 1, c: 0 }, e: { r: 1, c: lastColumn } },
+        { s: { r: 2, c: 1 }, e: { r: 2, c: lastColumn } },
+        { s: { r: 3, c: 1 }, e: { r: 3, c: lastColumn } },
+        { s: { r: 4, c: 0 }, e: { r: 4, c: lastColumn } }
+      ];
+      target['!autofilter'] = { ref: XLSX.utils.encode_range({
+        s: { r: headerRow, c: 0 }, e: { r: Math.max(headerRow, totalRow - 1), c: lastColumn }
+      }) };
+      for (let r = 0; r < tableRows.length; r++) {
+        for (let c = 0; c < widths.length; c++) {
+          const address = XLSX.utils.encode_cell({ r, c });
+          const cell = target[address] || (target[address] = { t: 's', v: '' });
+          const tableBody = r > headerRow && r < totalRow;
+          cell.s = {
+            font: { name: 'Arial', sz: 11, color: { rgb: '1E293B' } },
+            fill: { fgColor: { rgb: 'FFFFFF' } },
+            alignment: { vertical: 'center', horizontal: cell.t === 'n' ? 'right' : 'left', wrapText: true }
+          };
+          if (tableBody && r % 2 === 0) cell.s.fill = { fgColor: { rgb: 'F1F5F9' } };
+          if (r === 1) cell.s.font = { name: 'Arial', sz: 16, bold: true, color: { rgb: '0F172A' } };
+          if (r === headerRow) {
+            cell.s.font.bold = true;
+            cell.s.font.color = { rgb: 'FFFFFF' };
+            cell.s.fill = { fgColor: { rgb: '1E3A5F' } };
+            cell.s.alignment.horizontal = 'center';
+          }
+          if (r === totalRow) {
+            cell.s.font.bold = true;
+            cell.s.fill = { fgColor: { rgb: 'E2E8F0' } };
+            cell.s.border = { top: { style: 'thin', color: { rgb: '94A3B8' } } };
+          }
+          if (r > headerRow && moneyColumns.includes(c)) cell.s.numFmt = moneyFormat;
+          if (tableBody && c === statusColumn) {
+            const paid = cell.v === 'Saldado' || cell.v === 'Pago total';
+            const partial = cell.v === 'Abono parcial' || cell.v === 'Abono';
+            cell.s.font.color = { rgb: paid ? '166534' : partial ? '92400E' : '991B1B' };
+            cell.s.fill = { fgColor: { rgb: paid ? 'DCFCE7' : partial ? 'FEF3C7' : 'FEE2E2' } };
+          }
+        }
+      }
+    }
+
+
     function exportClientStatusReport() {
       if (!window.XLSX) {
         showExcelLibraryError();
@@ -7278,63 +7337,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       detailRows.push(['TOTAL', '', '', totalAmount, report.totalPaidAmount, report.totalPendingAmount]);
       const detailSheet = XLSX.utils.aoa_to_sheet(detailRows, { cellDates: true });
 
-      const styleSheet = (target, tableRows, headerRow, totalRow, widths, moneyColumns, statusColumn) => {
-        target['!ref'] = 'A1:G' + tableRows.length;
-        target['!cols'] = widths.map(width => ({ wch: width }));
-        target['!rows'] = tableRows.map((row, index) => {
-          if (index === 0) return { hpt: 9 };
-          if (index === 1) return { hpt: 28 };
-          if (index === headerRow) return { hpt: 38 };
-          if (index < headerRow) return { hpt: 25 };
-          const lines = Math.max(1, ...row.map((value, column) =>
-            typeof value === 'string' ? Math.ceil(value.length / (widths[column] - 2)) : 1
-          ));
-          return { hpt: Math.max(34, lines * 14 + 8) };
-        });
-        target['!merges'] = [
-          { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
-          { s: { r: 2, c: 1 }, e: { r: 2, c: 6 } },
-          { s: { r: 3, c: 1 }, e: { r: 3, c: 6 } },
-          { s: { r: 4, c: 0 }, e: { r: 4, c: 6 } }
-        ];
-        target['!autofilter'] = { ref: XLSX.utils.encode_range({
-          s: { r: headerRow, c: 0 }, e: { r: Math.max(headerRow, totalRow - 1), c: 6 }
-        }) };
-        for (let r = 0; r < tableRows.length; r++) {
-          for (let c = 0; c < 7; c++) {
-            const address = XLSX.utils.encode_cell({ r, c });
-            const cell = target[address] || (target[address] = { t: 's', v: '' });
-            const tableBody = r > headerRow && r < totalRow;
-            cell.s = {
-              font: { name: 'Arial', sz: 11, color: { rgb: '1E293B' } },
-              fill: { fgColor: { rgb: 'FFFFFF' } },
-              alignment: { vertical: 'center', horizontal: cell.t === 'n' ? 'right' : 'left', wrapText: true }
-            };
-            if (tableBody && r % 2 === 0) cell.s.fill = { fgColor: { rgb: 'F1F5F9' } };
-            if (r === 1) cell.s.font = { name: 'Arial', sz: 16, bold: true, color: { rgb: '0F172A' } };
-            if (r === headerRow) {
-              cell.s.font.bold = true;
-              cell.s.font.color = { rgb: 'FFFFFF' };
-              cell.s.fill = { fgColor: { rgb: '1E3A5F' } };
-              cell.s.alignment.horizontal = 'center';
-            }
-            if (r === totalRow) {
-              cell.s.font.bold = true;
-              cell.s.fill = { fgColor: { rgb: 'E2E8F0' } };
-              cell.s.border = { top: { style: 'thin', color: { rgb: '94A3B8' } } };
-            }
-            if (r > headerRow && moneyColumns.includes(c)) cell.s.numFmt = moneyFormat;
-            if (tableBody && c === statusColumn) {
-              const paid = cell.v === 'Saldado';
-              const partial = cell.v === 'Abono parcial';
-              cell.s.font.color = { rgb: paid ? '166534' : partial ? '92400E' : '991B1B' };
-              cell.s.fill = { fgColor: { rgb: paid ? 'DCFCE7' : partial ? 'FEF3C7' : 'FEE2E2' } };
-            }
-          }
-        }
-      };
-
-      styleSheet(sheet, rows, 9, totalsRow, [34, 24, 22, 22, 23, 18, 18], [2, 3, 4], 1);
+      styleReportExcelSheet(sheet, rows, 9, totalsRow, [34, 24, 22, 22, 23, 18, 18], [2, 3, 4], 1);
       [5, 6].forEach(r => {
         [[0, 1], [2, 3], [4, 6]].forEach(([first, last]) => {
           sheet['!merges'].push({ s: { r, c: first }, e: { r, c: last } });
@@ -7351,7 +7354,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       sheet['!rows'][7] = { hpt: 32 };
       if (!clients.length) sheet['!merges'].push({ s: { r: 10, c: 0 }, e: { r: 10, c: 6 } });
 
-      styleSheet(detailSheet, detailRows, 7, detailTotalsRow, [34, 23, 20, 22, 22, 23, 24], [3, 4, 5], 6);
+      styleReportExcelSheet(detailSheet, detailRows, 7, detailTotalsRow, [34, 23, 20, 22, 22, 23, 24], [3, 4, 5], 6);
       detailSheet['!merges'].push({ s: { r: 5, c: 0 }, e: { r: 5, c: 6 } });
       details.forEach((row, index) => {
         if (row[2] instanceof Date) {
@@ -7369,6 +7372,167 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       showToast('Excel descargado con el estado de clientes y el detalle de sus facturas');
     }
 
+    function exportReceivedPaymentsReport() {
+      if (!window.XLSX) {
+        showExcelLibraryError();
+        return;
+      }
+
+      const entries = getFilteredReportPayments().slice().sort((a, b) =>
+        new Date(a.payment.date) - new Date(b.payment.date)
+      );
+      const totalReceived = entries.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
+      const fullPayments = entries.filter(({ payment }) => payment.is_full_payment);
+      const fullAmount = fullPayments.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
+      const generatedAt = fmt.dateTime(new Date().toISOString());
+      const periodLabel = getReportPeriodLabel();
+      const searchLabel = AppState.reportFilters.search || 'Todos los pagos y abonos';
+      const moneyFormat = '"RD$" #,##0.00';
+      const methods = new Map();
+      const asDate = value => {
+        const date = new Date(value || '');
+        return Number.isNaN(date.getTime()) ? 'No indicada' : date;
+      };
+      const movementRows = entries.map(({ payment, sale }) => {
+        const amount = toFiniteNumber(payment.amount, 0);
+        const method = getPaymentMethodLabel(payment);
+        methods.set(method, (methods.get(method) || 0) + amount);
+        return [
+          asDate(payment.date),
+          payment.client_name || sale?.client_name || 'Sin cliente',
+          payment.invoice_number || sale?.invoice_number || 'Sin número',
+          payment.is_full_payment ? 'Pago total' : 'Abono',
+          amount,
+          method,
+          getPaymentRouteLabel(payment) || 'No indicado'
+        ];
+      });
+      const rows = [
+        [],
+        ['PAGOS Y ABONOS RECIBIDOS'],
+        ['Fechas consultadas', periodLabel],
+        ['Búsqueda', searchLabel],
+        ['Reporte generado el ' + generatedAt],
+        ['Total recibido (RD$)', '', 'Pagos totales (RD$)', '', 'Abonos (RD$)'],
+        [totalReceived, '', fullAmount, '', totalReceived - fullAmount],
+        [entries.length + ' movimientos. Pagos totales ' + fullPayments.length + '. Abonos ' +
+          (entries.length - fullPayments.length) + '. Incluye pagos de facturas anteriores.'],
+        [],
+        ['Fecha y hora del pago', 'Cliente', 'Número de factura', 'Tipo de pago', 'Monto recibido (RD$)', 'Método de pago', 'Por dónde fue'],
+        ...movementRows
+      ];
+      if (!entries.length) rows.push(['No hay pagos ni abonos para las fechas y búsqueda seleccionadas']);
+      const totalRow = rows.length;
+      rows.push(['TOTAL RECIBIDO', '', '', '', totalReceived]);
+      rows.push([]);
+      const methodTitleRow = rows.length;
+      rows.push(['RECIBIDO POR MÉTODO']);
+      const methodHeaderRow = rows.length;
+      rows.push(['Método de pago', 'Total recibido (RD$)']);
+      Array.from(methods.entries()).sort((a, b) => b[1] - a[1]).forEach(([method, amount]) => {
+        rows.push([method, amount]);
+      });
+
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+      styleReportExcelSheet(sheet, rows, 9, totalRow, [24, 32, 23, 18, 24, 24, 32], [4], 3);
+      const formatDateCell = (target, row, column) => {
+        const cell = target[XLSX.utils.encode_cell({ r: row, c: column })];
+        if (cell?.t !== 'd') return;
+        cell.z = 'dd/mm/yyyy hh:mm';
+        cell.s.numFmt = cell.z;
+        cell.s.alignment.horizontal = 'center';
+      };
+      movementRows.forEach((row, index) => {
+        formatDateCell(sheet, index + 10, 0);
+        [2, 3, 5].forEach(column => {
+          sheet[XLSX.utils.encode_cell({ r: index + 10, c: column })].s.alignment.horizontal = 'center';
+        });
+      });
+      [5, 6].forEach(r => {
+        [[0, 1], [2, 3], [4, 6]].forEach(([first, last]) => {
+          sheet['!merges'].push({ s: { r, c: first }, e: { r, c: last } });
+          const cell = sheet[XLSX.utils.encode_cell({ r, c: first })];
+          cell.s.font.bold = true;
+          if (r === 6) {
+            cell.s.font.sz = 14;
+            cell.s.numFmt = moneyFormat;
+            cell.s.alignment.horizontal = 'left';
+          }
+        });
+      });
+      sheet['!merges'].push(
+        { s: { r: 7, c: 0 }, e: { r: 7, c: 6 } },
+        { s: { r: totalRow, c: 0 }, e: { r: totalRow, c: 3 } },
+        { s: { r: methodTitleRow, c: 0 }, e: { r: methodTitleRow, c: 3 } }
+      );
+      sheet['!rows'][7] = { hpt: 32 };
+      for (let r = methodHeaderRow; r < rows.length; r++) {
+        const cell = sheet[XLSX.utils.encode_cell({ r, c: 1 })];
+        if (r > methodHeaderRow) cell.s.numFmt = moneyFormat;
+        else {
+          [0, 1].forEach(c => {
+            const header = sheet[XLSX.utils.encode_cell({ r, c })];
+            header.s.font.bold = true;
+            header.s.fill = { fgColor: { rgb: 'E2E8F0' } };
+          });
+        }
+      }
+      if (!entries.length) sheet['!merges'].push({ s: { r: 10, c: 0 }, e: { r: 10, c: 6 } });
+
+      const allPayments = getRecords('payment');
+      const detailRows = [
+        [],
+        ['SALDOS Y OBSERVACIONES DE CADA PAGO'],
+        ['Fechas consultadas', periodLabel],
+        ['Búsqueda', searchLabel],
+        ['Reporte generado el ' + generatedAt],
+        ['El saldo se calcula con los pagos registrados hasta la fecha y hora de cada movimiento.'],
+        [],
+        ['Fecha y hora del pago', 'Cliente', 'Número de factura', 'Monto recibido (RD$)', 'Total factura (RD$)', 'Pagado hasta esa fecha (RD$)', 'Saldo tras ese pago (RD$)', 'Placa', 'Observación'],
+        ...entries.map(({ payment, sale }) => {
+          const paymentDate = asDate(payment.date);
+          const canCalculateBalance = sale && paymentDate instanceof Date;
+          const paidBefore = canCalculateBalance ? allPayments
+            .filter(item => item.sale_id === sale.__backendId && new Date(item.date) <= paymentDate)
+            .reduce((sum, item) => sum + toFiniteNumber(item.amount, 0), 0) : '';
+          const saleTotal = sale ? toFiniteNumber(sale.sale_total, 0) : '';
+          return [
+            paymentDate,
+            payment.client_name || sale?.client_name || 'Sin cliente',
+            payment.invoice_number || sale?.invoice_number || 'Sin número',
+            toFiniteNumber(payment.amount, 0),
+            saleTotal,
+            paidBefore,
+            canCalculateBalance ? Math.max(0, saleTotal - paidBefore) : '',
+            sale?.vehicle_plate || 'No indicada',
+            payment.notes || (sale ? '' : 'Factura de origen no disponible')
+          ];
+        })
+      ];
+      if (!entries.length) detailRows.push(['No hay pagos ni abonos para las fechas y búsqueda seleccionadas']);
+      const detailTotalRow = detailRows.length;
+      detailRows.push(['TOTAL RECIBIDO', '', '', totalReceived]);
+      const detailSheet = XLSX.utils.aoa_to_sheet(detailRows, { cellDates: true });
+      styleReportExcelSheet(detailSheet, detailRows, 7, detailTotalRow, [24, 32, 23, 24, 24, 24, 24, 18, 38], [3, 4, 5, 6]);
+      entries.forEach((entry, index) => {
+        formatDateCell(detailSheet, index + 8, 0);
+        [2, 7].forEach(column => {
+          detailSheet[XLSX.utils.encode_cell({ r: index + 8, c: column })].s.alignment.horizontal = 'center';
+        });
+      });
+      detailSheet['!merges'].push(
+        { s: { r: 5, c: 0 }, e: { r: 5, c: 8 } },
+        { s: { r: detailTotalRow, c: 0 }, e: { r: detailTotalRow, c: 2 } }
+      );
+      if (!entries.length) detailSheet['!merges'].push({ s: { r: 8, c: 0 }, e: { r: 8, c: 8 } });
+
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Pagos y abonos');
+      XLSX.utils.book_append_sheet(workbook, detailSheet, 'Saldos y observaciones');
+      XLSX.writeFile(workbook, 'pagos_y_abonos_' + getLocalDateKey(new Date()) + '.xlsx');
+      showToast('Excel descargado con pagos, abonos y detalle de saldos');
+    }
+
     function exportReport(section = 'resumen') {
       if (!window.XLSX) {
         showExcelLibraryError();
@@ -7377,6 +7541,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       if (section === 'clientes') {
         exportClientStatusReport();
+        return;
+      }
+
+      if (section === 'pagos') {
+        exportReceivedPaymentsReport();
         return;
       }
 
