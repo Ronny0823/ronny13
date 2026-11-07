@@ -6045,10 +6045,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const now = new Date();
 
       if (AppState.reportFilters.dateFrom || AppState.reportFilters.dateTo) {
-        const day = getLocalDateKey(dateValue);
-        if (!day) return false;
-        return (!AppState.reportFilters.dateFrom || day >= AppState.reportFilters.dateFrom) &&
-          (!AppState.reportFilters.dateTo || day <= AppState.reportFilters.dateTo);
+        return matchesDateFilter(dateValue, AppState.reportFilters.dateFrom, AppState.reportFilters.dateTo);
       }
 
       const day = getLocalDateKey(dateValue);
@@ -6427,7 +6424,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     function renderReports(container) {
-      const detailsOpen = document.getElementById('reportMoreDetails')?.open;
       const activeReportTab = AppState.reportFilters.tab || 'resumen';
       const filteredSales = getFilteredReportSales();
       const filteredPayments = getFilteredReportPayments();
@@ -6438,9 +6434,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const pendingClientPaymentReport = activeReportTab === 'cobranza' ? getPendingClientPaymentReport() : null;
       const reportTabs = [
         { id: 'resumen', label: 'Resumen', icon: 'layout-dashboard' },
+        { id: 'cobranza', label: 'Cobranza', icon: 'wallet-cards' },
         { id: 'ventas', label: 'Ventas', icon: 'receipt-text' },
-        { id: 'cobranza', label: 'Cobros y deudas', icon: 'wallet-cards' },
-        { id: 'graficas', label: 'Gráficas', icon: 'bar-chart-3' }
+        { id: 'graficas', label: 'Graficas', icon: 'bar-chart-3' }
       ];
       const reportTabButton = tab => `
         <button type="button" onclick="setReportTab('${tab.id}')"
@@ -6456,7 +6452,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const recentSales = activeReportTab === 'ventas'
         ? filteredSales.slice().sort((a, b) => new Date(b.date) - new Date(a.date))
         : [];
-      const totalRevenue = filteredSales.reduce((a, s) => a + toFiniteNumber(s.sale_total, 0), 0);
+      const totalRevenue = filteredSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const totalPayments = filteredPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0);
       const fullPayments = filteredPayments.filter(item => item.payment.is_full_payment);
       const partialPayments = filteredPayments.filter(item => !item.payment.is_full_payment);
@@ -6470,9 +6466,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const avgTicket = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
       const cashSales = filteredSales.filter(s => s.payment_type !== 'credito');
       const creditSales = filteredSales.filter(s => s.payment_type === 'credito');
-      const cashRevenue = cashSales.reduce((a, s) => a + toFiniteNumber(s.sale_total, 0), 0);
+      const cashRevenue = cashSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const periodCashTotal = cashRevenue + totalPayments;
-      const creditRevenue = creditSales.reduce((a, s) => a + toFiniteNumber(s.sale_total, 0), 0);
+      const creditRevenue = creditSales.reduce((a, s) => a + (s.sale_total || 0), 0);
       const allPayments = getRecords('payment');
       const pendingCredit = creditSales.reduce((sum, sale) => {
         const { pendingAmount } = getCreditSalePaymentSnapshot(sale, allPayments);
@@ -6480,7 +6476,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       }, 0);
       const paidCredit = Math.max(0, creditRevenue - pendingCredit);
       const bestSale = filteredSales.slice().sort((a, b) => (b.sale_total || 0) - (a.sale_total || 0))[0];
-
+      
       const salesByDay = {};
       filteredSales.forEach(s => {
         const day = s.date?.split('T')[0];
@@ -6492,7 +6488,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const bestDay = sortedDayEntries[0];
       const activeDays = Object.keys(salesByDay).length;
       const dailyAverage = activeDays > 0 ? totalRevenue / activeDays : 0;
-
+      
       const materialSales = {};
       filteredSales.forEach(s => {
         if (Array.isArray(s.items) && s.items.length) {
@@ -6505,13 +6501,13 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         }
       });
       const topMaterials = Object.entries(materialSales).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
+      
       const clientSales = {};
       filteredSales.forEach(s => {
         clientSales[s.client_name] = (clientSales[s.client_name] || 0) + (s.sale_total || 0);
       });
       const topClients = Object.entries(clientSales).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
+      
       const salesWithIva = filteredSales.filter(s => s.iva_enabled);
       const totalIva = salesWithIva.reduce((a, s) => a + (s.sale_tax || 0), 0);
       const collectionRate = creditRevenue > 0 ? (paidCredit / creditRevenue) * 100 : 100;
@@ -6522,91 +6518,65 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         pendingCredit > 0 ? { icon: 'alert-triangle', label: 'Credito por cobrar', value: `${fmt.currency(pendingCredit)} pendiente`, color: 'rose' } : { icon: 'shield-check', label: 'Cartera limpia', value: 'Sin saldo pendiente en el filtro', color: 'emerald' }
       ].filter(Boolean);
 
-      const receivedByMethod = new Map();
-      [...cashSales.map(sale => ({
-        method: sale.payment_method || sale.method || '',
-        amount: sale.sale_total
-      })), ...filteredPayments.map(({ payment }) => ({
-        method: payment.method || payment.payment_method || '',
-        amount: payment.amount
-      }))].forEach(({ method, amount }) => {
-        const label = safeText(method) ? getPaymentMethodLabel(method) : 'Sin método registrado';
-        receivedByMethod.set(label, (receivedByMethod.get(label) || 0) + toFiniteNumber(amount, 0));
-      });
-      const periodOptions = [
-        { id: 'today', label: 'Hoy' },
-        { id: 'week', label: 'Semana' },
-        { id: 'month', label: 'Este mes' },
-        { id: 'custom', label: 'Elegir fechas' },
-        { id: 'year', label: 'Este año' },
-        { id: '', label: 'Todo el historial' }
-      ];
-      const now = new Date();
-      const today = getLocalDateKey(now);
-      const automaticStart = {
-        today,
-        week: getLocalDateKey(new Date(now - 7 * 86400000)),
-        month: getLocalDateKey(new Date(now.getFullYear(), now.getMonth(), 1)),
-        year: getLocalDateKey(new Date(now.getFullYear(), 0, 1))
-      }[AppState.reportFilters.period];
-      const dateFrom = AppState.reportFilters.dateFrom;
-      const dateTo = AppState.reportFilters.dateTo;
-      let periodLabel = 'Todo el historial';
-      if (dateFrom || dateTo) {
-        periodLabel = dateFrom && dateTo
-          ? 'Del ' + formatDateKey(dateFrom) + ' al ' + formatDateKey(dateTo)
-          : dateFrom ? 'Desde el ' + formatDateKey(dateFrom) : 'Hasta el ' + formatDateKey(dateTo);
-      } else if (automaticStart) {
-        periodLabel = 'Desde el ' + formatDateKey(automaticStart);
-        if (AppState.reportFilters.period === 'today') periodLabel = 'Hoy, ' + formatDateKey(today);
-      } else if (AppState.reportFilters.period === 'custom') {
-        periodLabel = 'Todo el historial · elige fechas para limitar el reporte';
-      }
-
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
-          <div>
-            <h2 class="text-2xl font-bold text-slate-100">Reportes y análisis</h2>
-            <p class="text-slate-400 text-sm mt-1">Entiende las ventas y los cobros</p>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-2xl font-bold text-slate-100">Reportes y Analisis</h2>
+              <p class="text-slate-500 text-sm mt-1">Metricas y estadisticas del negocio</p>
+            </div>
+            <button onclick="exportReport()" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors text-sm font-medium">
+              <i data-lucide="download" class="w-4 h-4"></i> Exportar Excel
+            </button>
           </div>
 
           <div class="glass rounded-xl p-4 border border-slate-700/50">
-            <h3 class="text-sm font-semibold text-slate-100 mb-3">¿Qué período quieres revisar?</h3>
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-              ${periodOptions.map(period => `
-                <button type="button" onclick="setReportPeriod('${period.id}')" aria-pressed="${AppState.reportFilters.period === period.id}"
-                  class="px-2 py-2.5 rounded-lg text-sm font-semibold transition-colors ${AppState.reportFilters.period === period.id ? 'bg-primary-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}">
-                  ${period.label}
-                </button>
-              `).join('')}
+            <div class="flex items-center gap-2 mb-4 text-primary-400">
+              <i data-lucide="calendar-range" class="w-4 h-4"></i>
+              <span class="text-sm font-medium">Periodo del Reporte</span>
             </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <div class="md:col-span-3">
+                <div class="relative">
+                  <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+                  <input type="text" id="reportFilterSearch" value="${AppState.reportFilters.search || ''}" oninput="updateReportSearch()" placeholder="Buscar cliente, material, factura..."
+                    class="w-full pl-9 pr-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
+                </div>
+              </div>
+              <div>
+                <select id="reportPeriodSelect" onchange="setReportPeriod(this.value)"
+                  class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus select-custom">
+                  <option value="" ${!AppState.reportFilters.period ? 'selected' : ''}>Seleccionar</option>
+                  <option value="today" ${AppState.reportFilters.period === 'today' ? 'selected' : ''}>Hoy</option>
+                  <option value="week" ${AppState.reportFilters.period === 'week' ? 'selected' : ''}>Semana</option>
+                  <option value="month" ${AppState.reportFilters.period === 'month' ? 'selected' : ''}>Mes</option>
+                  <option value="year" ${AppState.reportFilters.period === 'year' ? 'selected' : ''}>Año</option>
+                  <option value="custom" ${AppState.reportFilters.period === 'custom' ? 'selected' : ''}>Custom</option>
+                </select>
+              </div>
+            </div>
+
             ${AppState.reportFilters.period === 'custom' ? `
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label for="reportDateFrom" class="block text-xs text-slate-400 mb-1">Desde</label>
-                  <input type="date" id="reportDateFrom" value="${escapeAttr(dateFrom)}" onchange="updateReportCustomDates()"
+                  <label class="block text-xs text-slate-500 mb-1">Fecha Inicio</label>
+                  <input type="date" id="reportDateFrom" value="${AppState.reportFilters.dateFrom}" onchange="updateReportCustomDates()"
                     class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
                 </div>
                 <div>
-                  <label for="reportDateTo" class="block text-xs text-slate-400 mb-1">Hasta</label>
-                  <input type="date" id="reportDateTo" value="${escapeAttr(dateTo)}" onchange="updateReportCustomDates()"
+                  <label class="block text-xs text-slate-500 mb-1">Fecha Fin</label>
+                  <input type="date" id="reportDateTo" value="${AppState.reportFilters.dateTo}" onchange="updateReportCustomDates()"
                     class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
                 </div>
               </div>
             ` : ''}
-            <p class="mt-3 text-sm text-slate-300 flex items-center gap-2">
-              <i data-lucide="calendar-range" class="w-4 h-4 text-primary-400 shrink-0"></i>
-              ${escapeHtml(periodLabel)}
-            </p>
+            
+            <div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
+              <i data-lucide="info" class="w-3 h-3"></i>
+              <span>Mostrando ${filteredSales.length} venta(s) y ${filteredPayments.length} pago(s)/abono(s)</span>
+            </div>
           </div>
-
-          <div class="relative">
-            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
-            <input type="text" id="reportFilterSearch" aria-label="Buscar en el reporte" value="${escapeAttr(AppState.reportFilters.search || '')}"
-              oninput="updateReportSearch()" placeholder="Buscar cliente, material o factura"
-              class="w-full pl-9 pr-3 py-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 text-sm input-focus">
-          </div>
-          ${AppState.reportFilters.search ? `<p class="text-xs text-slate-400">Resultados para «${escapeHtml(AppState.reportFilters.search)}» · ${filteredSales.length} ventas y ${filteredPayments.length} cobros</p>` : ''}
 
           <div class="glass rounded-xl p-3 border border-slate-700/50">
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
@@ -6614,138 +6584,87 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             </div>
           </div>
 
-          ${activeReportTab !== 'resumen' ? `
-            <div class="flex justify-end">
-              <button type="button" onclick="exportReport()" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-500 text-slate-950 text-sm font-semibold">
-                <i data-lucide="download" class="w-4 h-4"></i> Exportar Excel
-              </button>
-            </div>
-          ` : ''}
-
-
+          ${activeReportTab === 'cobranza' ? renderPendingClientPaymentReportCard(pendingClientPaymentReport) : ''}
 
           <div class="${activeReportTab === 'resumen' ? 'space-y-4' : 'hidden'}">
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <div class="glass rounded-xl p-4 border-l-4 border-blue-500">
-              <h3 class="text-base font-semibold text-slate-100">¿Cuánto se vendió?</h3>
-              <div id="reportSalesTotal" class="text-2xl sm:text-3xl font-bold text-blue-400 font-mono mt-2 break-words">${fmt.currency(totalRevenue)}</div>
-              <p class="text-sm text-slate-300 mt-2">${totalTransactions} ventas realizadas en este período</p>
-              <p class="text-xs text-slate-400 mt-1">Incluye ventas al contado y a crédito</p>
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Cuadre del Periodo</div>
+              <div class="text-2xl font-bold text-emerald-400 font-mono">${fmt.currency(periodCashTotal)}</div>
+              <div class="text-xs text-slate-500 mt-1">Contado ${fmt.currency(cashRevenue)} + pagos/abonos ${fmt.currency(totalPayments)}</div>
             </div>
-            <div class="glass rounded-xl p-4 border-l-4 border-emerald-500">
-              <h3 class="text-base font-semibold text-slate-100">¿Cuánto dinero entró?</h3>
-              <div id="reportReceivedTotal" class="text-2xl sm:text-3xl font-bold text-emerald-400 font-mono mt-2 break-words">${fmt.currency(periodCashTotal)}</div>
-              <p class="text-sm text-slate-300 mt-2">Contado ${fmt.currency(cashRevenue)} + cobros ${fmt.currency(totalPayments)}</p>
-              <p class="text-xs text-slate-400 mt-1">Incluye abonos de facturas anteriores recibidos en este período</p>
+            <div class="glass rounded-xl p-5 border-l-4 border-blue-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ticket Promedio</div>
+              <div class="text-2xl font-bold text-blue-400 font-mono">${fmt.currency(avgTicket)}</div>
+              <div class="text-xs text-slate-500 mt-1">Promedio diario: ${fmt.currency(dailyAverage)}</div>
             </div>
-            <div class="glass rounded-xl p-4 border-l-4 border-amber-500">
-              <h3 class="text-base font-semibold text-slate-100">¿Cuánto falta por cobrar?</h3>
-              <div id="reportPendingTotal" class="text-2xl sm:text-3xl font-bold text-amber-400 font-mono mt-2 break-words">${fmt.currency(pendingCredit)}</div>
-              <p class="text-xs text-slate-400 mt-2">Saldo actual de las ventas a crédito del período</p>
-              <button type="button" onclick="setReportTab('cobranza')" class="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/40 text-amber-300 text-sm font-semibold">
-                Ver facturas <i data-lucide="arrow-right" class="w-4 h-4"></i>
-              </button>
+            <div class="glass rounded-xl p-5 border-l-4 border-primary-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ventas facturadas</div>
+              <div class="text-2xl font-bold text-primary-400 font-mono">${fmt.currency(totalRevenue)}</div>
+              <div class="text-xs text-slate-500 mt-1">${totalTransactions} venta(s) en el periodo</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-purple-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Credito pendiente</div>
+              <div class="text-2xl font-bold text-purple-400 font-mono">${fmt.currency(pendingCredit)}</div>
+              <div class="text-xs text-slate-500 mt-1">Cobranza: ${collectionRate.toFixed(0)}%</div>
             </div>
           </div>
 
-          <div class="glass rounded-xl p-4 border border-slate-700/50">
-            <h3 class="font-semibold text-slate-100 mb-3">Dinero recibido por método</h3>
-            <p class="text-xs text-slate-400 mb-3">Ventas al contado y cobros recibidos en el período</p>
-            ${receivedByMethod.size ? Array.from(receivedByMethod.entries())
-              .sort((a, b) => b[1] - a[1])
-              .map(([method, amount]) => `
-                <div class="flex items-start justify-between gap-3 py-2 border-b border-slate-700/50 last:border-0">
-                  <span class="text-sm text-slate-300 break-words">${escapeHtml(method)}</span>
-                  <strong class="text-sm text-emerald-300 font-mono text-right">${fmt.currency(amount)}</strong>
-                </div>
-              `).join('') : '<p class="text-sm text-slate-400">No hay dinero recibido en este período</p>'}
-            ${receivedByMethod.has('Sin método registrado') ? '<p class="text-xs text-slate-400 mt-3">Algunos registros antiguos no tienen un método de pago indicado.</p>' : ''}
-          </div>
-
-          <details class="glass rounded-xl border border-slate-700/50" id="reportMoreDetails" ${detailsOpen ? 'open' : ''}>
-            <summary class="cursor-pointer p-4">
-              <span class="font-semibold text-slate-100">Más detalles del período</span>
-              <span class="block text-xs text-slate-400 mt-1">Promedio por venta, materiales y clientes</span>
-            </summary>
-            <div class="p-4 pt-0 space-y-4">
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div class="rounded-lg bg-slate-800/50 p-3">
-                  <div class="text-xs text-slate-400">Promedio por venta</div>
-                  <div class="font-mono text-blue-300 mt-1">${fmt.currency(avgTicket)}</div>
-                </div>
-                <div class="rounded-lg bg-slate-800/50 p-3">
-                  <div class="text-xs text-slate-400">Promedio por día con ventas</div>
-                  <div class="font-mono text-blue-300 mt-1">${fmt.currency(dailyAverage)}</div>
-                </div>
-                <div class="rounded-lg bg-slate-800/50 p-3">
-                  <div class="text-xs text-slate-400">Porcentaje cobrado de las ventas a crédito</div>
-                  <div class="font-mono text-emerald-300 mt-1">${creditRevenue > 0 ? collectionRate.toFixed(0) + '%' : 'Sin ventas a crédito'}</div>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                ${insights.map(insight => `
-                  <div class="glass rounded-xl p-4 border border-${insight.color}-500/20 bg-${insight.color}-500/5">
-                    <div class="flex items-start gap-3">
-                      <div class="w-9 h-9 rounded-lg bg-${insight.color}-500/10 flex items-center justify-center flex-shrink-0">
-                        <i data-lucide="${insight.icon}" class="w-5 h-5 text-${insight.color}-400"></i>
-                      </div>
-                      <div class="min-w-0">
-                        <div class="text-xs uppercase text-slate-500 font-semibold">${insight.label}</div>
-                        <div class="text-sm text-slate-200 font-medium mt-1 break-words">${escapeHtml(insight.value)}</div>
-                      </div>
-                    </div>
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            ${insights.map(insight => `
+              <div class="glass rounded-xl p-4 border border-${insight.color}-500/20 bg-${insight.color}-500/5">
+                <div class="flex items-start gap-3">
+                  <div class="w-9 h-9 rounded-lg bg-${insight.color}-500/10 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="${insight.icon}" class="w-5 h-5 text-${insight.color}-400"></i>
                   </div>
-                `).join('')}
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="glass rounded-xl p-5 border-l-4 border-amber-500">
-                  <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Impuesto facturado</div>
-                  <div class="text-2xl font-bold text-amber-400 font-mono">${fmt.currency(totalIva)}</div>
-                  <div class="text-xs text-slate-500 mt-1">${salesWithIva.length} ventas con impuesto</div>
-                </div>
-                <div class="glass rounded-xl p-5 border-l-4 border-cyan-500">
-                  <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Ventas a crédito</div>
-                  <div class="text-2xl font-bold text-cyan-400 font-mono">${fmt.currency(creditRevenue)}</div>
-                  <div class="text-xs text-slate-500 mt-1">Cobrado: ${fmt.currency(paidCredit)}</div>
-                </div>
-                <div class="glass rounded-xl p-5 border-l-4 border-indigo-500">
-                  <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Materiales vendidos</div>
-                  <div class="text-2xl font-bold text-indigo-400 font-mono">${Object.keys(materialSales).length}</div>
-                  <div class="text-xs text-slate-500 mt-1">Diferentes tipos</div>
+                  <div class="min-w-0">
+                    <div class="text-xs uppercase text-slate-500 font-semibold">${insight.label}</div>
+                    <div class="text-sm text-slate-200 font-medium mt-1 break-words">${insight.value}</div>
+                  </div>
                 </div>
               </div>
+            `).join('')}
+          </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
-                  <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Pagos recibidos</div>
-                  <div class="text-2xl font-bold text-emerald-400 font-mono">${fmt.currency(totalPayments)}</div>
-                  <div class="text-xs text-slate-500 mt-1">${filteredPayments.length} pago(s) en el periodo</div>
-                </div>
-                <div class="glass rounded-xl p-5 border-l-4 border-sky-500">
-                  <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Pagos totales</div>
-                  <div class="text-2xl font-bold text-sky-400 font-mono">${fullPayments.length}</div>
-                  <div class="text-xs text-slate-500 mt-1">${fmt.currency(fullPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0))}</div>
-                </div>
-                <div class="glass rounded-xl p-5 border-l-4 border-orange-500">
-                  <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Abonos</div>
-                  <div class="text-2xl font-bold text-orange-400 font-mono">${partialPayments.length}</div>
-                  <div class="text-xs text-slate-500 mt-1">${fmt.currency(partialPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0))}</div>
-                </div>
-                <div class="glass rounded-xl p-5 border-l-4 border-violet-500">
-                  <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Método principal de cobros</div>
-                  <div class="text-2xl font-bold text-violet-400 font-mono truncate">${topPaymentMethod ? topPaymentMethod[0] : '-'}</div>
-                  <div class="text-xs text-slate-500 mt-1">${topPaymentMethod ? fmt.currency(topPaymentMethod[1]) : 'Sin pagos'}</div>
-                </div>
-              </div>
-
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="glass rounded-xl p-5 border-l-4 border-amber-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">IVA Recaudado</div>
+              <div class="text-2xl font-bold text-amber-400 font-mono">${fmt.currency(totalIva)}</div>
+              <div class="text-xs text-slate-500 mt-1">${salesWithIva.length} ventas con IVA</div>
             </div>
-          </details>
-          <div class="grid grid-cols-2 gap-3">
-            <button type="button" onclick="setReportTab('ventas')" class="px-3 py-3 rounded-lg border border-slate-600 text-slate-200 text-sm font-semibold">Ver ventas</button>
-            <button type="button" onclick="exportReport()" class="inline-flex justify-center items-center gap-2 px-3 py-3 rounded-lg bg-primary-500 text-slate-950 text-sm font-semibold">
-              <i data-lucide="download" class="w-4 h-4"></i> Exportar Excel
-            </button>
+            <div class="glass rounded-xl p-5 border-l-4 border-cyan-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Credito vendido</div>
+              <div class="text-2xl font-bold text-cyan-400 font-mono">${fmt.currency(creditRevenue)}</div>
+              <div class="text-xs text-slate-500 mt-1">Cobrado: ${fmt.currency(paidCredit)}</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-indigo-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Materiales vendidos</div>
+              <div class="text-2xl font-bold text-indigo-400 font-mono">${Object.keys(materialSales).length}</div>
+              <div class="text-xs text-slate-500 mt-1">Diferentes tipos</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="glass rounded-xl p-5 border-l-4 border-emerald-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Pagos recibidos</div>
+              <div class="text-2xl font-bold text-emerald-400 font-mono">${fmt.currency(totalPayments)}</div>
+              <div class="text-xs text-slate-500 mt-1">${filteredPayments.length} pago(s) en el periodo</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-sky-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Pagos completos</div>
+              <div class="text-2xl font-bold text-sky-400 font-mono">${fullPayments.length}</div>
+              <div class="text-xs text-slate-500 mt-1">${fmt.currency(fullPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0))}</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-orange-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Abonos</div>
+              <div class="text-2xl font-bold text-orange-400 font-mono">${partialPayments.length}</div>
+              <div class="text-xs text-slate-500 mt-1">${fmt.currency(partialPayments.reduce((a, item) => a + (toFiniteNumber(item.payment.amount, 0) || 0), 0))}</div>
+            </div>
+            <div class="glass rounded-xl p-5 border-l-4 border-violet-500">
+              <div class="text-slate-400 text-xs font-semibold uppercase mb-2">Metodo principal</div>
+              <div class="text-2xl font-bold text-violet-400 font-mono truncate">${topPaymentMethod ? topPaymentMethod[0] : '-'}</div>
+              <div class="text-xs text-slate-500 mt-1">${topPaymentMethod ? fmt.currency(topPaymentMethod[1]) : 'Sin pagos'}</div>
+            </div>
           </div>
 
           </div>
@@ -6756,7 +6675,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
                 <i data-lucide="receipt-text" class="w-5 h-5 text-emerald-400"></i> Personas que pagaron o abonaron
               </h3>
-              <span class="text-xs text-slate-500">${filteredPayments.length} cobros en el período</span>
+              <span class="text-xs text-slate-500">${filteredPayments.length} en el cuadre</span>
             </div>
             ${filteredPayments.length === 0 ? '<p class="text-slate-500 text-sm">No hay pagos ni abonos en este periodo</p>' : `
               <div class="overflow-x-auto rounded-xl border border-slate-700/70 bg-slate-950/30">
@@ -6851,7 +6770,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                           <td class="py-3 pr-3 text-slate-300 font-medium">${escapeHtml(client.clientName)}</td>
                           <td class="py-3 pr-3">
                             <span class="text-xs px-2 py-1 rounded-full ${client.status === 'PAGADO' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
-                              ${client.status === 'PAGADO' ? 'Saldado' : client.paidAmount > 0 ? 'Abono parcial' : 'Pendiente'}
+                              ${client.status === 'PAGADO' ? 'Pago' : 'No ha pagado'}
                             </span>
                           </td>
                           <td class="py-3 pr-3 text-slate-400">${client.paidInvoices}/${client.invoiceCount} pagada(s)</td>
@@ -6865,11 +6784,6 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             `}
           </div>
 
-          <details class="glass rounded-xl border border-slate-700/50">
-            <summary class="cursor-pointer p-4 font-semibold text-slate-200">Pendientes de ventas y viajes directos</summary>
-            <p class="px-4 pb-3 text-xs text-slate-400">Este informe tiene sus propias fechas, indicadas a continuación.</p>
-            ${activeReportTab === 'cobranza' ? renderPendingClientPaymentReportCard(pendingClientPaymentReport) : ''}
-          </details>
           </div>
 
           <div class="${activeReportTab === 'graficas' ? 'space-y-6' : 'hidden'}">
@@ -6938,7 +6852,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           <div class="glass rounded-xl p-6">
             <div class="flex items-center justify-between mb-4">
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
-                <i data-lucide="wallet-cards" class="w-5 h-5 text-emerald-400"></i> Cobros recibidos en el período
+                <i data-lucide="wallet-cards" class="w-5 h-5 text-emerald-400"></i> Pagos del Periodo
               </h3>
               <span class="text-xs text-slate-500">${Math.min(filteredPayments.length, 8)} de ${filteredPayments.length} pagos</span>
             </div>
@@ -6982,7 +6896,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           <div class="glass rounded-xl p-6">
             <div class="flex items-center justify-between mb-4">
               <h3 class="font-semibold text-slate-200 flex items-center gap-2">
-                <i data-lucide="activity" class="w-5 h-5 text-primary-400"></i> Ventas realizadas
+                <i data-lucide="activity" class="w-5 h-5 text-primary-400"></i> Movimiento Ejecutivo
               </h3>
               <span class="text-xs text-slate-500">${Math.min(filteredSales.length, 8)} de ${filteredSales.length} registros</span>
             </div>
@@ -7040,14 +6954,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     function updateReportCustomDates() {
-      const dateFrom = document.getElementById('reportDateFrom').value;
-      const dateTo = document.getElementById('reportDateTo').value;
-      if (dateFrom && dateTo && dateFrom > dateTo) {
-        showToast('La fecha inicial no puede ser mayor que la fecha final.', 'warning');
-        return;
-      }
-      AppState.reportFilters.dateFrom = dateFrom;
-      AppState.reportFilters.dateTo = dateTo;
+      AppState.reportFilters.dateFrom = document.getElementById('reportDateFrom').value;
+      AppState.reportFilters.dateTo = document.getElementById('reportDateTo').value;
       AppState.reportFilters.period = 'custom';
       renderPage();
     }
@@ -7525,7 +7433,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           .sort((a, b) => b.pendingAmount - a.pendingAmount || b.paidAmount - a.paidAmount)
           .map(client => [
             client.clientName,
-            client.status === 'PAGADO' ? 'SALDADO' : client.paidAmount > 0 ? 'ABONO PARCIAL' : 'PENDIENTE',
+            client.status === 'PAGADO' ? 'PAGO' : 'NO HA PAGADO',
             client.invoiceCount,
             client.paidInvoices,
             client.pendingInvoices,
