@@ -7254,7 +7254,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
 
-    function exportClientStatusReport() {
+    function exportClientStatusReport({ download = true } = {}) {
       if (!window.XLSX) {
         showExcelLibraryError();
         return;
@@ -7369,11 +7369,19 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       XLSX.utils.book_append_sheet(workbook, sheet, 'Estado de clientes');
       XLSX.utils.book_append_sheet(workbook, detailSheet, 'Detalle de facturas');
-      XLSX.writeFile(workbook, 'estado_de_clientes_' + getLocalDateKey(new Date()) + '.xlsx');
-      showToast('Excel descargado con el estado de clientes y el detalle de sus facturas');
+      if (download) {
+        XLSX.writeFile(workbook, 'estado_de_clientes_' + getLocalDateKey(new Date()) + '.xlsx');
+        showToast('Excel descargado con el estado de clientes y el detalle de sus facturas');
+      }
+      return workbook;
     }
 
-    function exportReceivedPaymentsReport() {
+    function getReceivedPaymentType(payment) {
+      if (payment.is_partial_multiple) return 'Abono';
+      return payment.is_full_payment || payment.is_multiple_payment ? 'Pago' : 'Abono';
+    }
+
+    function exportReceivedPaymentsReport({ download = true } = {}) {
       if (!window.XLSX) {
         showExcelLibraryError();
         return;
@@ -7382,12 +7390,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       const entries = getFilteredReportPayments().slice().sort((a, b) =>
         new Date(a.payment.date) - new Date(b.payment.date)
       );
-      const movementType = payment => {
-        if (payment.is_partial_multiple) return 'Abono';
-        return payment.is_full_payment || payment.is_multiple_payment ? 'Pago' : 'Abono';
-      };
       const totalReceived = entries.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
-      const fullPayments = entries.filter(({ payment }) => movementType(payment) === 'Pago');
+      const fullPayments = entries.filter(({ payment }) => getReceivedPaymentType(payment) === 'Pago');
       const fullAmount = fullPayments.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
       const generatedAt = fmt.dateTime(new Date().toISOString());
       const periodLabel = getReportPeriodLabel();
@@ -7406,7 +7410,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           asDate(payment.date),
           payment.client_name || sale?.client_name || 'Sin cliente',
           payment.invoice_number || sale?.invoice_number || 'Sin número',
-          movementType(payment),
+          getReceivedPaymentType(payment),
           amount,
           method,
           getPaymentRouteLabel(payment) || 'No indicado'
@@ -7519,7 +7523,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             paymentDate,
             payment.client_name || sale?.client_name || 'Sin cliente',
             payment.invoice_number || sale?.invoice_number || 'Sin número',
-            movementType(payment),
+            getReceivedPaymentType(payment),
             toFiniteNumber(payment.amount, 0),
             saleTotal,
             paidBefore,
@@ -7549,13 +7553,183 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       XLSX.utils.book_append_sheet(workbook, sheet, 'Pagos y abonos');
       XLSX.utils.book_append_sheet(workbook, detailSheet, 'Saldos y observaciones');
-      XLSX.writeFile(workbook, 'pagos_y_abonos_' + getLocalDateKey(new Date()) + '.xlsx');
-      showToast('Excel descargado con pagos, abonos y detalle de saldos');
+      if (download) {
+        XLSX.writeFile(workbook, 'pagos_y_abonos_' + getLocalDateKey(new Date()) + '.xlsx');
+        showToast('Excel descargado con pagos, abonos y detalle de saldos');
+      }
+      return workbook;
+    }
+
+    function exportBusinessSummaryReport() {
+      if (!window.XLSX) {
+        showExcelLibraryError();
+        return;
+      }
+
+      const sales = getFilteredReportSales();
+      const paymentEntries = getFilteredReportPayments();
+      const cashSales = sales.filter(sale => sale.payment_type !== 'credito');
+      const creditSales = sales.filter(sale => sale.payment_type === 'credito');
+      const sumSales = records => records.reduce((sum, sale) => sum + toFiniteNumber(sale.sale_total, 0), 0);
+      const revenue = sumSales(sales);
+      const cash = sumSales(cashSales);
+      const credit = sumSales(creditSales);
+      const receipts = paymentEntries.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
+      const fullPayments = paymentEntries.filter(({ payment }) => getReceivedPaymentType(payment) === 'Pago');
+      const fullAmount = fullPayments.reduce((sum, { payment }) => sum + toFiniteNumber(payment.amount, 0), 0);
+      const allPayments = getRecords('payment');
+      const creditBalances = creditSales.map(sale => getCreditSalePaymentSnapshot(sale, allPayments));
+      const pending = creditBalances.reduce((sum, item) => sum + item.pendingAmount, 0);
+      const taxSales = sales.filter(sale => sale.iva_enabled);
+      const tax = taxSales.reduce((sum, sale) => sum + toFiniteNumber(sale.sale_tax, 0), 0);
+      const activeDays = new Set(sales.map(sale => getLocalDateKey(sale.date)).filter(Boolean)).size;
+      const periodLabel = getReportPeriodLabel();
+      const searchLabel = AppState.reportFilters.search || 'Todos los registros';
+      const generatedAt = fmt.dateTime(new Date().toISOString());
+      const moneyFormat = '"RD$" #,##0.00';
+
+      const rows = [
+        [],
+        ['RESUMEN DEL NEGOCIO'],
+        ['Fechas consultadas', periodLabel],
+        ['Búsqueda', searchLabel],
+        ['Reporte generado el ' + generatedAt],
+        ['Ventas facturadas (RD$)', '', 'Dinero recibido (RD$)', '', 'Saldo por cobrar (RD$)'],
+        [revenue, '', cash + receipts, '', pending],
+        ['Ventas al contado y a crédito del filtro.', '', 'Contado y cobros recibidos en el filtro.', '', 'Saldo actual de las ventas a crédito del filtro.'],
+        ['Los cobros recibidos pueden corresponder a facturas de fechas anteriores.'],
+        [],
+        ['Concepto', '', 'Cantidad', 'Monto (RD$)', '', 'Qué representa'],
+        ['Ventas al contado', '', cashSales.length, cash, '', 'Ventas del filtro pagadas al contado.'],
+        ['Ventas a crédito', '', creditSales.length, credit, '', 'Ventas del filtro registradas a crédito.'],
+        ['TOTAL VENDIDO', '', sales.length, revenue, '', 'Contado más crédito. Incluye las ventas del filtro.'],
+        [],
+        ['Pagos recibidos', '', fullPayments.length, fullAmount, '', 'Movimientos registrados como Pago en el filtro.'],
+        ['Abonos recibidos', '', paymentEntries.length - fullPayments.length, receipts - fullAmount, '', 'Movimientos registrados como Abono en el filtro.'],
+        ['TOTAL COBROS RECIBIDOS', '', paymentEntries.length, receipts, '', 'Pagos más abonos recibidos en las fechas consultadas.'],
+        ['DINERO RECIBIDO', '', '', cash + receipts, '', 'Ventas al contado más los cobros recibidos.'],
+        [],
+        ['SALDO ACTUAL POR COBRAR', '', creditBalances.filter(item => item.pendingAmount > 0.01).length, pending, '', 'Facturas a crédito del filtro que conservan saldo pendiente.'],
+        ['Cobrado del crédito del filtro', '', '', Math.max(0, credit - pending), '', 'Pagado acumulado hasta hoy de las ventas a crédito del filtro.'],
+        ['Impuesto facturado', '', taxSales.length, tax, '', 'Impuesto incluido en las ventas del filtro.'],
+        ['Promedio por venta', '', sales.length, sales.length ? revenue / sales.length : 0, '', 'Total vendido dividido entre la cantidad de ventas.'],
+        ['Promedio por día con ventas', '', activeDays, activeDays ? revenue / activeDays : 0, '', 'Total vendido dividido entre los días que tuvieron ventas.'],
+        [],
+        ['DÓNDE CONSULTAR EL DETALLE'],
+        ['Ventas realizadas contiene las facturas, materiales, cantidades y precios del filtro.'],
+        ['Pagos y abonos contiene cada movimiento recibido. Saldos y observaciones explica el saldo después de cada pago.'],
+        ['Estado de clientes incluye las ventas del filtro y las facturas anteriores con cobros en ese filtro. Muestra sus saldos actuales.']
+      ];
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      styleReportExcelSheet(sheet, rows, 10, rows.length, [27, 18, 13, 20, 14, 23, 24], [3]);
+      delete sheet['!autofilter'];
+      [5, 6, 7].forEach(r => {
+        [[0, 1], [2, 3], [4, 6]].forEach(([first, last]) => {
+          sheet['!merges'].push({ s: { r, c: first }, e: { r, c: last } });
+          const cell = sheet[XLSX.utils.encode_cell({ r, c: first })];
+          cell.s.alignment.horizontal = 'left';
+          if (r !== 7) cell.s.font.bold = true;
+          if (r === 6) {
+            cell.s.font.sz = 14;
+            cell.s.numFmt = moneyFormat;
+          }
+        });
+      });
+      sheet['!rows'][7] = { hpt: 38 };
+      [8, 26, 27, 28, 29].forEach(r => {
+        sheet['!merges'].push({ s: { r, c: 0 }, e: { r, c: 6 } });
+        sheet['!rows'][r] = { hpt: r === 29 ? 34 : 26 };
+      });
+      for (let r = 10; r <= 24; r++) {
+        [[0, 1], [3, 4], [5, 6]].forEach(([first, last]) => {
+          sheet['!merges'].push({ s: { r, c: first }, e: { r, c: last } });
+        });
+        sheet['!rows'][r] = { hpt: r === 10 ? 32 : 42 };
+      }
+      [13, 17, 18, 20].forEach(r => {
+        for (let c = 0; c < 7; c++) {
+          const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+          cell.s.font.bold = true;
+          cell.s.fill = { fgColor: { rgb: r === 20 ? 'FEF3C7' : 'E2E8F0' } };
+        }
+      });
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Resumen del negocio');
+
+      const saleRows = sales.flatMap(sale => {
+        const items = Array.isArray(sale.items) && sale.items.length ? sale.items : [{
+          material_name: sale.material_name,
+          quantity: sale.sale_quantity,
+          price: sale.price,
+          subtotal: sale.sale_subtotal
+        }];
+        const date = new Date(sale.date || '');
+        return items.map((item, index) => [
+          Number.isNaN(date.getTime()) ? 'No indicada' : date,
+          sale.invoice_number || 'Sin número',
+          sale.client_name || 'Sin cliente',
+          sale.vehicle_plate || 'No indicada',
+          item.material_name || 'Sin descripción',
+          toFiniteNumber(item.quantity, 0),
+          toFiniteNumber(item.price, 0),
+          toFiniteNumber(item.subtotal, 0),
+          index === 0 ? toFiniteNumber(sale.sale_tax, 0) : '',
+          index === 0 ? toFiniteNumber(sale.sale_total, 0) : '',
+          sale.note || '',
+          sale.payment_type === 'credito' ? 'Crédito' : 'Contado',
+          sale.payment_status === 'pagada' ? 'Pagada' : 'Pendiente'
+        ]);
+      });
+      const detailRows = [
+        [],
+        ['VENTAS REALIZADAS'],
+        ['Fechas consultadas', periodLabel],
+        ['Búsqueda', searchLabel],
+        ['Reporte generado el ' + generatedAt],
+        ['Cada fila es un producto. El total de cada factura y su impuesto aparecen una sola vez.'],
+        [],
+        ['Fecha y hora de venta', 'Número de factura', 'Cliente', 'Placa', 'Material o servicio', 'Cantidad', 'Precio unitario (RD$)', 'Subtotal producto (RD$)', 'Impuesto factura (RD$)', 'Total factura (RD$)', 'Nota', 'Tipo de venta', 'Estado'],
+        ...saleRows
+      ];
+      if (!sales.length) detailRows.push(['No hay ventas para las fechas y búsqueda seleccionadas']);
+      const totalRow = detailRows.length;
+      detailRows.push(['TOTAL FACTURADO', '', '', '', '', '', '', '', '', revenue]);
+      const salesSheet = XLSX.utils.aoa_to_sheet(detailRows, { cellDates: true });
+      styleReportExcelSheet(salesSheet, detailRows, 7, totalRow, [24, 23, 32, 18, 32, 14, 23, 24, 24, 24, 38, 18, 18], [6, 7, 8, 9]);
+      salesSheet['!merges'].push(
+        { s: { r: 5, c: 0 }, e: { r: 5, c: 12 } },
+        { s: { r: totalRow, c: 0 }, e: { r: totalRow, c: 8 } }
+      );
+      if (!sales.length) salesSheet['!merges'].push({ s: { r: 8, c: 0 }, e: { r: 8, c: 12 } });
+      saleRows.forEach((row, index) => {
+        const cell = salesSheet[XLSX.utils.encode_cell({ r: index + 8, c: 0 })];
+        if (cell.t === 'd') {
+          cell.z = 'dd/mm/yyyy hh:mm';
+          cell.s.numFmt = cell.z;
+          cell.s.alignment.horizontal = 'center';
+        }
+      });
+      XLSX.utils.book_append_sheet(workbook, salesSheet, 'Ventas realizadas');
+
+      const paymentsBook = exportReceivedPaymentsReport({ download: false });
+      paymentsBook.SheetNames.forEach(name => {
+        XLSX.utils.book_append_sheet(workbook, paymentsBook.Sheets[name], name);
+      });
+      const clientsBook = exportClientStatusReport({ download: false });
+      XLSX.utils.book_append_sheet(workbook, clientsBook.Sheets['Estado de clientes'], 'Estado de clientes');
+
+      XLSX.writeFile(workbook, 'resumen_del_negocio_' + getLocalDateKey(new Date()) + '.xlsx');
+      showToast('Excel descargado con resumen del negocio y hojas de detalle');
     }
 
     function exportReport(section = 'resumen') {
       if (!window.XLSX) {
         showExcelLibraryError();
+        return;
+      }
+
+      if (section === 'resumen') {
+        exportBusinessSummaryReport();
         return;
       }
 
