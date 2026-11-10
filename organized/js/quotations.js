@@ -68,20 +68,6 @@ const Quotations = (() => {
       .filter(client => clientId(client) && safeText(client.client_name))
       .sort((a, b) => a.client_name.localeCompare(b.client_name, 'es'));
     const clientsById = new Map(clients.map(client => [clientId(client), client]));
-    const manual = 'manual';
-    const legacyMatches = existing && !existing.client_id
-      ? clients.filter(client => client.client_name === existing.client_name)
-      : [];
-    const linkedClient = existing?.client_id ? clientsById.get(existing.client_id)
-      : legacyMatches.length === 1 ? legacyMatches[0] : null;
-    const selection = existing
-      ? (linkedClient && linkedClient.client_name === existing.client_name ? clientId(linkedClient) : manual)
-      : (clients.length ? '' : manual);
-    const clientOptions = clients.map(client => {
-      const contact = client.client_phone || client.vehicle_plate;
-      const label = client.client_name + (contact ? ' · ' + contact : '');
-      return `<option value="${escapeAttr(clientId(client))}"${clientId(client) === selection ? ' selected' : ''}>${escapeHtml(label)}</option>`;
-    }).join('');
     const materials = new Map(getRecords('material').map(material => [material.name, material]));
     const rate = existing?.tax_rate ?? (AppState.config.iva_default_enabled ? AppState.config.iva_default_rate : 0);
     const options = names => names.map(name => '<option value="' + escapeAttr(name) + '"></option>').join('');
@@ -92,16 +78,19 @@ const Quotations = (() => {
           <button type="button" class="${actionClass}" data-close-quote aria-label="Cerrar">Cerrar</button>
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
-          <label class="min-w-0 text-sm text-slate-300 sm:col-span-2">Cliente
-            <select name="clientSelection" class="${inputClass}" required>
-              <option value="" disabled${selection ? '' : ' selected'}>Selecciona un cliente registrado</option>
-              ${clientOptions}
-              <option value="${manual}"${selection === manual ? ' selected' : ''}>Escribir otro cliente</option>
-            </select>
-          </label>
-          <label data-manual-client class="text-sm text-slate-300" ${selection === manual ? '' : 'hidden'}>Nombre del cliente
-            <input name="client" class="${inputClass}" ${selection === manual ? 'required' : 'disabled'} maxlength="120" value="${escapeAttr(selection === manual ? existing?.client_name || '' : '')}" placeholder="Escribe el nombre">
-          </label>
+          <div class="min-w-0 sm:col-span-2" data-quote-client-picker>
+            <label for="quotationClient" class="mb-2 block text-sm font-medium text-slate-400">Cliente</label>
+            <div class="relative">
+              <input type="text" name="client" id="quotationClient" required maxlength="120"
+                placeholder="Buscar cliente por nombre..." autocomplete="off"
+                aria-controls="quotationClientSuggestions"
+                value="${escapeAttr(existing?.client_name || '')}"
+                class="w-full px-4 py-3 pr-10 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 input-focus transition-all">
+              <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute right-3 top-3.5 pointer-events-none"></i>
+              <div id="quotationClientSuggestions" class="hidden absolute z-50 left-0 right-0 top-full mt-2 max-h-56 overflow-y-auto bg-slate-950 border border-slate-700 rounded-lg shadow-xl shadow-black/30"></div>
+            </div>
+            <p class="mt-1 text-xs text-slate-500">También puedes escribir el nombre de un cliente nuevo.</p>
+          </div>
           <label class="text-sm text-slate-300">Teléfono (opcional)
             <input name="phone" class="${inputClass}" type="tel" maxlength="40" value="${escapeAttr(existing?.client_phone || '')}">
           </label>
@@ -125,15 +114,58 @@ const Quotations = (() => {
 
     const form = document.getElementById('quotationForm');
     const fields = form.elements;
-    const manualClient = form.querySelector('[data-manual-client]');
-    fields.clientSelection.addEventListener('change', () => {
-      const isManual = fields.clientSelection.value === manual;
-      const client = clientsById.get(fields.clientSelection.value);
-      manualClient.hidden = !isManual;
-      fields.client.disabled = !isManual;
-      fields.client.required = isManual;
-      fields.phone.value = client?.client_phone || '';
-      if (isManual) fields.client.focus();
+    const clientPicker = form.querySelector('[data-quote-client-picker]');
+    const suggestions = form.querySelector('#quotationClientSuggestions');
+    let selectedClientId = existing?.client_id || '';
+    const normalizeName = name => name.trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+    const hideSuggestions = () => suggestions.classList.add('hidden');
+    const showSuggestions = () => {
+      const query = normalizeName(fields.client.value);
+      const matches = clients.filter(client => normalizeName(client.client_name).includes(query)).slice(0, 8);
+      suggestions.innerHTML = matches.length ? matches.map(client => {
+        const contact = [
+          client.vehicle_plate && 'Placa: ' + client.vehicle_plate,
+          client.client_phone
+        ].filter(Boolean).join(' · ') || client.client_address || 'Cliente registrado';
+        return `<button type="button" data-client-id="${escapeAttr(clientId(client))}"
+          class="w-full text-left px-4 py-3 hover:bg-slate-800/80 border-b border-slate-800 last:border-b-0 transition-colors">
+          <div class="font-medium text-slate-200">${escapeHtml(client.client_name)}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(contact)}</div>
+        </button>`;
+      }).join('') : '<div class="px-4 py-3 text-sm text-slate-500">Sin clientes encontrados</div>';
+      suggestions.classList.remove('hidden');
+    };
+    fields.client.addEventListener('focus', showSuggestions);
+    fields.client.addEventListener('input', () => {
+      if (selectedClientId) fields.phone.value = '';
+      selectedClientId = '';
+      showSuggestions();
+    });
+    clientPicker.addEventListener('focusout', event => {
+      if (!clientPicker.contains(event.relatedTarget)) hideSuggestions();
+    });
+    clientPicker.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown' && event.target === fields.client) {
+        event.preventDefault();
+        showSuggestions();
+        suggestions.querySelector('button')?.focus();
+      } else if (event.key === 'Escape') {
+        fields.client.focus();
+        hideSuggestions();
+      }
+    });
+    suggestions.addEventListener('pointerdown', event => {
+      if (event.target.closest('button[data-client-id]')) event.preventDefault();
+    });
+    suggestions.addEventListener('click', event => {
+      const button = event.target.closest('button[data-client-id]');
+      const client = clientsById.get(button?.dataset.clientId);
+      if (!client) return;
+      selectedClientId = clientId(client);
+      fields.client.value = client.client_name;
+      fields.phone.value = client.client_phone || '';
+      if (suggestions.contains(document.activeElement)) fields.client.focus();
+      hideSuggestions();
     });
     const lines = form.querySelector('[data-quote-lines]');
     const saveButton = form.querySelector('[type="submit"]');
@@ -204,8 +236,7 @@ const Quotations = (() => {
         showToast('La cotización ya no está disponible', 'warning');
         return;
       }
-      const client = clientsById.get(fields.clientSelection.value);
-      const client_name = safeText(client?.client_name ?? fields.client.value);
+      const client_name = safeText(fields.client.value);
       const items = readItems();
       const date = current?.date || new Date().toISOString();
       if (!client_name || !items.length || items.some(item => !item.material_name || item.quantity <= 0)) {
@@ -221,7 +252,7 @@ const Quotations = (() => {
         ...current, type: 'quote', __backendId: id,
         quote_number: current?.quote_number || 'COT-' + id.slice(6).replaceAll('-', '').slice(0, 12).toUpperCase(),
         date, client_name, items, ...readTotals(items),
-        client_id: clientId(client),
+        client_id: selectedClientId,
         client_phone: safeText(fields.phone.value),
         valid_until: fields.validity.value,
         note: safeText(fields.note.value)
