@@ -648,3 +648,103 @@
 
   .direct-trip-mobile { display: revert; }
 }
+
+/* Cotizaciones */
+.quotes-page {
+  --quote-card: #152034;
+  --quote-border: #34435c;
+  --quote-text: #f1f5f9;
+  --quote-muted: #a8b6cc;
+  display: grid;
+  gap: 1rem;
+  color: var(--quote-text);
+}
+
+.quote-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: .65rem 1rem;
+  border-radius: .85rem;
+  background: #ffb323;
+  color: #261801;
+  font-weight: 700;
+}
+
+.quote-new:hover { background: #ffc44f; }
+.quote-list { display: grid; gap: 1rem; align-items: start; }
+.quote-card {
+  min-width: 0;
+  padding: clamp(.75rem, 3.5vw, 1.1rem);
+  border: 1px solid var(--quote-border);
+  border-radius: 1rem;
+  background: var(--quote-card);
+  overflow-wrap: anywhere;
+}
+
+.quote-reference, .quote-empty, .quote-dates dt { color: var(--quote-muted); font-size: .85rem; }
+.quote-client { margin: .18rem 0 .95rem; font-size: 1.28rem; font-weight: 650; line-height: 1.25; }
+.quote-total { padding: .7rem .85rem; border-radius: .65rem; background: #20293b; }
+.quote-total span { display: block; color: #f3d384; font-size: .85rem; }
+.quote-total strong { display: block; margin-top: .2rem; font-size: clamp(1.3rem, 6vw, 1.85rem); font-weight: 650; line-height: 1.2; }
+.quote-dates { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .7rem; margin: .85rem 0; }
+.quote-dates dd { margin-top: .15rem; font-size: .9rem; }
+.quote-materials { padding: .6rem 0; border-block: 1px solid var(--quote-border); }
+.quote-materials > summary, .quote-options > summary { cursor: pointer; list-style: none; }
+.quote-materials > summary::-webkit-details-marker, .quote-options > summary::-webkit-details-marker { display: none; }
+.quote-materials > summary { display: flex; align-items: center; gap: .4rem; min-height: 2rem; font-weight: 600; }
+.quote-chevron { width: 0; height: 0; border-top: .28rem solid transparent; border-bottom: .28rem solid transparent; border-left: .38rem solid currentColor; }
+.quote-materials[open] .quote-chevron { transform: rotate(90deg); }
+.quote-count { border-radius: .45rem; padding: .03rem .38rem; background: #273650; font-size: .78rem; }
+.quote-lines { display: grid; gap: .75rem; padding: .55rem 0 .3rem; }
+.quote-lines li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .65rem; }
+.quote-lines strong { display: block; font-weight: 600; }
+.quote-lines li div > span { display: block; color: var(--quote-muted); font-size: .83rem; margin-top: .15rem; }
+.quote-line-total { text-align: right; font-size: .86rem; font-variant-numeric: tabular-nums; }
+
+.quote-actions { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(0,1fr) auto; gap: .4rem; margin-top: .75rem; }
+.quote-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .32rem;
+  min-height: 2.7rem;
+  padding: .3rem .45rem;
+  border: 1px solid var(--quote-border);
+  border-radius: .62rem;
+  background: #19263a;
+  color: var(--quote-text);
+  font-size: .8rem;
+  font-weight: 550;
+  line-height: 1.2;
+  text-align: center;
+}
+.quote-new svg, .quote-button svg, .quote-options-panel svg { width: 1rem; height: 1rem; flex: none; }
+.quote-button:hover, .quote-options-panel button:hover { background: #273650; }
+.quote-share { background: #163a33; border-color: transparent; color: #b1f1d9; }
+.quote-share:hover { background: #205044; }
+.quote-options { position: relative; }
+.quote-options > summary { min-width: 2.65rem; }
+.quote-options:not([open]) > .quote-options-panel { display: none; }
+.quote-options-panel {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  bottom: calc(100% + .4rem);
+  min-width: 8.5rem;
+  padding: .25rem;
+  border: 1px solid var(--quote-border);
+  border-radius: .6rem;
+  background: #172338;
+  box-shadow: 0 .5rem 1.35rem #0006;
+}
+.quote-options-panel button { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .55rem; border-radius: .4rem; text-align: left; font-size: .85rem; }
+.quote-options-panel button[data-quote-action="delete"] { color: #fda4af; }
+.quotes-page :is(button, summary):focus-visible { outline: 2px solid #ffbf48; outline-offset: 2px; }
+
+@media (min-width: 1100px) {
+  .quote-list { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

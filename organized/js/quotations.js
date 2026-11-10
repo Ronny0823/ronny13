@@ -11,33 +11,62 @@ const Quotations = (() => {
 
   function render(container) {
     const quotes = getRecords('quote').slice().sort((a, b) => b.date.localeCompare(a.date));
+    const expanded = new Set(Array.from(container.querySelectorAll('.quote-materials[open]'), details =>
+      details.closest('[data-quote-id]').dataset.quoteId
+    ));
     container.innerHTML = `
-      <section class="space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <p class="text-sm text-slate-400">Prepara, comparte e imprime precios para tus clientes.</p>
-          <button type="button" data-quote-action="new" class="${primaryClass}"><i data-lucide="plus" class="h-4 w-4"></i>Nueva cotización</button>
-        </div>
-        <div class="grid gap-3 lg:grid-cols-2">
+      <section class="quotes-page">
+        <button type="button" data-quote-action="new" class="quote-new">
+          <i data-lucide="plus"></i>Nueva cotización
+        </button>
+        <div class="quote-list">
           ${quotes.map(quote => `
-            <article class="glass space-y-3 rounded-xl border border-slate-700 p-4" data-quote-id="${escapeAttr(quote.__backendId)}">
-              <div class="flex flex-wrap justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="text-xs text-slate-400">${escapeHtml(quote.quote_number)} · ${escapeHtml(quoteDate(quote))}</p>
-                  <h3 class="break-words text-lg font-semibold text-slate-100">${escapeHtml(quote.client_name)}</h3>
-                </div>
-                <p class="text-lg font-bold text-primary-300">${escapeHtml(fmt.currency(quote.total))}</p>
+            <article class="quote-card" data-quote-id="${escapeAttr(quote.__backendId)}">
+              <div class="quote-reference">${escapeHtml(quote.quote_number)}</div>
+              <h2 class="quote-client">${escapeHtml(quote.client_name)}</h2>
+              <div class="quote-total">
+                <span>Total cotizado</span>
+                <strong>${escapeHtml(currency(quote.total))}</strong>
               </div>
-              <p class="break-words text-sm text-slate-400">${escapeHtml(quote.items.map(item => item.material_name).join(', '))}
-                ${quote.valid_until ? '<span class="block">Válida hasta ' + escapeHtml(formatDateKey(quote.valid_until)) + '</span>' : ''}
-              </p>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" data-quote-action="share" class="${actionClass}"><i data-lucide="file-down" class="h-4 w-4"></i>PDF WhatsApp</button>
-                <button type="button" data-quote-action="print" class="${actionClass}"><i data-lucide="printer" class="h-4 w-4"></i>Imprimir</button>
-                <button type="button" data-quote-action="edit" class="${actionClass}">Editar</button>
-                <button type="button" data-quote-action="delete" class="${actionClass}">Eliminar</button>
+              <dl class="quote-dates">
+                <div><dt>Emitida</dt><dd>${escapeHtml(quoteDate(quote))}</dd></div>
+                <div><dt>Válida hasta</dt><dd>${escapeHtml(quote.valid_until ? formatDateKey(quote.valid_until) : 'Sin indicar')}</dd></div>
+              </dl>
+              <details class="quote-materials"${expanded.has(quote.__backendId) ? ' open' : ''}>
+                <summary>
+                  <span class="quote-chevron" aria-hidden="true"></span>
+                  Materiales <span class="quote-count">${quote.items.length}</span>
+                </summary>
+                <ul class="quote-lines">
+                  ${quote.items.map(item => `
+                    <li>
+                      <div>
+                        <strong>${escapeHtml(item.material_name)}</strong>
+                        <span>${escapeHtml(fmt.quantity(item.quantity))} × ${escapeHtml(currency(item.price))}</span>
+                      </div>
+                      <span class="quote-line-total">${escapeHtml(currency(item.subtotal))}</span>
+                    </li>`).join('')}
+                </ul>
+              </details>
+              <div class="quote-actions">
+                <button type="button" data-quote-action="share" class="quote-button quote-share">
+                  <i data-lucide="file-down"></i>PDF WhatsApp
+                </button>
+                <button type="button" data-quote-action="print" class="quote-button">
+                  <i data-lucide="printer"></i>Imprimir
+                </button>
+                <details class="quote-options">
+                  <summary class="quote-button" aria-label="Más opciones">
+                    <i data-lucide="more-vertical"></i>
+                  </summary>
+                  <div class="quote-options-panel">
+                    <button type="button" data-quote-action="edit"><i data-lucide="pencil"></i>Editar</button>
+                    <button type="button" data-quote-action="delete"><i data-lucide="trash-2"></i>Eliminar</button>
+                  </div>
+                </details>
               </div>
             </article>`).join('')}
-          ${quotes.length ? '' : '<p class="glass rounded-xl p-6 text-sm text-slate-400">Aún no hay cotizaciones. Pulsa «Nueva cotización» para crear la primera.</p>'}
+          ${quotes.length ? '' : '<p class="quote-card quote-empty">Aún no hay cotizaciones. Pulsa «Nueva cotización» para crear la primera.</p>'}
         </div>
       </section>`;
 
@@ -47,6 +76,11 @@ const Quotations = (() => {
       if (button.dataset.quoteAction === 'new') return openEditor();
       const quote = findQuote(button.closest('[data-quote-id]').dataset.quoteId);
       if (!quote) return;
+      const options = button.closest('.quote-options');
+      if (options) {
+        options.open = false;
+        options.querySelector('summary').focus();
+      }
       switch (button.dataset.quoteAction) {
         case 'edit': openEditor(quote); break;
         case 'share': await share(quote); break;
@@ -61,6 +95,20 @@ const Quotations = (() => {
       }
     });
   }
+
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.quote-options[open]').forEach(options => {
+      if (!options.contains(event.target)) options.open = false;
+    });
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const options = event.target.closest?.('.quote-options[open]');
+    if (!options) return;
+    options.open = false;
+    options.querySelector('summary').focus();
+  });
 
   function openEditor(existing) {
     const clientId = client => SupabaseSync.getRecordId(client);
