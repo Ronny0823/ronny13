@@ -353,7 +353,7 @@ const Quotations = (() => {
       </body></html>`;
   }
 
-  async function createPdf(quote) {
+  async function createPdfDocument() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({
       unit: 'mm', format: AppState.config.paper_size === 'a4' ? 'a4' : 'letter', putOnlyUsedFonts: true
@@ -367,6 +367,11 @@ const Quotations = (() => {
       doc.addFont('LiberationSans-Bold.ttf', family, 'bold');
     }
     doc.setCharSpace(0);
+    return { doc, family };
+  }
+
+  async function createPdf(quote) {
+    const { doc, family } = await createPdfDocument();
     const margin = 13;
     const right = doc.internal.pageSize.getWidth() - margin;
     const bottom = doc.internal.pageSize.getHeight() - margin;
@@ -442,10 +447,185 @@ const Quotations = (() => {
     return doc;
   }
 
+  async function createWhatsAppPdf(quote) {
+    const { doc, family } = await createPdfDocument();
+    const config = AppState.config;
+    const margin = 17;
+    const right = doc.internal.pageSize.getWidth() - margin;
+    const width = right - margin;
+    const bottom = doc.internal.pageSize.getHeight() - margin;
+    const navy = '#142640';
+    const blue = '#23448B';
+    const muted = '#49586B';
+    const pale = '#F0F4FA';
+    const border = '#DCE3EC';
+    const currency = amount => fmt.currency(amount).replace(/^RD\$(?=\d)/, 'RD$ ');
+    let y = margin;
+
+    const font = (size, bold = false) => {
+      doc.setFont(family, bold ? 'bold' : 'normal');
+      doc.setFontSize(size);
+    };
+    const text = (value, x, baseline, { size = 10, bold = false, color = navy, align = 'left' } = {}) => {
+      font(size, bold);
+      doc.setTextColor(color);
+      doc.text(String(value), x, baseline, { align });
+    };
+    const wrap = (value, maxWidth, size, bold = false) => {
+      font(size, bold);
+      return doc.splitTextToSize(String(value), maxWidth);
+    };
+    const block = (lines, x, top, options = {}, spacing = 4.5) => {
+      lines.forEach((line, index) => text(line, x, top + index * spacing, options));
+    };
+    const rule = (at, color = border, thickness = 0.25) => {
+      doc.setDrawColor(color);
+      doc.setLineWidth(thickness);
+      doc.line(margin, at, right, at);
+    };
+    const panel = (x, top, panelWidth, height, color, radius = 2.5) => {
+      doc.setFillColor(color);
+      doc.roundedRect(x, top, panelWidth, height, radius, radius, 'F');
+    };
+    const pageHeading = () => {
+      rule(margin - 1, blue, 1.45);
+      text('COTIZACIÓN', right, margin + 14, { size: 31, bold: true, align: 'right' });
+      text(quote.quote_number, right, margin + 22, { size: 10, bold: true, color: blue, align: 'right' });
+    };
+    const nextPage = () => {
+      doc.addPage();
+      pageHeading();
+      y = margin + 33;
+    };
+
+    pageHeading();
+    const companyWidth = width * 0.49;
+    let companyY = margin + 8;
+    if (config.company_logo) {
+      try {
+        const { width: logoWidth, height: logoHeight } = doc.getImageProperties(config.company_logo);
+        const scale = Math.min(37 / logoWidth, 16 / logoHeight);
+        doc.addImage(config.company_logo, margin, companyY - 3, logoWidth * scale, logoHeight * scale);
+        companyY += logoHeight * scale + 1;
+      } catch (error) {
+        console.warn('No se pudo incorporar el logo a la cotización', error);
+      }
+    }
+    if (companyY === margin + 8) {
+      const name = wrap(config.company_name || 'Cotización', companyWidth, 14, true);
+      block(name, margin, companyY + 4, { size: 14, bold: true }, 5.5);
+      companyY += name.length * 5.5 + 5;
+    }
+    const businessInfo = [
+      [config.company_rfc && 'RNC ' + config.company_rfc, config.company_address].filter(Boolean).join(' · '),
+      config.company_phone
+    ].filter(Boolean);
+    for (const info of businessInfo) {
+      const lines = wrap(info, companyWidth, 9.5);
+      block(lines, margin, companyY + 3, { size: 9.5, color: muted });
+      companyY += lines.length * 4.5 + 1.3;
+    }
+    y = Math.max(margin + 41, companyY + 5);
+    rule(y);
+    y += 7;
+
+    const gap = 6;
+    const clientWidth = width * 0.535;
+    const dateX = margin + clientWidth + gap;
+    const dateWidth = right - dateX;
+    const nameLines = wrap(quote.client_name, clientWidth - 12, 17, true);
+    const phoneLines = quote.client_phone ? wrap(quote.client_phone, clientWidth - 12, 10.5) : [];
+    const cardHeight = Math.max(35.5, 20 + nameLines.length * 6.5 + phoneLines.length * 4.5);
+    panel(margin, y, clientWidth, cardHeight, pale);
+    panel(dateX, y, dateWidth, cardHeight, pale);
+    const smallHeading = { size: 8.5, bold: true, color: blue };
+    text('CLIENTE', margin + 6, y + 9, smallHeading);
+    block(nameLines, margin + 6, y + 19, { size: 17, bold: true }, 6.5);
+    block(phoneLines, margin + 6, y + 20.5 + nameLines.length * 6.5, { size: 10.5, color: muted });
+    text('FECHAS DE LA COTIZACIÓN', dateX + 5.5, y + 9, smallHeading);
+    text('Emisión', dateX + 5.5, y + 18.5, { size: 9.5, color: muted });
+    text(quoteDate(quote), right - 5.5, y + 18.5, { size: 9.5, bold: true, align: 'right' });
+    text('Válida hasta', dateX + 5.5, y + 27, { size: 9.5, color: muted });
+    text(quote.valid_until ? formatDateKey(quote.valid_until) : 'Sin indicar', right - 5.5, y + 27, {
+      size: 9.5, bold: true, align: 'right'
+    });
+    y += cardHeight + 14;
+
+    const padding = 6;
+    const detailRight = margin + width * 0.75;
+    const rightText = right - padding;
+    const tableHeading = () => {
+      text('Detalle de materiales', margin, y, { size: 17, bold: true });
+      y += 5.5;
+      panel(margin, y, width, 11.5, navy, 2);
+      const labels = { size: 9.2, bold: true, color: '#FFFFFF' };
+      text('Material o servicio', margin + padding, y + 7.3, labels);
+      text('Cantidad × precio unitario', detailRight, y + 7.3, { ...labels, align: 'right' });
+      text('Importe', rightText, y + 7.3, { ...labels, align: 'right' });
+      y += 11.5;
+    };
+    tableHeading();
+    quote.items.forEach((item, index) => {
+      const material = wrap(item.material_name, width * 0.43 - padding, 11, true);
+      const calculation = wrap(fmt.quantity(item.quantity) + ' × ' + currency(item.price), width * 0.28, 10);
+      const amount = wrap(currency(item.subtotal), width * 0.25 - padding - 4, 10, true);
+      const height = Math.max(15, 9 + Math.max(material.length, calculation.length, amount.length) * 4.6);
+      if (y + height > bottom) {
+        nextPage();
+        tableHeading();
+      }
+      if (index % 2) {
+        doc.setFillColor(pale);
+        doc.rect(margin, y, width, height, 'F');
+      }
+      const firstBaseline = lines => y + (height - (lines.length - 1) * 4.6) / 2 + 1.3;
+      block(material, margin + padding, firstBaseline(material), { size: 11, bold: true }, 4.6);
+      block(calculation, detailRight, firstBaseline(calculation), { size: 10, align: 'right' }, 4.6);
+      block(amount, rightText, firstBaseline(amount), { size: 10, bold: true, align: 'right' }, 4.6);
+      y += height;
+      rule(y);
+    });
+
+    const summaryX = margin + width * 0.51;
+    if (y + 66 > bottom) nextPage();
+    y += 12;
+    text('Subtotal', summaryX + padding, y, { color: muted });
+    text(currency(quote.subtotal), rightText, y, { bold: true, align: 'right' });
+    y += 9;
+    text('Impuesto (' + fmt.quantity(quote.tax_rate) + ' %)', summaryX + padding, y, { color: muted });
+    text(currency(quote.tax), rightText, y, { bold: true, align: 'right' });
+    y += 6;
+    panel(summaryX, y, right - summaryX, 24, navy);
+    text('TOTAL COTIZADO', summaryX + padding, y + 7.5, { size: 8.7, bold: true, color: '#FFFFFF' });
+    const total = currency(quote.total);
+    font(23, true);
+    const totalWidth = rightText - summaryX - padding;
+    const totalSize = Math.min(23, 23 * totalWidth / doc.getTextWidth(total));
+    text(total, rightText, y + 18, { size: totalSize, bold: true, color: '#FFFFFF', align: 'right' });
+    y += 24;
+
+    if (quote.note) {
+      y += 10;
+      for (const line of wrap('Nota: ' + quote.note, width, 10)) {
+        if (y > bottom - 22) nextPage();
+        text(line, margin, y, { color: muted });
+        y += 4.6;
+      }
+    }
+    const thanks = config.company_name ? 'Gracias por cotizar con ' + config.company_name + '.' : 'Gracias por su interés.';
+    const footerLines = wrap(thanks, width, 9);
+    const lastRulePosition = bottom - 8 - (footerLines.length - 1) * 4.5;
+    if (y + 7 > lastRulePosition) nextPage();
+    y = Math.min(lastRulePosition, Math.max(margin + 212, y + 16));
+    rule(y);
+    block(footerLines, margin, y + 8, { size: 9, color: muted });
+    return doc;
+  }
+
   async function share(quote) {
     try {
       if (!window.jspdf?.jsPDF) throw new Error('No está disponible el generador de PDF');
-      await sharePdfDocument(await createPdf(quote), fileName(quote), {
+      await sharePdfDocument(await createWhatsAppPdf(quote), fileName(quote), {
         title: 'Cotización ' + quote.quote_number,
         text: 'Cotización para ' + quote.client_name
       });
