@@ -1944,7 +1944,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       
       const titles = {
         dashboard: 'Dashboard', inventory: 'Inventario', entries: 'Entradas',
-        suppliers: 'Proveedores', clients: 'Clientes', sales: 'Nueva Venta',
+        suppliers: 'Proveedores', clients: 'Clientes', quotes: 'Cotizaciones', sales: 'Nueva Venta',
         credit: 'Gestion de Credito', invoices: 'Facturas', 
         dailyMeters: 'Reporte de Metros Diarios',
         directTrips: 'Viajes Directos',
@@ -2482,6 +2482,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         case 'entries': renderEntries(container); break;
         case 'suppliers': renderSuppliers(container); break;
         case 'clients': renderClients(container); break;
+        case 'quotes': Quotations.render(container); break;
         case 'sales': renderSales(container); break;
         case 'credit': renderCredit(container); break;
         case 'invoices': renderInvoices(container); break;
@@ -11625,7 +11626,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       ].filter(Boolean).join('\n');
     }
 
-    async function sharePdfDocument(doc, fileName) {
+    async function sharePdfDocument(doc, fileName, {
+      title = 'Estado de cuenta',
+      text = 'Estado de cuenta de facturas seleccionadas'
+    } = {}) {
       try {
         if (window.AndroidShare && typeof window.AndroidShare.sharePdfBase64 === 'function') {
           const dataUri = String(doc.output('datauristring') || '');
@@ -11644,8 +11648,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           const pdfFile = new ShareFile([pdfBlob], fileName, { type: 'application/pdf' });
           if (!webNavigator.canShare || webNavigator.canShare({ files: [pdfFile] })) {
             await webNavigator.share({
-              title: 'Estado de cuenta',
-              text: 'Estado de cuenta de facturas seleccionadas',
+              title,
+              text,
               files: [pdfFile]
             });
             showToast('PDF enviado al menu de compartir', 'success');
