@@ -330,34 +330,127 @@ const Quotations = (() => {
     ].join('\n');
   }
 
-  function printHtml(quote, mode) {
-    const width = mode === 'thermal_58' ? 58 : mode === 'thermal_80' ? 80 : 0;
+  function thermalPrintHtml(quote, mode) {
+    const width = mode === 'thermal_58' ? 58 : 80;
     const logo = AppState.config.company_logo;
-    const items = quote.items.map(item => width
-      ? `<section><strong>${escapeHtml(item.material_name)}</strong><br>${escapeHtml(thermalCalculation(item))}<br>Importe: ${escapeHtml(fmt.currency(item.subtotal))}</section>`
-      : `<tr><td>${escapeHtml(item.material_name)}</td><td>${escapeHtml(fmt.quantity(item.quantity))}</td><td>${escapeHtml(fmt.currency(item.price))}</td><td>${escapeHtml(fmt.currency(item.subtotal))}</td></tr>`).join('');
+    const items = quote.items.map(item =>
+      `<section><strong>${escapeHtml(item.material_name)}</strong><br>${escapeHtml(thermalCalculation(item))}<br>Importe: ${escapeHtml(fmt.currency(item.subtotal))}</section>`
+    ).join('');
     return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(quote.quote_number)}</title>
       <style>
-        @page { size: ${width ? width + 'mm 200mm' : AppState.config.paper_size === 'a4' ? 'A4' : 'letter'}; margin: ${width ? '0' : '12mm'} }
-        * { box-sizing: border-box } body { font: ${width ? '10pt' : '11pt'}/1.4 Arial,sans-serif; color:#111; margin:0; overflow-wrap:anywhere;
-          ${width ? 'width:' + width + 'mm; padding:3mm;' : ''} }
-        header { text-align:center; margin-bottom:12px } img { max-width:${width ? '100%' : '145px'}; max-height:60px }
-        h1 { margin:8px 0; font-size:${width ? '15pt' : '22pt'} } h2 { font-size:12pt }
-        table { width:100%; border-collapse:collapse; margin-top:12px } th,td { padding:6px; border-bottom:1px solid #aaa; text-align:right }
-        th:first-child,td:first-child { text-align:left; width:46% } tr,section,footer { break-inside:avoid }
+        @page { size: ${width}mm 200mm; margin: 0 }
+        * { box-sizing: border-box } body { font: 10pt/1.4 Arial,sans-serif; color:#111; margin:0; overflow-wrap:anywhere;
+          width:${width}mm; padding:3mm; }
+        header { text-align:center; margin-bottom:12px } img { max-width:100%; max-height:60px }
+        h1 { margin:8px 0; font-size:15pt } h2 { font-size:12pt }
+        section,footer { break-inside:avoid }
         section { padding:5px 0; border-bottom:1px dashed #888 } footer { margin-top:10px; text-align:right }
         p { margin:8px 0; white-space:pre-wrap }
       </style></head><body>
       <header>${logo ? '<img src="' + escapeAttr(logo) + '" alt="Logo">' : ''}
       ${companyDetails().map(line => '<div>' + escapeHtml(line) + '</div>').join('')}<h1>Cotización</h1></header>
       ${details(quote).map(line => '<div>' + escapeHtml(line) + '</div>').join('')}
-      ${width ? '<h2>Materiales o servicios</h2>' + items : '<table><thead><tr><th>Material o servicio</th><th>Cantidad</th><th>Precio unitario</th><th>Importe</th></tr></thead><tbody>' + items + '</tbody></table>'}
+      <h2>Materiales o servicios</h2>${items}
       <footer>${totals(quote).map(([label, value]) => '<div><strong>' + escapeHtml(label) + ':</strong> ' + escapeHtml(value) + '</div>').join('')}</footer>
       ${quote.note ? '<p><strong>Nota:</strong> ' + escapeHtml(quote.note) + '</p>' : ''}
       </body></html>`;
   }
 
-  async function createPdfDocument() {
+  const currency = amount => fmt.currency(amount).replace(/^RD\$(?=\d)/, 'RD$ ');
+  const quoteThanks = () => AppState.config.company_name
+    ? 'Gracias por cotizar con ' + AppState.config.company_name + '.'
+    : 'Gracias por su interés.';
+
+  function printBusinessInfo() {
+    const { company_rfc, company_address, company_phone } = AppState.config;
+    return [
+      [company_rfc && 'RNC ' + company_rfc, company_address].filter(Boolean).join(' · '),
+      company_phone
+    ].filter(Boolean);
+  }
+
+  function standardPrintHtml(quote) {
+    const { company_name, company_logo, paper_size } = AppState.config;
+    const paper = paper_size === 'a4' ? 'A4' : 'letter';
+    return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(quote.quote_number)}</title>
+      <style>
+        @page { size: ${paper}; margin:17mm }
+        * { box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact }
+        body { margin:0; color:#142640; font:10pt/1.4 Arial,sans-serif; overflow-wrap:anywhere }
+        header { border-top:1.45mm solid #23448b; border-bottom:.25mm solid #dce3ec; padding:5mm 0; min-height:42mm;
+          display:flex; justify-content:space-between; gap:6mm; break-inside:avoid }
+        .business { width:49%; color:#49586b; font-size:9.5pt }
+        .business img { display:block; max-width:37mm; max-height:16mm; margin-bottom:2mm }
+        .business-name { display:block; color:#142640; font-size:14pt; margin-bottom:2mm }
+        .business div + div { margin-top:1mm }
+        .heading { flex:1; text-align:right }
+        h1 { font-size:31pt; line-height:1.1; margin:0 0 2mm }
+        .number { font-weight:bold; color:#23448b }
+        .cards { display:flex; gap:6mm; margin:7mm 0 7mm; break-inside:avoid }
+        .card { flex:1; min-width:0; background:#f0f4fa; border-radius:2.5mm; padding:6mm; min-height:35.5mm }
+        .client { flex:1.27 }
+        .label { color:#23448b; font-size:8.5pt; font-weight:bold; display:block; margin-bottom:3mm }
+        .client-name { font-size:17pt; font-weight:bold; line-height:1.15; margin-bottom:2mm }
+        .date-row,.amount-row { display:flex; justify-content:space-between; gap:3mm; color:#49586b }
+        .date-row { font-size:9.5pt; margin-top:3mm }
+        .date-row strong,.amount-row strong { color:#142640; text-align:right }
+        h2 { font-size:17pt; margin:0 0 3mm; break-after:avoid }
+        table { width:100%; border-spacing:0; table-layout:fixed }
+        thead { display:table-header-group }
+        th { background:#142640; color:white; text-align:left; font-size:9.2pt; padding:3.4mm 6mm }
+        th:first-child { border-radius:2mm 0 0 2mm }
+        th:last-child { border-radius:0 2mm 2mm 0 }
+        th:first-child { width:43% }
+        th:nth-child(2) { width:32% }
+        td { padding:4.8mm 6mm; border-bottom:.25mm solid #dce3ec }
+        tbody tr:nth-child(even) { background:#f0f4fa }
+        tr,.summary { break-inside:avoid }
+        th:not(:first-child),td:not(:first-child) { text-align:right }
+        td:first-child,td:last-child { font-weight:bold }
+        .summary { width:49%; margin:8mm 0 0 auto }
+        .amount-row { margin:0 6mm 3mm }
+        .total { background:#142640; color:white; border-radius:2.5mm; padding:4mm 6mm }
+        .total-label { font-size:8.7pt; font-weight:bold }
+        .total-amount { display:block; text-align:right; font-size:23pt; line-height:1.15; margin-top:2mm }
+        .note { white-space:pre-wrap; margin:7mm 0 0 }
+        footer { border-top:.25mm solid #dce3ec; margin-top:15mm; padding-top:4mm; color:#49586b; font-size:9pt; break-inside:avoid }
+      </style></head><body>
+      <header>
+        <div class="business">
+          ${company_logo ? '<img src="' + escapeAttr(company_logo) + '" alt="' + escapeAttr(company_name || 'Logo') + '">'
+            : '<strong class="business-name">' + escapeHtml(company_name || '') + '</strong>'}
+          ${printBusinessInfo().map(line => '<div>' + escapeHtml(line) + '</div>').join('')}
+        </div>
+        <div class="heading"><h1>COTIZACIÓN</h1><div class="number">${escapeHtml(quote.quote_number)}</div></div>
+      </header>
+      <div class="cards">
+        <section class="card client">
+          <span class="label">CLIENTE</span><div class="client-name">${escapeHtml(quote.client_name)}</div>
+          ${quote.client_phone ? '<div>' + escapeHtml(quote.client_phone) + '</div>' : ''}
+        </section>
+        <section class="card">
+          <span class="label">FECHAS DE LA COTIZACIÓN</span>
+          <div class="date-row">Emisión <strong>${escapeHtml(quoteDate(quote))}</strong></div>
+          <div class="date-row">Válida hasta <strong>${escapeHtml(quote.valid_until ? formatDateKey(quote.valid_until) : 'Sin indicar')}</strong></div>
+        </section>
+      </div>
+      <h2>Detalle de materiales</h2>
+      <table><thead><tr><th>Material o servicio</th><th>Cantidad × precio unitario</th><th>Importe</th></tr></thead><tbody>
+        ${quote.items.map(item => `<tr><td>${escapeHtml(item.material_name)}</td>
+          <td>${escapeHtml(fmt.quantity(item.quantity))} × ${escapeHtml(currency(item.price))}</td>
+          <td>${escapeHtml(currency(item.subtotal))}</td></tr>`).join('')}
+      </tbody></table>
+      <div class="summary">
+        <div class="amount-row">Subtotal <strong>${escapeHtml(currency(quote.subtotal))}</strong></div>
+        <div class="amount-row">Impuesto (${escapeHtml(fmt.quantity(quote.tax_rate))} %) <strong>${escapeHtml(currency(quote.tax))}</strong></div>
+        <div class="total"><span class="total-label">TOTAL COTIZADO</span><strong class="total-amount">${escapeHtml(currency(quote.total))}</strong></div>
+      </div>
+      ${quote.note ? '<p class="note"><strong>Nota:</strong> ' + escapeHtml(quote.note) + '</p>' : ''}
+      <footer>${escapeHtml(quoteThanks())}</footer>
+      </body></html>`;
+  }
+
+  async function createStyledPdf(quote) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({
       unit: 'mm', format: AppState.config.paper_size === 'a4' ? 'a4' : 'letter', putOnlyUsedFonts: true
@@ -371,88 +464,6 @@ const Quotations = (() => {
       doc.addFont('LiberationSans-Bold.ttf', family, 'bold');
     }
     doc.setCharSpace(0);
-    return { doc, family };
-  }
-
-  async function createPdf(quote) {
-    const { doc, family } = await createPdfDocument();
-    const margin = 13;
-    const right = doc.internal.pageSize.getWidth() - margin;
-    const bottom = doc.internal.pageSize.getHeight() - margin;
-    let y = margin + 4;
-    const line = (text, { x = margin, align = 'left', bold = false, size = 10 } = {}) => {
-      doc.setFont(family, bold ? 'bold' : 'normal');
-      doc.setFontSize(size);
-      doc.text(text, x, y, { align });
-    };
-    const heading = () => {
-      line('COTIZACIÓN', { bold: true, size: 18 });
-      line(quote.quote_number, { x: right, align: 'right', bold: true });
-      y += 9;
-    };
-    const ensureRoom = height => {
-      if (y + height <= bottom) return;
-      doc.addPage();
-      y = margin + 4;
-      heading();
-    };
-    const paragraph = (text, width = right - margin) => {
-      doc.setFont(family, 'normal');
-      doc.setFontSize(10);
-      for (const part of doc.splitTextToSize(text, width)) {
-        ensureRoom(5);
-        line(part);
-        y += 5;
-      }
-    };
-
-    heading();
-    const logo = AppState.config.company_logo;
-    if (logo) {
-      try {
-        const { width, height } = doc.getImageProperties(logo);
-        const scale = Math.min(35 / width, 18 / height);
-        doc.addImage(logo, margin, y - 3, width * scale, height * scale);
-        y += height * scale + 2;
-      } catch (error) {
-        console.warn('No se pudo incorporar el logo a la cotización', error);
-      }
-    }
-    companyDetails().forEach(text => paragraph(text));
-    doc.setDrawColor(165);
-    doc.line(margin, y - 1, right, y - 1);
-    y += 5;
-    details(quote).slice(1).forEach(text => paragraph(text));
-    y += 5;
-    ensureRoom(10);
-    line('Materiales o servicios', { bold: true, size: 12 });
-    y += 7;
-    for (const item of quote.items) {
-      ensureRoom(22);
-      paragraph(item.material_name);
-      ensureRoom(9);
-      line(fmt.quantity(item.quantity) + ' × ' + fmt.currency(item.price));
-      line(fmt.currency(item.subtotal), { x: right, align: 'right', bold: true });
-      y += 3;
-      doc.setDrawColor(205);
-      doc.line(margin, y, right, y);
-      y += 6;
-    }
-    ensureRoom(20);
-    for (const [label, value] of totals(quote)) {
-      line(label, { bold: true });
-      line(value, { x: right, align: 'right', bold: true });
-      y += 6;
-    }
-    if (quote.note) {
-      y += 4;
-      paragraph('Nota: ' + quote.note);
-    }
-    return doc;
-  }
-
-  async function createWhatsAppPdf(quote) {
-    const { doc, family } = await createPdfDocument();
     const config = AppState.config;
     const margin = 17;
     const right = doc.internal.pageSize.getWidth() - margin;
@@ -463,7 +474,6 @@ const Quotations = (() => {
     const muted = '#49586B';
     const pale = '#F0F4FA';
     const border = '#DCE3EC';
-    const currency = amount => fmt.currency(amount).replace(/^RD\$(?=\d)/, 'RD$ ');
     let y = margin;
 
     const font = (size, bold = false) => {
@@ -520,11 +530,7 @@ const Quotations = (() => {
       block(name, margin, companyY + 4, { size: 14, bold: true }, 5.5);
       companyY += name.length * 5.5 + 5;
     }
-    const businessInfo = [
-      [config.company_rfc && 'RNC ' + config.company_rfc, config.company_address].filter(Boolean).join(' · '),
-      config.company_phone
-    ].filter(Boolean);
-    for (const info of businessInfo) {
+    for (const info of printBusinessInfo()) {
       const lines = wrap(info, companyWidth, 9.5);
       block(lines, margin, companyY + 3, { size: 9.5, color: muted });
       companyY += lines.length * 4.5 + 1.3;
@@ -616,8 +622,7 @@ const Quotations = (() => {
         y += 4.6;
       }
     }
-    const thanks = config.company_name ? 'Gracias por cotizar con ' + config.company_name + '.' : 'Gracias por su interés.';
-    const footerLines = wrap(thanks, width, 9);
+    const footerLines = wrap(quoteThanks(), width, 9);
     const lastRulePosition = bottom - 8 - (footerLines.length - 1) * 4.5;
     if (y + 7 > lastRulePosition) nextPage();
     y = Math.min(lastRulePosition, Math.max(margin + 212, y + 16));
@@ -629,7 +634,7 @@ const Quotations = (() => {
   async function share(quote) {
     try {
       if (!window.jspdf?.jsPDF) throw new Error('No está disponible el generador de PDF');
-      await sharePdfDocument(await createWhatsAppPdf(quote), fileName(quote), {
+      await sharePdfDocument(await createStyledPdf(quote), fileName(quote), {
         title: 'Cotización ' + quote.quote_number,
         text: 'Cotización para ' + quote.client_name
       });
@@ -643,23 +648,26 @@ const Quotations = (() => {
     const mode = getEffectivePrinterType();
     if (mode === 'pdf') {
       try {
-        (await createPdf(quote)).save(fileName(quote));
+        (await createStyledPdf(quote)).save(fileName(quote));
       } catch (error) {
         showToast('No se pudo descargar la cotización en PDF', 'error');
         console.error(error);
       }
       return;
     }
-    if (isBluetoothPrinterSelected() && (mode === 'thermal_58' || mode === 'thermal_80')) {
+    const thermal = mode === 'thermal_58' || mode === 'thermal_80';
+    if (thermal && isBluetoothPrinterSelected()) {
       try {
         await BluetoothPrinter.printText(thermalText(quote));
         showToast('Cotización enviada a la impresora Bluetooth', 'success');
         return;
       } catch (error) {
-        showToast('Bluetooth no respondió. Se abrirá la impresión del sistema', 'warning');
+        showToast('Bluetooth no respondió. Se abrirá la impresión en hoja', 'warning');
+        openPrintDocument(standardPrintHtml(quote));
+        return;
       }
     }
-    openPrintDocument(printHtml(quote, mode));
+    openPrintDocument(thermal ? thermalPrintHtml(quote, mode) : standardPrintHtml(quote));
   }
 
   return { render };
