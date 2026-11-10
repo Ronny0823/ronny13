@@ -281,9 +281,9 @@ const Quotations = (() => {
     });
   }
 
-  function details(quote) {
+  function details(quote, numberLabel = 'N.º') {
     return [
-      'N.º ' + quote.quote_number,
+      numberLabel + ' ' + quote.quote_number,
       'Fecha: ' + quoteDate(quote),
       'Cliente: ' + quote.client_name,
       quote.client_phone ? 'Teléfono del cliente: ' + quote.client_phone : '',
@@ -311,11 +311,11 @@ const Quotations = (() => {
     const wrap = text => h.wordWrap(plain(text)).flatMap(line => h.wrap(line));
     return [
       ...BluetoothPrinter.thermalHeader('COTIZACIÓN'),
-      ...details(quote).flatMap(wrap),
+      ...details(quote, 'No.').flatMap(wrap),
       ...h.section('MATERIALES O SERVICIOS'),
       ...quote.items.flatMap(item => [
         ...wrap(item.material_name),
-        ...wrap(fmt.quantity(item.quantity) + ' × ' + fmt.currency(item.price)),
+        ...wrap(fmt.quantity(item.quantity) + ' x ' + fmt.currency(item.price)),
         h.item('Importe:', fmt.currency(item.subtotal)),
         h.line
       ]),
