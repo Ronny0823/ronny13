@@ -63,7 +63,25 @@ const Quotations = (() => {
   }
 
   function openEditor(existing) {
-    const clients = getRecords('client');
+    const clientId = client => SupabaseSync.getRecordId(client);
+    const clients = getRecords('client')
+      .filter(client => clientId(client) && safeText(client.client_name))
+      .sort((a, b) => a.client_name.localeCompare(b.client_name, 'es'));
+    const clientsById = new Map(clients.map(client => [clientId(client), client]));
+    const manual = 'manual';
+    const legacyMatches = existing && !existing.client_id
+      ? clients.filter(client => client.client_name === existing.client_name)
+      : [];
+    const linkedClient = existing?.client_id ? clientsById.get(existing.client_id)
+      : legacyMatches.length === 1 ? legacyMatches[0] : null;
+    const selection = existing
+      ? (linkedClient && linkedClient.client_name === existing.client_name ? clientId(linkedClient) : manual)
+      : (clients.length ? '' : manual);
+    const clientOptions = clients.map(client => {
+      const contact = client.client_phone || client.vehicle_plate;
+      const label = client.client_name + (contact ? ' · ' + contact : '');
+      return `<option value="${escapeAttr(clientId(client))}"${clientId(client) === selection ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    }).join('');
     const materials = new Map(getRecords('material').map(material => [material.name, material]));
     const rate = existing?.tax_rate ?? (AppState.config.iva_default_enabled ? AppState.config.iva_default_rate : 0);
     const options = names => names.map(name => '<option value="' + escapeAttr(name) + '"></option>').join('');
@@ -74,8 +92,15 @@ const Quotations = (() => {
           <button type="button" class="${actionClass}" data-close-quote aria-label="Cerrar">Cerrar</button>
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
-          <label class="text-sm text-slate-300">Cliente
-            <input name="client" class="${inputClass}" list="quotationClients" required maxlength="120" value="${escapeAttr(existing?.client_name || '')}" placeholder="Elige o escribe el nombre">
+          <label class="min-w-0 text-sm text-slate-300 sm:col-span-2">Cliente
+            <select name="clientSelection" class="${inputClass}" required>
+              <option value="" disabled${selection ? '' : ' selected'}>Selecciona un cliente registrado</option>
+              ${clientOptions}
+              <option value="${manual}"${selection === manual ? ' selected' : ''}>Escribir otro cliente</option>
+            </select>
+          </label>
+          <label data-manual-client class="text-sm text-slate-300" ${selection === manual ? '' : 'hidden'}>Nombre del cliente
+            <input name="client" class="${inputClass}" ${selection === manual ? 'required' : 'disabled'} maxlength="120" value="${escapeAttr(selection === manual ? existing?.client_name || '' : '')}" placeholder="Escribe el nombre">
           </label>
           <label class="text-sm text-slate-300">Teléfono (opcional)
             <input name="phone" class="${inputClass}" type="tel" maxlength="40" value="${escapeAttr(existing?.client_phone || '')}">
@@ -87,7 +112,6 @@ const Quotations = (() => {
             <input name="tax" type="number" min="0" max="100" step="0.01" required class="${inputClass}" value="${escapeAttr(rate ?? 0)}">
           </label>
         </div>
-        <datalist id="quotationClients">${options([...new Set(clients.map(client => client.client_name))])}</datalist>
         <datalist id="quotationMaterials">${options([...materials.keys()])}</datalist>
         <h3 class="font-semibold text-slate-100">Materiales o servicios</h3>
         <div data-quote-lines class="space-y-2"></div>
@@ -101,6 +125,16 @@ const Quotations = (() => {
 
     const form = document.getElementById('quotationForm');
     const fields = form.elements;
+    const manualClient = form.querySelector('[data-manual-client]');
+    fields.clientSelection.addEventListener('change', () => {
+      const isManual = fields.clientSelection.value === manual;
+      const client = clientsById.get(fields.clientSelection.value);
+      manualClient.hidden = !isManual;
+      fields.client.disabled = !isManual;
+      fields.client.required = isManual;
+      fields.phone.value = client?.client_phone || '';
+      if (isManual) fields.client.focus();
+    });
     const lines = form.querySelector('[data-quote-lines]');
     const saveButton = form.querySelector('[type="submit"]');
     const closeButton = form.querySelector('[data-close-quote]');
@@ -156,10 +190,6 @@ const Quotations = (() => {
     });
     form.addEventListener('input', event => {
       const input = event.target;
-      if (input === fields.client && !fields.phone.value) {
-        const client = clients.find(item => item.client_name === input.value);
-        if (client?.client_phone) fields.phone.value = client.client_phone;
-      }
       if (input.matches('[data-material]')) {
         const material = materials.get(input.value);
         if (material) input.closest('div').querySelector('[data-price]').value = material.price ?? '';
@@ -174,11 +204,12 @@ const Quotations = (() => {
         showToast('La cotización ya no está disponible', 'warning');
         return;
       }
-      const client_name = safeText(fields.client.value);
+      const client = clientsById.get(fields.clientSelection.value);
+      const client_name = safeText(client?.client_name ?? fields.client.value);
       const items = readItems();
       const date = current?.date || new Date().toISOString();
       if (!client_name || !items.length || items.some(item => !item.material_name || item.quantity <= 0)) {
-        showToast('Escribe el cliente y completa los materiales o servicios', 'warning');
+        showToast('Selecciona o escribe el cliente y completa los materiales o servicios', 'warning');
         return;
       }
       if (fields.validity.value && fields.validity.value < getLocalDateKey(date)) {
@@ -190,6 +221,7 @@ const Quotations = (() => {
         ...current, type: 'quote', __backendId: id,
         quote_number: current?.quote_number || 'COT-' + id.slice(6).replaceAll('-', '').slice(0, 12).toUpperCase(),
         date, client_name, items, ...readTotals(items),
+        client_id: clientId(client),
         client_phone: safeText(fields.phone.value),
         valid_until: fields.validity.value,
         note: safeText(fields.note.value)
