@@ -281,9 +281,9 @@ const Quotations = (() => {
     });
   }
 
-  function details(quote, numberLabel = 'N.º') {
+  function details(quote) {
     return [
-      numberLabel + ' ' + quote.quote_number,
+      'No. ' + quote.quote_number,
       'Fecha: ' + quoteDate(quote),
       'Cliente: ' + quote.client_name,
       quote.client_phone ? 'Teléfono del cliente: ' + quote.client_phone : '',
@@ -305,17 +305,21 @@ const Quotations = (() => {
       config.company_address, config.company_phone && 'Teléfono: ' + config.company_phone].filter(Boolean);
   }
 
+  function thermalCalculation(item) {
+    return fmt.quantity(item.quantity) + ' x ' + fmt.currency(item.price);
+  }
+
   function thermalText(quote) {
     const h = BluetoothPrinter.helpers();
     const plain = text => String(text).replace(/[\x00-\x1f\x7f]/g, ' ');
     const wrap = text => h.wordWrap(plain(text)).flatMap(line => h.wrap(line));
     return [
       ...BluetoothPrinter.thermalHeader('COTIZACIÓN'),
-      ...details(quote, 'No.').flatMap(wrap),
+      ...details(quote).flatMap(wrap),
       ...h.section('MATERIALES O SERVICIOS'),
       ...quote.items.flatMap(item => [
         ...wrap(item.material_name),
-        ...wrap(fmt.quantity(item.quantity) + ' x ' + fmt.currency(item.price)),
+        ...wrap(thermalCalculation(item)),
         h.item('Importe:', fmt.currency(item.subtotal)),
         h.line
       ]),
@@ -330,7 +334,7 @@ const Quotations = (() => {
     const width = mode === 'thermal_58' ? 58 : mode === 'thermal_80' ? 80 : 0;
     const logo = AppState.config.company_logo;
     const items = quote.items.map(item => width
-      ? `<section><strong>${escapeHtml(item.material_name)}</strong><br>${escapeHtml(fmt.quantity(item.quantity))} × ${escapeHtml(fmt.currency(item.price))}<br>Importe: ${escapeHtml(fmt.currency(item.subtotal))}</section>`
+      ? `<section><strong>${escapeHtml(item.material_name)}</strong><br>${escapeHtml(thermalCalculation(item))}<br>Importe: ${escapeHtml(fmt.currency(item.subtotal))}</section>`
       : `<tr><td>${escapeHtml(item.material_name)}</td><td>${escapeHtml(fmt.quantity(item.quantity))}</td><td>${escapeHtml(fmt.currency(item.price))}</td><td>${escapeHtml(fmt.currency(item.subtotal))}</td></tr>`).join('');
     return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(quote.quote_number)}</title>
       <style>
