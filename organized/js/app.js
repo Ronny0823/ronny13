@@ -9276,6 +9276,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           '',
           center(mensajeAgradecimiento),
           AppState.config.company_phone ? 'Tel: ' + AppState.config.company_phone : '',
+          '\n\n',
+          center('_'.repeat(Math.min(28, lineWidth - 4))),
+          center('Firma del cliente'),
           '\n\n\n',
           '\x1dV\x42\x00'
         ].filter(Boolean);
@@ -10117,6 +10120,24 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         doc.setFont(undefined, 'normal');
       }
 
+      // Dejar espacio para la firma manuscrita al final de la factura.
+      if (yPos + 24 > pageHeight - margin) {
+        doc.addPage(format, 'portrait');
+        yPos = margin + 5;
+        doc.setFontSize(isThermal ? 7 : 9);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Factura ' + (inv.invoice_number || ''), pageWidth / 2, yPos, { align: 'center' });
+      }
+      const signatureY = yPos + 18;
+      const signatureWidth = isThermal ? contentWidth * 0.75 : 70;
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.25);
+      doc.line((pageWidth - signatureWidth) / 2, signatureY, (pageWidth + signatureWidth) / 2, signatureY);
+      doc.setFontSize(isThermal ? 8 : 10);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'normal');
+      doc.text('Firma del cliente', pageWidth / 2, signatureY + 4.5, { align: 'center' });
+
       // === NOMBRE DEL ARCHIVO SEGUN FORMATO ===
       let fileName;
       if (isThermal) {
@@ -10390,6 +10411,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 </head>
           <body onload="window.print(); window.close();">
             ${content}
+            <div style="margin-top: 32px; padding-top: 18px; text-align: center; break-inside: avoid; page-break-inside: avoid; color: #000;">
+              <div style="width: 75%; max-width: 70mm; margin: 0 auto; border-top: 1px solid #000; padding-top: 5px; font-size: ${isThermal ? '10' : '12'}px;">Firma del cliente</div>
+            </div>
           </body>
         </html>
       `, { autoClose: true });
