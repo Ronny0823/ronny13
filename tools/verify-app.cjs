@@ -15,7 +15,7 @@ const printDocuments = fs.readFileSync('organized/js/print-documents.js', 'utf8'
 const saleInvoice = fs.readFileSync('organized/js/sale-invoice.js', 'utf8');
 
 const checks = [
-  [html.includes('js/sale-invoice.js?v=1.84.0') && app.includes('await SaleInvoice.pdf(invoice)') && app.includes('await SaleInvoice.html(invoice, mode, isTest)') && app.includes('await SaleInvoice.bluetoothBytes(invoice)'), 'Los formatos de factura no usan el diseño de entrega'],
+  [html.includes('js/sale-invoice.js?v=1.85.0') && app.includes('await SaleInvoice.pdf(invoice)') && app.includes('await SaleInvoice.html(invoice, mode, isTest)') && app.includes('await SaleInvoice.bluetoothBytes(invoice)'), 'Los formatos de factura no usan el diseño de entrega'],
   [saleInvoice.includes('CONFIRMACIÓN DE ENTREGA') && saleInvoice.includes('Firma de quien recibe') && saleInvoice.includes('Falta por pagar:'), 'Falta la confirmación de entrega o el saldo de la factura'],
   [app.includes('const RecordSyncV2'), 'Falta la sincronización por registro'],
   [app.includes("rpc('sync_erp_records'"), 'Falta el envío normalizado a Supabase'],
@@ -31,7 +31,7 @@ const checks = [
   [migration.includes('pull_erp_record_changes') && migration.includes('security invoker'), 'Falta la migración incremental segura'],
   [workflow.includes('ANDROID_KEYSTORE_BASE64') && workflow.includes('assembleRelease'), 'Falta la firma permanente de Android'],
   [app.includes('generateClientCreditReportPDF') && app.includes('generateClientPaymentReportPDF'), 'Faltan los nuevos reportes claros para clientes'],
-  [html.includes('js/print-documents.js?v=1.84.0') && printDocuments.includes('SaleInvoice.createDocumentPDF') && printDocuments.includes('SaleInvoice.documentHTML') && printDocuments.includes('SaleInvoice.documentBytes'), 'Los documentos no comparten el diseño de impresión'],
+  [html.includes('js/print-documents.js?v=1.85.0') && printDocuments.includes('SaleInvoice.createDocumentPDF') && printDocuments.includes('SaleInvoice.documentHTML') && printDocuments.includes('SaleInvoice.documentBytes'), 'Los documentos no comparten el diseño de impresión'],
   [saleInvoice.includes('pages(plan, height)') && saleInvoice.includes('Math.min(400, naturalHeight)'), 'Los documentos no paginan según el papel configurado'],
   [app.includes('loadExactPdfFontFiles') && app.includes('LiberationSans-Regular.ttf') && app.includes('LiberationSans-Bold.ttf'), 'Los PDF no usan la tipografia visual de las referencias'],
   [printDocuments.includes('TOTAL A SALDAR:') && printDocuments.includes('TOTAL POR PAGAR'), 'Faltan los saldos claros en los comprobantes'],
@@ -53,8 +53,8 @@ const checks = [
   [app.includes('multiDirectPaymentChannel\" required') && app.includes('Indica por dónde se recibió el pago'), 'Viajes Directos permite guardar pagos sin indicar por donde fueron'],
   [app.includes("batch_id: batchId") && app.includes("multiple_payment: true"), 'El pago multiple no conserva el grupo de facturas'],
   [app.includes('await AppState.saveUserData();') && app.includes('No se aplicaron cambios.'), 'El pago multiple no espera el guardado o no revierte en error'],
-  [workflow.includes('v1.84'), 'El flujo de APK no apunta a v1.84'],
-  [gradle.includes('versionCode 85') && gradle.includes("versionName '1.84.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.85'), 'El flujo de APK no apunta a v1.85'],
+  [gradle.includes('versionCode 86') && gradle.includes("versionName '1.85.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -63,4 +63,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.84 completadas');
+console.log('Verificaciones v1.85 completadas');

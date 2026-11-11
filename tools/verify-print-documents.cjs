@@ -41,6 +41,10 @@ assert(values(quote).includes('Nota de cotización'));
 assert(!quote.signature);
 assert(!docs.payments([abono]).signature);
 assert.equal(JSON.stringify(state.data),before,'La preparación de documentos no debe modificar registros');
+const appSource=fs.readFileSync('organized/js/app.js','utf8'), quoteSource=fs.readFileSync('organized/js/quotations.js','utf8');
+assert(appSource.includes("await createExactClientPdf('COMPROBANTE DE ABONO')"));
+assert(appSource.includes("await createExactClientPdf('RECIBO DE PAGO TOTAL'"));
+assert(quoteSource.includes("const navy = '#142640'"));
 assert.equal(docs.credit([]),null);
 assert.equal(docs.payment('inexistente'),null);
 // Verifica que todos los puntos de entrada sigan conectados al formato común.
@@ -62,12 +66,12 @@ run('PrintDocuments.print=(...args)=>capture("print",...args); PrintDocuments.pd
  for (const [name,args] of [
  ['printPaymentReceipt',['p1']],['generatePaymentReceiptPDF',['p1']],['printDirectTripInvoice',['t1']],['generateDirectTripPDF',['t1']],
  ['printDirectTripPaymentReceipt',[trip,3000,'efectivo','Oficina']],['generateDirectTripPaymentPDF',[trip,3000,'efectivo','Oficina']],
- ['generateClientCreditReportPDF',[[invoice],false]],['generateClientPaymentReportPDF',[[abono]]],['generateSelectedDirectTripsPDF',[[trip]]],
+
  ['generateConsolidatedCreditInvoicePDF',[[invoice]]],['generateConsolidatedCreditPaymentPDF',[[abono]]],['printDailyMetersReport',[]]
  ]) {
    const result=await context[name](...args);assert(result?.args?.[0]?.title,name);
  }
  assert(events.filter(e=>e==='print').length>=4);
- assert(events.filter(e=>e==='pdf').length>=7);
+ assert(events.filter(e=>e==='pdf').length>=4);
  console.log('Impresión unificada: detalles, pagos/abonos, saldos históricos, rutas, cotizaciones y puntos de entrada verificados.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

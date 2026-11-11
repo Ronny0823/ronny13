@@ -10444,17 +10444,554 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
 
 
+    async function createExactClientPdf(reportTitle, reportSubtitle = '') {
+      const { jsPDF } = window.jspdf;
+      const pageWidth = 216;
+      const pageHeight = 324;
+      const margin = 7;
+      const contentWidth = pageWidth - (margin * 2);
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [pageWidth, pageHeight] });
+      doc.setCharSpace(0);
+      const fontFiles = await loadExactPdfFontFiles();
+      if (fontFiles) {
+        doc.addFileToVFS('LiberationSans-Regular.ttf', fontFiles.regular);
+        doc.addFileToVFS('LiberationSans-Bold.ttf', fontFiles.bold);
+        doc.addFont('LiberationSans-Regular.ttf', 'ExactSans', 'normal');
+        doc.addFont('LiberationSans-Bold.ttf', 'ExactSans', 'bold');
+        const originalSetFont = doc.setFont.bind(doc);
+        doc.setFont = (fontName, fontStyle, fontWeight) => originalSetFont(
+          fontName === 'helvetica' ? 'ExactSans' : fontName,
+          fontStyle,
+          fontWeight
+        );
+      }
+      const color = {
+        blue: [5, 43, 120],
+        dark: [12, 31, 61],
+        gold: [229, 151, 0],
+        brown: [171, 88, 0],
+        green: [0, 132, 73],
+        paleBlue: [246, 248, 255],
+        paleHeader: [240, 243, 255],
+        paleGold: [255, 250, 235],
+        line: [203, 213, 225],
+        gray: [71, 85, 105]
+      };
+      let y = 6;
+
+      const compactHeader = () => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...color.blue);
+        doc.text(safeText(AppState.config.company_name || 'AGRECACI'), margin, 9);
+        doc.text(reportTitle, pageWidth - margin, 9, { align: 'right' });
+        doc.setDrawColor(...color.gold);
+        doc.setLineWidth(0.35);
+        doc.line(margin, 13, pageWidth - margin, 13);
+        y = 20;
+      };
+
+      const ensure = (needed = 8) => {
+        if (y + needed <= pageHeight - 12) return;
+        doc.addPage([pageWidth, pageHeight], 'portrait');
+        compactHeader();
+      };
+
+      const header = () => {
+        const isPaidReceipt = reportTitle === 'RECIBO DE PAGO TOTAL';
+        let logoAdded = false;
+        if (AppState.config.company_logo) {
+          try {
+            const logoWidth = isPaidReceipt ? 70 : 90;
+            const logoHeight = isPaidReceipt ? 18 : 30;
+            doc.addImage(AppState.config.company_logo, 'JPEG', (pageWidth - logoWidth) / 2, y, logoWidth, logoHeight);
+            logoAdded = true;
+            y += logoHeight + 3;
+          } catch (error) {
+            console.warn('No se pudo agregar el logo al PDF', error);
+          }
+        }
+        if (!logoAdded) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(22);
+          doc.setTextColor(...color.blue);
+          doc.text(safeText(AppState.config.company_name || 'AGRECACI'), pageWidth / 2, y + 12, { align: 'center' });
+          y += 22;
+        }
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(isPaidReceipt ? 13 : 15);
+        if (AppState.config.company_slogan) {
+          doc.text(safeText(AppState.config.company_slogan), pageWidth / 2, y, { align: 'center' });
+          y += isPaidReceipt ? 7 : 8;
+        }
+        if (AppState.config.company_rfc) {
+          doc.setFontSize(isPaidReceipt ? 10.5 : 12);
+          doc.text('RNC: ' + safeText(AppState.config.company_rfc), pageWidth / 2, y, { align: 'center' });
+          y += isPaidReceipt ? 6 : 7;
+        }
+
+        if (reportTitle === 'COMPROBANTE DE ABONO') y += 17;
+        else if (reportTitle === 'ESTADO DE CUENTA') y += 9;
+        else if (isPaidReceipt) y += 9;
+
+        doc.setDrawColor(150, 150, 150);
+        doc.setLineWidth(0.3);
+        doc.line(margin, y, pageWidth - margin, y);
+        y += isPaidReceipt ? 7 : 11;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(27);
+        doc.setTextColor(...color.gold);
+        doc.text(reportTitle, pageWidth / 2, y, { align: 'center' });
+        y += 8;
+        if (reportSubtitle) {
+          doc.setFontSize(14);
+          doc.setTextColor(0, 0, 0);
+          doc.text(reportSubtitle, pageWidth / 2, y, { align: 'center' });
+          y += 10;
+        } else {
+          y += 6;
+        }
+      };
+
+      const line = (atY = y, lineColor = color.line, width = 0.25) => {
+        doc.setDrawColor(...lineColor);
+        doc.setLineWidth(width);
+        doc.line(margin, atY, pageWidth - margin, atY);
+      };
+
+      const footer = (firstLine, secondLine) => {
+        const footerHeight = 20;
+        if (y > pageHeight - 12) {
+          doc.addPage([pageWidth, pageHeight], 'portrait');
+          compactHeader();
+        }
+        y = Math.max(y + 2, pageHeight - footerHeight);
+        line(y, color.gold, 0.45);
+        y += 6;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13.5);
+        doc.setTextColor(...color.blue);
+        doc.text(firstLine, pageWidth / 2, y, { align: 'center' });
+        y += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12);
+        doc.text(secondLine, pageWidth / 2, y, { align: 'center' });
+      };
+
+      const sectionTitle = title => {
+        ensure(13);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16.5);
+        doc.setTextColor(...color.dark);
+        doc.text(title, margin + 2, y);
+        y += 5;
+        line(y, [160, 160, 160], 0.25);
+        y += 7;
+      };
+
+      header();
+      return {
+        doc, pageWidth, pageHeight, margin, contentWidth, color,
+        ensure, line, footer, sectionTitle,
+        getY: () => y,
+        setY: value => { y = value; }
+      };
+    }
+
+    function drawExactPaidInvoiceCard(kit, summary) {
+      const { doc, pageWidth, margin, contentWidth, color } = kit;
+      const rows = summary.items.length ? summary.items : [{
+        material_name: 'Sin detalle',
+        quantity: 0,
+        price: 0,
+        subtotal: summary.total
+      }];
+      const height = 17 + (rows.length * 8) + 10;
+      kit.ensure(height + 5);
+      const top = kit.getY();
+
+      doc.setFillColor(...color.paleBlue);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(margin, top, contentWidth, height, 3, 3, 'FD');
+      doc.setFillColor(...color.paleHeader);
+      doc.rect(margin, top, contentWidth, 11, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12.5);
+      doc.setTextColor(...color.dark);
+      doc.text(safeText(summary.invoice.invoice_number || 'Factura'), margin + 5, top + 7.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10.5);
+      doc.text('·  ' + exactDate(summary.invoice.date), margin + 45, top + 7.5);
+
+      let rowY = top + 16;
+      rows.forEach((item, index) => {
+        if (index > 0) {
+          doc.setDrawColor(...color.line);
+          doc.line(margin + 5, rowY - 4, pageWidth - margin - 5, rowY - 4);
+        }
+        const amount = toFiniteNumber(item.subtotal, toFiniteNumber(item.quantity, 0) * toFiniteNumber(item.price, 0));
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(0, 0, 0);
+        const description = safeText(item.material_name || 'Material') + ':   ' + fmt.quantity(item.quantity) + ' m³ × ' + exactCurrency(item.price);
+        doc.text(doc.splitTextToSize(description, contentWidth - 60)[0] || description, margin + 5, rowY);
+        doc.text(exactCurrency(amount), pageWidth - margin - 5, rowY, { align: 'right' });
+        rowY += 8;
+      });
+
+      doc.setFillColor(...color.paleHeader);
+      doc.rect(margin, top + height - 10, contentWidth, 10, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11.5);
+      doc.setTextColor(...color.dark);
+      doc.text('Total de la factura:', margin + 5, top + height - 3.5);
+      doc.setFontSize(13);
+      doc.text(exactCurrency(summary.total), pageWidth - margin - 5, top + height - 3.5, { align: 'right' });
+      kit.setY(top + height + 4);
+    }
+
+    function drawExactPendingInvoice(kit, summary, showHeading = false) {
+      const { doc, pageWidth, margin, contentWidth, color } = kit;
+      const rows = summary.items.length ? summary.items : [{
+        material_name: 'Sin detalle',
+        quantity: 0,
+        price: 0,
+        subtotal: summary.total
+      }];
+      const required = 108 + (rows.length * 10) + (showHeading ? 13 : 0);
+      kit.ensure(required);
+      if (showHeading) {
+        kit.sectionTitle('FACTURA ' + safeText(summary.invoice.invoice_number || ''));
+      }
+
+      let y = kit.getY();
+      doc.setFillColor(...color.paleHeader);
+      doc.rect(margin, y, contentWidth, 23, 'F');
+      doc.setFontSize(14);
+      doc.setTextColor(...color.dark);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Factura:', margin + 5, y + 8);
+      doc.text('Fecha de compra:', margin + 5, y + 17);
+      doc.setFont('helvetica', 'normal');
+      doc.text(safeText(summary.invoice.invoice_number || '-'), margin + 60, y + 8);
+      doc.text(exactDate(summary.invoice.date), margin + 60, y + 17);
+      y += 26;
+
+      doc.setFillColor(...color.paleHeader);
+      doc.rect(margin, y, contentWidth, 12, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12.5);
+      doc.text('Material', margin + 5, y + 8);
+      doc.text('Cantidad', margin + 82, y + 8, { align: 'right' });
+      doc.text('Precio por m³', margin + 143, y + 8, { align: 'right' });
+      doc.text('Importe', pageWidth - margin - 5, y + 8, { align: 'right' });
+      y += 15;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(13);
+      rows.forEach(item => {
+        const amount = toFiniteNumber(item.subtotal, toFiniteNumber(item.quantity, 0) * toFiniteNumber(item.price, 0));
+        doc.setTextColor(0, 0, 0);
+        doc.text(doc.splitTextToSize(safeText(item.material_name || 'Material'), 65)[0] || 'Material', margin + 5, y);
+        doc.text(fmt.quantity(item.quantity) + ' m³', margin + 82, y, { align: 'right' });
+        doc.text(exactCurrency(item.price), margin + 143, y, { align: 'right' });
+        doc.text(exactCurrency(amount), pageWidth - margin - 5, y, { align: 'right' });
+        y += 10;
+      });
+
+      const summaryTop = y + 1;
+      const summaryHeight = 50;
+      doc.setFillColor(...color.paleBlue);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(margin, summaryTop, contentWidth, summaryHeight, 2, 2, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(...color.dark);
+      doc.text('Total de la factura', margin + 6, summaryTop + 10);
+      doc.text(exactCurrency(summary.total), pageWidth - margin - 6, summaryTop + 10, { align: 'right' });
+      doc.setDrawColor(...color.line);
+      doc.line(margin + 5, summaryTop + 15, pageWidth - margin - 5, summaryTop + 15);
+      doc.text('Pagos recibidos', margin + 6, summaryTop + 25);
+      doc.setTextColor(...color.green);
+      doc.text(exactCurrency(summary.paid), pageWidth - margin - 6, summaryTop + 25, { align: 'right' });
+      doc.setFillColor(...color.paleGold);
+      doc.rect(margin, summaryTop + 31, contentWidth, 15, 'F');
+      doc.setTextColor(...color.brown);
+      doc.setFontSize(16);
+      doc.text('SALDO PENDIENTE', margin + 6, summaryTop + 41);
+      doc.text(exactCurrency(summary.pending), pageWidth - margin - 6, summaryTop + 41, { align: 'right' });
+      kit.setY(summaryTop + summaryHeight + 4);
+    }
+
     async function generateClientCreditReportPDF(invoices, asPaidReceipt = false) {
-      return PrintDocuments.pdf(PrintDocuments.credit(invoices, asPaidReceipt), { share: true, mode: 'standard', name: exactReportFileName(asPaidReceipt ? 'recibo_pago_total' : 'estado_de_cuenta', invoices[0]?.client_name) });
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF.', 'error');
+        return;
+      }
+
+      const summaries = getExactCreditSummaries(invoices);
+      const first = summaries[0] || {};
+      const clientName = first.invoice?.client_name || first.sale?.client_name || 'Cliente';
+      const plate = first.invoice?.vehicle_plate || first.sale?.vehicle_plate || '';
+      const total = summaries.reduce((sum, summary) => sum + summary.total, 0);
+      const paid = summaries.reduce((sum, summary) => sum + summary.paid, 0);
+      const pending = summaries.reduce((sum, summary) => sum + summary.pending, 0);
+      const selectedPayments = summaries.flatMap(summary => summary.payments);
+      const latestPayment = selectedPayments.slice().sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+      const methods = [...new Set(selectedPayments.map(payment => safeText(payment.method)).filter(Boolean))];
+      const routes = [...new Set(selectedPayments.map(payment => getPaymentRouteValue(payment.notes)).filter(Boolean))];
+
+      if (asPaidReceipt) {
+        const kit = await createExactClientPdf('RECIBO DE PAGO TOTAL', 'LIQUIDACIÓN COMPLETA');
+        const { doc, pageWidth, margin, contentWidth, color } = kit;
+        const top = kit.getY();
+        const leftValueX = margin + 22;
+        const rightX = pageWidth / 2 + 4;
+        const rightValueX = rightX + 55;
+
+        doc.setFontSize(11.5);
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Cliente:', margin, top);
+        doc.text('Placa:', margin, top + 8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(safeText(clientName), leftValueX, top);
+        doc.text(safeText(plate || '-'), leftValueX, top + 8);
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('Fecha del pago:', rightX, top);
+        doc.text('Forma de pago:', rightX, top + 8);
+        doc.text('Por dónde se recibió:', rightX, top + 16);
+        doc.setFont('helvetica', 'normal');
+        doc.text(exactDateTime(latestPayment?.date || new Date().toISOString()), rightValueX, top);
+        doc.text(methods.length === 1 ? methods[0] : (methods.length ? 'Varios' : '-'), rightValueX, top + 8);
+        doc.text(routes.length ? routes.join(' / ') : '-', rightValueX, top + 16);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12.5);
+        doc.text(invoices.length + (invoices.length === 1 ? ' FACTURA PAGADA' : ' FACTURAS PAGADAS'), margin, top + 24);
+        kit.setY(top + 32);
+
+        const boxTop = kit.getY();
+        doc.setFillColor(...color.paleGold);
+        doc.setDrawColor(...color.gold);
+        doc.setLineWidth(0.4);
+        doc.roundedRect(margin, boxTop, contentWidth, 34, 3, 3, 'FD');
+        doc.setDrawColor(230, 220, 190);
+        doc.line(pageWidth / 2, boxTop + 4, pageWidth / 2, boxTop + 30);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12.5);
+        doc.setTextColor(0, 0, 0);
+        doc.text('TOTAL PAGADO', margin + contentWidth / 4, boxTop + 11, { align: 'center' });
+        doc.text('PENDIENTE DE ESTAS FACTURAS', pageWidth / 2 + contentWidth / 4, boxTop + 11, { align: 'center' });
+        doc.setFontSize(24);
+        doc.setTextColor(...color.green);
+        doc.text(exactCurrency(total), margin + contentWidth / 4, boxTop + 25, { align: 'center' });
+        doc.setTextColor(...color.dark);
+        doc.text(exactCurrency(0), pageWidth / 2 + contentWidth / 4, boxTop + 25, { align: 'center' });
+        kit.setY(boxTop + 47);
+
+        kit.sectionTitle('DETALLE DE LAS FACTURAS PAGADAS');
+        summaries.forEach(summary => drawExactPaidInvoiceCard(kit, summary));
+
+        kit.ensure(12);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Las ' + invoices.length + (invoices.length === 1 ? ' factura incluida en este recibo está saldada.' : ' facturas incluidas en este recibo están saldadas.'), pageWidth / 2, kit.getY(), { align: 'center' });
+        kit.setY(kit.getY() + 5);
+        kit.footer('¡Gracias por su pago y por confiar en nosotros!', 'Su preferencia nos motiva a servirle cada día mejor.');
+        await sharePdfDocument(doc, exactReportFileName('recibo_pago_total', clientName));
+        return;
+      }
+
+      const kit = await createExactClientPdf('ESTADO DE CUENTA');
+      const { doc, pageWidth, margin, contentWidth, color } = kit;
+      let y = kit.getY();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(...color.dark);
+      doc.text('Estado al:', margin + 2, y);
+      doc.text('Cliente:', margin + 2, y + 10);
+      doc.text('Placa:', margin + 2, y + 20);
+      doc.setFont('helvetica', 'normal');
+      doc.text(exactDateTime(new Date().toISOString()), margin + 42, y);
+      doc.text(safeText(clientName), margin + 42, y + 10);
+      doc.text(safeText(plate || '-'), margin + 42, y + 20);
+      kit.setY(y + 32);
+
+      const pendingTop = kit.getY();
+      doc.setFillColor(...color.paleGold);
+      doc.setDrawColor(...color.gold);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(margin, pendingTop, contentWidth, 34, 3, 3, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.setTextColor(...color.brown);
+      doc.text('LE FALTA POR PAGAR', margin + 6, pendingTop + 15);
+      doc.setFontSize(25);
+      doc.text(exactCurrency(pending), pageWidth - margin - 6, pendingTop + 15, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(12.5);
+      doc.setTextColor(...color.gray);
+      doc.text(invoices.length === 1 ? 'Saldo de la factura incluida en este estado.' : 'Saldo de las facturas incluidas en este estado.', margin + 6, pendingTop + 26);
+      kit.setY(pendingTop + 48);
+
+      kit.sectionTitle(invoices.length === 1 ? 'DETALLE DE LA FACTURA PENDIENTE' : 'DETALLE DE LAS FACTURAS PENDIENTES');
+      summaries.forEach((summary, index) => drawExactPendingInvoice(kit, summary, invoices.length > 1 && index > 0));
+
+      const noPayments = paid <= 0.001;
+      kit.ensure(18);
+      y = kit.getY();
+      doc.setFillColor(...color.paleBlue);
+      doc.roundedRect(margin, y, contentWidth, 15, 2, 2, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(12);
+      doc.setTextColor(...color.dark);
+      doc.text(noPayments
+        ? (invoices.length === 1 ? 'No hay pagos registrados en esta factura.' : 'No hay pagos registrados en estas facturas.')
+        : 'Los pagos registrados ya están descontados del saldo pendiente.',
+        pageWidth / 2, y + 9.5, { align: 'center' });
+      kit.setY(y + 20);
+      kit.footer('¡Gracias por su confianza y preferencia!', 'Estamos a su disposición para cualquier consulta sobre su cuenta.');
+      await sharePdfDocument(doc, exactReportFileName('estado_de_cuenta', clientName));
     }
 
     async function generateClientPaymentReportPDF(paymentsSelected) {
-      return PrintDocuments.pdf(PrintDocuments.payments(paymentsSelected), { share: true, mode: 'standard', name: exactReportFileName('pagos_y_abonos', paymentsSelected[0]?.client_name) });
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF.', 'error');
+        return;
+      }
+
+      const ordered = paymentsSelected.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+      const firstPayment = ordered[0] || {};
+      const allPayments = getRecords('payment');
+      const clientSales = getRecords('sale').filter(sale => sale.payment_type === 'credito' && sale.client_name === firstPayment.client_name);
+      const clientPending = clientSales.reduce((sum, sale) => {
+        const paid = allPayments
+          .filter(payment => payment.sale_id === sale.__backendId)
+          .reduce((paymentSum, payment) => paymentSum + toFiniteNumber(payment.amount, 0), 0);
+        return sum + Math.max(0, toFiniteNumber(sale.sale_total, 0) - paid);
+      }, 0);
+      const details = ordered.map(payment => {
+        const sale = AppState.data.find(record => record.__backendId === payment.sale_id);
+        const invoice = AppState.data.find(record => record.type === 'invoice' && record.invoice_number === (payment.invoice_number || sale?.invoice_number));
+        const paidUntilThis = allPayments
+          .filter(item => item.sale_id === payment.sale_id && new Date(item.date) <= new Date(payment.date))
+          .reduce((sum, item) => sum + toFiniteNumber(item.amount, 0), 0);
+        const remaining = Math.max(0, toFiniteNumber(sale?.sale_total, 0) - paidUntilThis);
+        const materials = invoice
+          ? [...new Set(getInvoiceItems(invoice).map(item => safeText(item.material_name)).filter(Boolean))].join(', ')
+          : safeText(sale?.material_name || '');
+        return { payment, sale, invoice, remaining, materials };
+      });
+      const totalReceived = ordered.reduce((sum, payment) => sum + toFiniteNumber(payment.amount, 0), 0);
+      const remainingShown = details.length === 1 ? details[0].remaining : clientPending;
+
+      const kit = await createExactClientPdf('COMPROBANTE DE ABONO');
+      const { doc, pageWidth, margin, contentWidth, color } = kit;
+      let y = kit.getY();
+      doc.setFontSize(15);
+      doc.setTextColor(...color.dark);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Cliente:', margin + 3, y);
+      doc.text('Fecha del abono:', margin + 3, y + 12);
+      doc.setFont('helvetica', 'bold');
+      doc.text(safeText(firstPayment.client_name || 'Cliente'), margin + 30, y);
+      doc.text(details.length === 1 ? exactDateTime(firstPayment.date) : exactDateTime(new Date().toISOString()), margin + 56, y + 12);
+      kit.setY(y + 22);
+
+      const amountTop = kit.getY();
+      const amountHeight = 51;
+      doc.setFillColor(...color.paleGold);
+      doc.setDrawColor(...color.gold);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(margin, amountTop, contentWidth, amountHeight, 3, 3, 'FD');
+      doc.setDrawColor(238, 221, 178);
+      doc.line(margin + 4, amountTop + amountHeight / 2, pageWidth - margin - 4, amountTop + amountHeight / 2);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...color.brown);
+      doc.setFontSize(22);
+      doc.text(details.length === 1 ? 'ABONO RECIBIDO' : 'ABONOS RECIBIDOS', margin + 7, amountTop + 17);
+      doc.text('TOTAL A SALDAR', margin + 7, amountTop + 42);
+      doc.setFontSize(23);
+      doc.setTextColor(...color.green);
+      doc.text(exactCurrency(totalReceived), pageWidth - margin - 7, amountTop + 17, { align: 'right' });
+      doc.setTextColor(...color.brown);
+      doc.text(exactCurrency(remainingShown), pageWidth - margin - 7, amountTop + 42, { align: 'right' });
+      kit.setY(amountTop + amountHeight + 8);
+
+      details.forEach((detail, detailIndex) => {
+        const route = getPaymentRouteValue(detail.payment.notes);
+        const materialLines = doc.splitTextToSize(safeText(detail.materials || 'Sin detalle'), contentWidth - 73);
+        const routeLines = route ? doc.splitTextToSize(safeText(route), contentWidth - 73) : [];
+        const fieldHeight = 10 + 10 + Math.max(10, materialLines.length * 6) + 10 + (route ? Math.max(10, routeLines.length * 6) : 0);
+        const sentenceLines = doc.splitTextToSize(
+          'Se recibió un abono de ' + exactCurrency(detail.payment.amount) + ' para la factura ' + safeText(detail.payment.invoice_number || detail.sale?.invoice_number || '') + '.',
+          contentWidth - 16
+        );
+        const cardHeight = 22 + fieldHeight + 10 + (sentenceLines.length * 5) + 28;
+        kit.ensure(cardHeight + 6);
+        const top = kit.getY();
+
+        doc.setFillColor(...color.paleBlue);
+        doc.setDrawColor(210, 220, 235);
+        doc.roundedRect(margin, top, contentWidth, cardHeight, 3, 3, 'FD');
+        doc.setFillColor(...color.paleHeader);
+        doc.rect(margin, top, contentWidth, 18, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(17);
+        doc.setTextColor(...color.dark);
+        doc.text(details.length === 1 ? 'DATOS DEL ABONO' : 'DATOS DEL ABONO ' + (detailIndex + 1), margin + 8, top + 12);
+
+        let rowY = top + 29;
+        const field = (label, value, lines = null) => {
+          const valueLines = lines || doc.splitTextToSize(safeText(value || '-'), contentWidth - 73);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(14);
+          doc.setTextColor(...color.dark);
+          doc.text(label + ':', margin + 8, rowY);
+          doc.setFont('helvetica', 'bold');
+          doc.text(valueLines, margin + 66, rowY);
+          rowY += Math.max(10, valueLines.length * 6);
+        };
+        field('Factura', detail.payment.invoice_number || detail.sale?.invoice_number || '-');
+        field('Fecha de la factura', exactDate(detail.invoice?.date || detail.sale?.date));
+        field('Material', detail.materials || 'Sin detalle', materialLines);
+        field('Forma de pago', detail.payment.method || '-');
+        if (route) field('Por dónde se recibió', route, routeLines);
+
+        doc.setDrawColor(...color.line);
+        doc.line(margin + 8, rowY - 2, pageWidth - margin - 8, rowY - 2);
+        rowY += 8;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12.5);
+        doc.setTextColor(...color.dark);
+        doc.text(sentenceLines, margin + 8, rowY);
+        rowY += sentenceLines.length * 6 + 5;
+        doc.line(margin + 8, rowY, pageWidth - margin - 8, rowY);
+        rowY += 10;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13.5);
+        doc.setTextColor(...color.brown);
+        doc.text('Saldo de esta factura después del abono:', margin + 8, rowY);
+        doc.setFontSize(16);
+        doc.text(exactCurrency(detail.remaining), pageWidth - margin - 8, rowY, { align: 'right' });
+        kit.setY(top + cardHeight + 8);
+      });
+
+      kit.footer('¡Gracias por su abono y por confiar en nosotros!', 'Es un placer seguir atendiendo sus proyectos.');
+      await sharePdfDocument(doc, exactReportFileName('comprobante_abono', firstPayment.client_name));
     }
 
 
     async function generateConsolidatedCreditInvoicePDF(invoices, asPaidReceipt = false, forceStandardPDF = false) {
-      return PrintDocuments.pdf(PrintDocuments.credit(invoices, asPaidReceipt), { share: forceStandardPDF, mode: forceStandardPDF ? 'standard' : getEffectivePrinterType() });
+      if (forceStandardPDF) return generateClientCreditReportPDF(invoices, asPaidReceipt);
+      return PrintDocuments.pdf(PrintDocuments.credit(invoices, asPaidReceipt));
     }
 
     function getSelectedCreditInvoiceData(safeClientName) {
@@ -10640,7 +11177,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     async function generateConsolidatedCreditPaymentPDF(paymentsSelected, forceStandardPDF = false) {
-      return PrintDocuments.pdf(PrintDocuments.payments(paymentsSelected), { share: forceStandardPDF, mode: forceStandardPDF ? 'standard' : getEffectivePrinterType() });
+      if (forceStandardPDF) return generateClientPaymentReportPDF(paymentsSelected);
+      return PrintDocuments.pdf(PrintDocuments.payments(paymentsSelected));
     }
 
     function getSelectedCreditPayments() {
@@ -12940,7 +13478,208 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     async function generateSelectedDirectTripsPDF(selectedTrips) {
-      return PrintDocuments.pdf(PrintDocuments.trips(selectedTrips), { share: true, mode: 'standard' });
+      if (!window.jspdf?.jsPDF) {
+        showToast('No se pudo cargar la libreria de PDF. Revisa tu conexion e intenta de nuevo.', 'error');
+        return;
+      }
+
+      const trips = selectedTrips.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+      const { jsPDF } = window.jspdf;
+      const format = AppState.config.paper_size === 'a4' ? 'a4' : 'letter';
+      const pageWidth = format === 'a4' ? 210 : 216;
+      const pageHeight = format === 'a4' ? 297 : 279;
+      const margin = 20;
+      const contentWidth = pageWidth - (margin * 2);
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format });
+      const mixedClients = hasMixedDirectTripClients(trips);
+      const clientName = mixedClients ? 'Varios clientes' : trips[0]?.destination_client || 'Cliente';
+      const paymentInfo = summarizeDirectTripPaymentInfo(trips);
+      const totalAmount = trips.reduce((sum, trip) => sum + toFiniteNumber(trip.trip_amount, 0), 0);
+      const totalPaid = trips.reduce((sum, trip) => {
+        return sum + Math.min(toFiniteNumber(trip.amount_paid, 0), toFiniteNumber(trip.trip_amount, 0));
+      }, 0);
+      const totalPending = Math.max(0, totalAmount - totalPaid);
+      let yPos = margin + 2;
+
+      const addPageIfNeeded = (needed = 8) => {
+        if (yPos + needed <= pageHeight - margin) return;
+        doc.addPage();
+        yPos = margin + 2;
+      };
+
+      let logoAdded = false;
+      if (AppState.config.company_logo) {
+        try {
+          const logoWidth = 40;
+          const logoHeight = logoWidth * 0.5;
+          doc.addImage(AppState.config.company_logo, 'JPEG', pageWidth / 2 - logoWidth / 2, yPos, logoWidth, logoHeight);
+          logoAdded = true;
+          yPos += logoHeight + 5;
+        } catch (error) {}
+      }
+
+      if (!logoAdded) {
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(0, 0, 0);
+        doc.text(String(AppState.config.company_name || ''), pageWidth / 2, yPos, { align: 'center' });
+        yPos += 8;
+      }
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(10);
+      doc.text(String(AppState.config.company_slogan || ''), pageWidth / 2, yPos, { align: 'center' });
+      yPos += 5;
+      if (AppState.config.company_rfc) {
+        doc.setFontSize(8);
+        doc.text('RNC: ' + AppState.config.company_rfc, pageWidth / 2, yPos, { align: 'center' });
+        yPos += 4;
+      }
+
+      yPos += 2;
+      doc.setDrawColor(245, 158, 11);
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 8;
+
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(245, 158, 11);
+      doc.text('FACTURAS DE VIAJE DIRECTO', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 7;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Fecha: ' + fmt.dateTime(new Date().toISOString()), margin, yPos);
+      yPos += 6;
+      doc.text('Cliente destino: ' + clientName, margin, yPos);
+      yPos += 6;
+      doc.setFont(undefined, 'bold');
+      doc.text('INFORMACION DEL PAGO', margin, yPos);
+      doc.setFont(undefined, 'normal');
+      yPos += 5;
+      [
+        'Fecha del pago: ' + paymentInfo.date,
+        'Metodo de pago: ' + paymentInfo.method,
+        'Por donde fue: ' + paymentInfo.channel
+      ].forEach(detail => {
+        doc.splitTextToSize(detail, contentWidth).forEach(line => {
+          doc.text(line, margin, yPos);
+          yPos += 5;
+        });
+      });
+      yPos += 1;
+      doc.text(trips.length + (trips.length === 1 ? ' factura seleccionada' : ' facturas seleccionadas'), margin, yPos);
+      yPos += 8;
+
+      trips.forEach(trip => {
+        const tripTotal = toFiniteNumber(trip.trip_amount, 0);
+        const paid = Math.min(toFiniteNumber(trip.amount_paid, 0), tripTotal);
+        const pending = Math.max(0, tripTotal - paid);
+        const status = trip.payment_status === 'pagado' || pending <= 0
+          ? 'PAGADO'
+          : paid > 0 ? 'PAGO PARCIAL' : 'PENDIENTE';
+        const details = [
+          'Fecha de factura: ' + fmt.dateTime(trip.date),
+          'Compania origen: ' + (trip.source_company || 'No especificada'),
+          'Chofer: ' + (trip.driver_name || 'No especificado'),
+          'Vehiculo: ' + (trip.vehicle_plate || 'No especificado'),
+          'Material: ' + (trip.material_type || 'No especificado'),
+          'Metros3: ' + fmt.number(trip.meters, 2),
+          'Estado: ' + status
+        ];
+        if (mixedClients) details.unshift('Cliente destino: ' + (trip.destination_client || 'Cliente sin nombre'));
+        if (trip.notes) details.push('Notas: ' + trip.notes);
+        const detailLines = details.flatMap(detail => doc.splitTextToSize(detail, contentWidth - 10));
+        const cardHeight = 36 + (detailLines.length * 4);
+
+        addPageIfNeeded(cardHeight + 6);
+        const cardTop = yPos;
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.25);
+        doc.roundedRect(margin, cardTop, contentWidth, cardHeight, 2, 2, 'FD');
+
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(margin, cardTop, contentWidth, 10, 2, 2, 'F');
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59);
+        doc.text(String(trip.invoice_number || 'Sin numero de factura'), margin + 5, cardTop + 7);
+        if (status === 'PAGADO') {
+          doc.setTextColor(5, 150, 105);
+        } else if (status === 'PAGO PARCIAL') {
+          doc.setTextColor(217, 119, 6);
+        } else {
+          doc.setTextColor(220, 38, 38);
+        }
+        doc.text(status, pageWidth - margin - 5, cardTop + 7, { align: 'right' });
+
+        let detailY = cardTop + 16;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        detailLines.forEach(line => {
+          doc.text(line, margin + 5, detailY);
+          detailY += 4;
+        });
+
+        detailY += 2;
+        doc.setDrawColor(226, 232, 240);
+        doc.line(margin + 5, detailY, pageWidth - margin - 5, detailY);
+        detailY += 6;
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(51, 65, 85);
+        doc.text('Total factura', margin + 5, detailY);
+        doc.text(fmt.currency(tripTotal), pageWidth - margin - 5, detailY, { align: 'right' });
+        detailY += 5;
+        doc.setTextColor(5, 150, 105);
+        doc.text('Abonado', margin + 5, detailY);
+        doc.text(fmt.currency(paid), pageWidth - margin - 5, detailY, { align: 'right' });
+        detailY += 5;
+        doc.setTextColor(217, 119, 6);
+        doc.text('Pendiente', margin + 5, detailY);
+        doc.text(fmt.currency(pending), pageWidth - margin - 5, detailY, { align: 'right' });
+
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(0, 0, 0);
+        yPos = cardTop + cardHeight + 5;
+      });
+
+      addPageIfNeeded(42);
+      const summaryTop = yPos;
+      doc.setFillColor(255, 251, 235);
+      doc.setDrawColor(245, 158, 11);
+      doc.setLineWidth(0.35);
+      doc.roundedRect(margin, summaryTop, contentWidth, 31, 2, 2, 'FD');
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(51, 65, 85);
+      doc.text('TOTAL FACTURADO', margin + 5, summaryTop + 8);
+      doc.text(fmt.currency(totalAmount), pageWidth - margin - 5, summaryTop + 8, { align: 'right' });
+      doc.setTextColor(5, 150, 105);
+      doc.text('TOTAL ABONADO', margin + 5, summaryTop + 17);
+      doc.text(fmt.currency(totalPaid), pageWidth - margin - 5, summaryTop + 17, { align: 'right' });
+      doc.setTextColor(217, 119, 6);
+      doc.text('TOTAL PENDIENTE', margin + 5, summaryTop + 26);
+      doc.text(fmt.currency(totalPending), pageWidth - margin - 5, summaryTop + 26, { align: 'right' });
+      yPos += 38;
+
+      addPageIfNeeded(15);
+      doc.setDrawColor(245, 158, 11);
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 8;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Documento generado por ERP Materiales del Norte', pageWidth / 2, yPos, { align: 'center' });
+
+      const clientFileName = safeText(clientName)
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 50) || 'cliente';
+      const fileName = 'viajes_directos_' + clientFileName + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+      await sharePdfDocument(doc, fileName);
     }
 
     async function generateDirectTripPDF(tripId) {
