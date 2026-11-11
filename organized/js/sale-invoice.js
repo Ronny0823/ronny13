@@ -158,9 +158,8 @@ const SaleInvoice = (() => {
     const total = fmt.currency(invoice.sale_total);
     const totalSize = Math.min(7 * scale, 7 * scale * (boxWidth - 5) / Math.max(1, measure(total, 7 * scale, true)));
     add(17 * scale, [
-      rect((width - boxWidth) / 2, 0, boxWidth, 16 * scale, '#000', 2.8),
-      text('TOTAL', width / 2, 5.5 * scale, 4.8 * scale, true, 'center', '#fff'),
-      text(total, width / 2, 13.6 * scale, totalSize, true, 'center', '#fff')
+      text('TOTAL', width / 2, 5.5 * scale, 4.8 * scale, true, 'center'),
+      text(total, width / 2, 13.6 * scale, totalSize, true, 'center')
     ]);
     if (credit) {
       row('Abonado:', fmt.currency(paid));
@@ -213,7 +212,7 @@ const SaleInvoice = (() => {
     });
   }
 
-  function svgPage(page, width) {
+  function svgPage(page, width, pixelWidth) {
     const draw = command => {
       const c = command, y = c.offset || 0;
       switch (c.type) {
@@ -226,7 +225,7 @@ const SaleInvoice = (() => {
         default: return '';
       }
     };
-    return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}mm" height="${page.height}mm" viewBox="0 0 ${width} ${page.height}" font-family="Arial, Helvetica, Liberation Sans, sans-serif"><rect width="100%" height="100%" fill="white"/>${page.commands.map(draw).join('')}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${pixelWidth || width + 'mm'}" height="${pixelWidth ? Math.ceil(page.height * pixelWidth / width) : page.height + 'mm'}" viewBox="0 0 ${width} ${page.height}" font-family="Arial, Helvetica, Liberation Sans, sans-serif"><rect width="100%" height="100%" fill="white"/>${page.commands.map(draw).join('')}</svg>`;
   }
 
   async function prepare(invoice, mode) {
@@ -312,26 +311,37 @@ const SaleInvoice = (() => {
         image.onload = () => { clearTimeout(timeout); resolve(); };
         image.onerror = () => { clearTimeout(timeout); reject(new Error('No se pudo dibujar el ticket')); };
       });
-      image.src = 'data:image/svg+xml;base64,' + exactArrayBufferToBase64(new TextEncoder().encode(svgPage(page, prepared.width)).buffer);
+      image.src = 'data:image/svg+xml;base64,' + exactArrayBufferToBase64(new TextEncoder().encode(svgPage(page, prepared.width, dots)).buffer);
       await loaded;
       context.fillStyle = '#fff';
       context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, 0, 0);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       const bytesPerRow = dots / 8;
-      const thresholds = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-      for (let top = 0; top < canvas.height; top += 128) {
-        const height = Math.min(128, canvas.height - top);
-        const raster = new Uint8Array(bytesPerRow * height);
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < dots; x++) {
-            const pixel = ((top + y) * dots + x) * 4;
-            const light = pixels[pixel] * .299 + pixels[pixel + 1] * .587 + pixels[pixel + 2] * .114;
-            const threshold = (thresholds[((top + y) % 4) * 4 + x % 4] + .5) * 16;
-            if (light < threshold) raster[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7);
+      // Texto a resolución nativa, sin el tramado que fragmentaba los trazos.
+      const raster = new Uint8Array(bytesPerRow * canvas.height);
+      const inkRows = new Uint8Array(canvas.height);
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < dots; x++) {
+          const pixel = (y * dots + x) * 4;
+          const light = pixels[pixel] * .299 + pixels[pixel + 1] * .587 + pixels[pixel + 2] * .114;
+          if (pixels[pixel + 3] > 40 && light < 180) {
+            raster[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7);
+            inkRows[y] = 1;
           }
         }
-        chunks.push(new Uint8Array([29, 118, 48, 0, bytesPerRow, 0, height, 0]), raster);
+      }
+      // Una franja blanca necesita solo un byte por fila; conserva el avance
+      // exacto y reduce los datos Bluetooth sin cambiar la velocidad del enlace.
+      for (let top = 0; top < canvas.height;) {
+        const ink = inkRows[top];
+        let end = top + 1;
+        while (end < canvas.height && end - top < 128 && inkRows[end] === ink) end++;
+        const height = end - top, rowBytes = ink ? bytesPerRow : 1;
+        chunks.push(new Uint8Array([29, 118, 48, 0, rowBytes, 0, height, 0]),
+          ink ? raster.slice(top * bytesPerRow, end * bytesPerRow) : new Uint8Array(height));
+        top = end;
       }
     }
     chunks.push(new Uint8Array([10, 10, 10, 29, 86, 66, 0]));
