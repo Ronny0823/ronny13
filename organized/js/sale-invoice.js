@@ -113,6 +113,21 @@ const SaleInvoice = (() => {
       ]);
     };
 
+    const addSignature = (signature) => {
+      const confirmationWidth = Math.min(usable, 120 * scale);
+      const confirmationX = (width - confirmationWidth) / 2;
+      const heading = wrap(signature.heading || 'CONFIRMACIÓN DE ENTREGA', confirmationWidth - 5, 4.3 * scale, true);
+      const message = wrap(signature.message || 'Confirmo haber recibido los materiales detallados en esta factura.', confirmationWidth - 7, 3.3 * scale);
+      const height = (37 + heading.length * 5 + message.length * 4) * scale;
+      add(height + 2, [
+        rect(confirmationX, 0, confirmationWidth, height, '#fff', 4, true),
+        ...heading.map((value, i) => text(value, width / 2, (7 + i * 5) * scale, 4.3 * scale, true, 'center')),
+        ...message.map((value, i) => text(value, width / 2, (8 + heading.length * 5 + i * 4) * scale, 3.3 * scale, false, 'center')),
+        line(confirmationX + 5, height - 13 * scale, confirmationX + confirmationWidth - 5, height - 13 * scale),
+        text(signature.label || 'Firma de quien recibe', width / 2, height - 7 * scale, 3.6 * scale, true, 'center')
+      ]);
+    };
+
     if (AppState.config.company_logo) {
       const imageWidth = Math.min(usable * .9, 70 * scale);
       add(25 * scale, [{ type: 'image', value: AppState.config.company_logo, x: (width - imageWidth) / 2, y: 0, w: imageWidth, h: 24 * scale }]);
@@ -123,6 +138,34 @@ const SaleInvoice = (() => {
     if (AppState.config.company_rfc) centered('RNC: ' + AppState.config.company_rfc, 3.4 * scale);
     if (!thermal && AppState.config.company_address) centered(AppState.config.company_address, 3.1 * scale);
     divider();
+    if (invoiceData.documentModel) {
+      const model = invoiceData.documentModel;
+      centered(model.title, 5.6 * scale, true);
+      if (model.subtitle) centered(model.subtitle, 3.6 * scale);
+      divider();
+      for (const entry of model.entries || []) {
+        if (entry.kind === 'divider') { divider(); continue; }
+        if (entry.kind === 'row') { row(entry.label, entry.value, entry); continue; }
+        if (entry.kind === 'total') {
+          centered(entry.label, 4.8 * scale, true);
+          blocks[blocks.length - 1].keepWithNext = true;
+          const amountSize = Math.min(7 * scale, 7 * scale * (usable - 4) / Math.max(1, measure(String(entry.value), 7 * scale, true)));
+          centered(entry.value, amountSize, true);
+          continue;
+        }
+        const size = (entry.kind === 'heading' ? 4 : 3.5) * scale;
+        const lines = wrap(entry.value, usable - 4, size, entry.kind === 'heading' || entry.bold);
+        lines.forEach(value => { add(size * 1.25 + 1, [
+          ...(entry.kind === 'heading' ? [rect(left, 0, usable, size * 1.25 + 1, '#ddd', 1)] : []),
+          text(value, left + 2, size, size, entry.kind === 'heading' || entry.bold)
+        ]); blocks[blocks.length - 1].keepWithNext = entry.kind === 'heading'; });
+      }
+      divider();
+      if (model.footer) centered(model.footer, 3.1 * scale, true);
+      if (AppState.config.company_phone) iconText('phone', 'Tel: ' + AppState.config.company_phone);
+      if (model.signature) { divider(); addSignature(model.signature); }
+      return { blocks, width, margin };
+    }
     centered('FACTURA', 5.6 * scale, true);
     add(5 * scale, [text(invoice.invoice_number, right, 3.8 * scale, 3.8 * scale, false, 'right')]);
     iconText('calendar', fmt.dateTime(invoice.date));
@@ -170,26 +213,17 @@ const SaleInvoice = (() => {
     centered('** ' + thanks + ' **', 3.1 * scale, true);
     if (AppState.config.company_phone) iconText('phone', 'Tel: ' + AppState.config.company_phone);
     divider();
-    const confirmationWidth = Math.min(usable, 120 * scale);
-    const confirmationX = (width - confirmationWidth) / 2;
-    const heading = wrap('CONFIRMACIÓN DE ENTREGA', confirmationWidth - 5, 4.3 * scale, true);
-    const message = wrap('Confirmo haber recibido los materiales detallados en esta factura.', confirmationWidth - 7, 3.3 * scale);
-    const height = (37 + heading.length * 5 + message.length * 4) * scale;
-    add(height + 2, [
-      rect(confirmationX, 0, confirmationWidth, height, '#fff', 4, true),
-      ...heading.map((value, i) => text(value, width / 2, (7 + i * 5) * scale, 4.3 * scale, true, 'center')),
-      ...message.map((value, i) => text(value, width / 2, (8 + heading.length * 5 + i * 4) * scale, 3.3 * scale, false, 'center')),
-      line(confirmationX + 5, height - 13 * scale, confirmationX + confirmationWidth - 5, height - 13 * scale),
-      text('Firma de quien recibe', width / 2, height - 7 * scale, 3.6 * scale, true, 'center')
-    ]);
+    addSignature({});
     return { blocks, width, margin };
   }
 
   function pages(plan, height) {
     const result = [];
     let page = { height, commands: [] }, y = plan.margin;
-    for (const block of plan.blocks) {
-      if (y + block.height > height - plan.margin && page.commands.length) {
+    for (let index = 0; index < plan.blocks.length; index++) {
+      const block = plan.blocks[index];
+      const needed = block.height + (block.keepWithNext ? plan.blocks[index + 1]?.height || 0 : 0);
+      if (y + needed > height - plan.margin + .01 && page.commands.length) {
         result.push(page);
         page = { height, commands: [] };
         y = plan.margin;
@@ -237,14 +271,14 @@ const SaleInvoice = (() => {
       kit.doc.setFontSize(size * point);
       return kit.doc.getTextWidth(value);
     };
-    const plan = layout(data(invoice), width, measure);
+    const plan = layout(invoice.documentModel ? invoice : data(invoice), width, measure);
     const naturalHeight = plan.blocks.reduce((total, block) => total + block.height, plan.margin * 2);
     const height = thermal ? Math.min(400, naturalHeight) : AppState.config.paper_size === 'a4' ? 297 : 279.4;
     return { ...kit, width, pages: pages(plan, height), thermal };
   }
 
-  async function pdf(invoice) {
-    const prepared = await prepare(invoice, getEffectivePrinterType());
+  async function createPdf(invoice, mode = getEffectivePrinterType()) {
+    const prepared = await prepare(invoice, mode);
     const { doc, family, width } = prepared;
     const draw = (c, offset = c.offset || 0) => {
       doc.setDrawColor(0);
@@ -277,8 +311,14 @@ const SaleInvoice = (() => {
       if (index === 0) doc.deletePage(1);
       page.commands.forEach(command => draw(command));
     });
+    return doc;
+  }
+
+  async function pdf(invoice) {
     const mode = getEffectivePrinterType();
-    const suffix = prepared.thermal ? mode === 'thermal_58' ? '58mm' : '80mm' : AppState.config.paper_size === 'a4' ? 'A4' : 'Carta';
+    const doc = await createPdf(invoice, mode);
+    const thermal = mode === 'thermal_58' || mode === 'thermal_80';
+    const suffix = thermal ? mode === 'thermal_58' ? '58mm' : '80mm' : AppState.config.paper_size === 'a4' ? 'A4' : 'Carta';
     doc.save('factura_' + invoice.invoice_number + '_' + suffix + '.pdf');
     showToast('PDF de factura descargado', 'success');
   }
@@ -286,7 +326,7 @@ const SaleInvoice = (() => {
   async function html(invoice, mode, isTest = false) {
     const prepared = await prepare(invoice, mode);
     const { width } = prepared;
-    return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Factura ${escapeHtml(invoice.invoice_number)}</title>
+    return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Factura ${escapeHtml(invoice.documentModel?.title || invoice.invoice_number)}</title>
       <style>@page { size:${width}mm ${prepared.pages[0].height}mm; margin:0 }
       * { box-sizing:border-box; print-color-adjust:exact; -webkit-print-color-adjust:exact }
       body { margin:0; background:#fff } .invoice-page { width:${width}mm; height:${prepared.pages[0].height}mm; break-after:page }
@@ -348,5 +388,9 @@ const SaleInvoice = (() => {
     return BluetoothPrinter.concatBytes(chunks);
   }
 
-  return { pdf, html, bluetoothBytes };
+  return { pdf, html, bluetoothBytes,
+    createDocumentPDF: (model, mode) => createPdf({ documentModel: model }, mode),
+    documentHTML: (model, mode) => html({ documentModel: model }, mode),
+    documentBytes: model => bluetoothBytes({ documentModel: model })
+  };
 })();

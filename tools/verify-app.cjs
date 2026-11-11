@@ -11,10 +11,11 @@ const migration = fs.readFileSync('supabase/migrations/20261101200000_pull_erp_r
 const pdfFontRegular = fs.statSync('organized/assets/fonts/LiberationSans-Regular.ttf');
 const pdfFontBold = fs.statSync('organized/assets/fonts/LiberationSans-Bold.ttf');
 
+const printDocuments = fs.readFileSync('organized/js/print-documents.js', 'utf8');
 const saleInvoice = fs.readFileSync('organized/js/sale-invoice.js', 'utf8');
 
 const checks = [
-  [html.includes('js/sale-invoice.js?v=1.83.0') && app.includes('await SaleInvoice.pdf(invoice)') && app.includes('await SaleInvoice.html(invoice, mode, isTest)') && app.includes('await SaleInvoice.bluetoothBytes(invoice)'), 'Los formatos de factura no usan el diseño de entrega'],
+  [html.includes('js/sale-invoice.js?v=1.84.0') && app.includes('await SaleInvoice.pdf(invoice)') && app.includes('await SaleInvoice.html(invoice, mode, isTest)') && app.includes('await SaleInvoice.bluetoothBytes(invoice)'), 'Los formatos de factura no usan el diseño de entrega'],
   [saleInvoice.includes('CONFIRMACIÓN DE ENTREGA') && saleInvoice.includes('Firma de quien recibe') && saleInvoice.includes('Falta por pagar:'), 'Falta la confirmación de entrega o el saldo de la factura'],
   [app.includes('const RecordSyncV2'), 'Falta la sincronización por registro'],
   [app.includes("rpc('sync_erp_records'"), 'Falta el envío normalizado a Supabase'],
@@ -30,10 +31,10 @@ const checks = [
   [migration.includes('pull_erp_record_changes') && migration.includes('security invoker'), 'Falta la migración incremental segura'],
   [workflow.includes('ANDROID_KEYSTORE_BASE64') && workflow.includes('assembleRelease'), 'Falta la firma permanente de Android'],
   [app.includes('generateClientCreditReportPDF') && app.includes('generateClientPaymentReportPDF'), 'Faltan los nuevos reportes claros para clientes'],
-  [app.includes('createExactClientPdf') && app.includes('drawExactPaidInvoiceCard') && app.includes('drawExactPendingInvoice'), 'Los reportes no reproducen los tres formatos exactos'],
-  [app.includes("format: [pageWidth, pageHeight]") && app.includes("const pageHeight = 324"), 'El formato PDF no conserva la proporcion vertical de las referencias'],
+  [html.includes('js/print-documents.js?v=1.84.0') && printDocuments.includes('SaleInvoice.createDocumentPDF') && printDocuments.includes('SaleInvoice.documentHTML') && printDocuments.includes('SaleInvoice.documentBytes'), 'Los documentos no comparten el diseño de impresión'],
+  [saleInvoice.includes('pages(plan, height)') && saleInvoice.includes('Math.min(400, naturalHeight)'), 'Los documentos no paginan según el papel configurado'],
   [app.includes('loadExactPdfFontFiles') && app.includes('LiberationSans-Regular.ttf') && app.includes('LiberationSans-Bold.ttf'), 'Los PDF no usan la tipografia visual de las referencias'],
-  [app.includes("doc.text('TOTAL A SALDAR', margin + 7, amountTop + 42)") && app.includes("doc.text('LE FALTA POR PAGAR', margin + 6, pendingTop + 15)"), 'El comprobante de abono no tiene la etiqueta TOTAL A SALDAR o se alteró el estado de cuenta'],
+  [printDocuments.includes('TOTAL A SALDAR:') && printDocuments.includes('TOTAL POR PAGAR'), 'Faltan los saldos claros en los comprobantes'],
   [pdfFontRegular.size > 300000 && pdfFontBold.size > 300000, 'Faltan los archivos completos de tipografia para los PDF'],
   [app.includes('await generateClientCreditReportPDF(invoices, isPaidSelection)') && app.includes('await generateClientPaymentReportPDF(selectedPayments)'), 'El boton PDF WhatsApp no usa los nuevos formatos'],
   [!app.includes('await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection, true)') && !app.includes('await generateConsolidatedCreditPaymentPDF(selectedPayments, true)'), 'El boton PDF WhatsApp todavia usa los formatos anteriores'],
@@ -42,7 +43,7 @@ const checks = [
   [app.includes('printSelectedDirectTrips') && app.includes('buildSelectedDirectTripsPrintText') && app.includes('btnDirectTripPrint'), 'Falta la impresion de varias facturas de Viajes Directos'],
   [app.includes('TOTAL POR PAGAR') && app.includes('Falta por pagar') && app.includes('PAGO PARCIAL'), 'La impresion multiple no muestra saldos y estados claros'],
   [app.includes('getDirectTripPaymentHistory') && app.includes('summarizeDirectTripPaymentInfo'), 'Falta el resumen de informacion del pago'],
-  [app.includes('INFORMACIÓN DEL PAGO') && app.includes('Fecha del pago:') && app.includes('Método de pago:') && app.includes('Por dónde fue:'), 'Fecha, metodo y por donde fue no aparecen juntos debajo del cliente'],
+  [printDocuments.includes('INFORMACIÓN DEL PAGO') && printDocuments.includes('Fecha del pago:') && printDocuments.includes('Método de pago:') && printDocuments.includes('Por dónde fue:'), 'Fecha, metodo y por donde fue no aparecen juntos debajo del cliente'],
   [app.includes('latestPaymentDate') && !app.includes("date: uniqueDates.size ? [...uniqueDates.values()].join(' / ')"), 'La fecha del pago se repite para cada factura seleccionada'],
   [app.includes('directTripSelectedTotal') && app.includes('directTripSelectedPending') && app.includes('Monto total seleccionado'), 'Falta el resumen de montos de las facturas seleccionadas'],
   [app.includes('selectedTotalElement.textContent = fmt.currency(selectedTotal)') && app.includes('selectedPendingElement.textContent = fmt.currency(selectedPending)'), 'Los montos seleccionados no se actualizan al marcar facturas'],
@@ -52,8 +53,8 @@ const checks = [
   [app.includes('multiDirectPaymentChannel\" required') && app.includes('Indica por dónde se recibió el pago'), 'Viajes Directos permite guardar pagos sin indicar por donde fueron'],
   [app.includes("batch_id: batchId") && app.includes("multiple_payment: true"), 'El pago multiple no conserva el grupo de facturas'],
   [app.includes('await AppState.saveUserData();') && app.includes('No se aplicaron cambios.'), 'El pago multiple no espera el guardado o no revierte en error'],
-  [workflow.includes('v1.83'), 'El flujo de APK no apunta a v1.83'],
-  [gradle.includes('versionCode 84') && gradle.includes("versionName '1.83.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.84'), 'El flujo de APK no apunta a v1.84'],
+  [gradle.includes('versionCode 85') && gradle.includes("versionName '1.84.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -62,4 +63,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.83 completadas');
+console.log('Verificaciones v1.84 completadas');
