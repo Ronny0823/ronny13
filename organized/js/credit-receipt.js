@@ -188,8 +188,8 @@ const CreditReceipt = (() => {
       else if(model.received<model.total)row('Abonado anteriormente:',fmt.currency(amount(model.total-model.received)));
       row('Falta por pagar:',fmt.currency(model.pending),{bold:true,kind:'check'});divider();
       heading(paid?'DEUDA LIQUIDADA COMPLETAMENTE':model.pending<=.005?'ESTADO: PAGADO':model.paid>0?'ESTADO: PAGO PARCIAL':'ESTADO: PENDIENTE');
-      if(paid){divider();signature('CONFIRMACIÓN DE PAGO',
-        'Confirmo haber recibido el pago de '+fmt.currency(model.received)+' y liquidado la(s) factura(s) indicada(s).','Firma de quien recibe');}
+      if(paid){divider();signature('CONFORMIDAD DEL CLIENTE',
+        'Confirmo el pago total de las facturas detalladas en este comprobante, quedando únicamente estas liquidadas y sin saldo pendiente.','Firma del cliente',true);}
     }
     divider();if(!paid)center(abonos?'COMPROBANTE CONSOLIDADO':'IMPRESIÓN CONSOLIDADA',3.6*scale,true);
     if(config.company_phone)paragraph('Tel: '+config.company_phone,3.5*scale,true,'phone');

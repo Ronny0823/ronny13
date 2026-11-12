@@ -35,7 +35,7 @@ renderer.bluetoothBytes=async()=>new Uint8Array([29,118,48,0]);
 (async()=>{
  for(const mode of ['thermal_58','thermal_80']){
   state.config.printer_type=mode;state.creditFilters.status='pending';selection=[pending];await context.printSelectedCreditInvoices('Franklin');assert.equal(events.at(-1).name,'thermal-pdf');assert(events.at(-1).content[0].includes('Pañete'));assert(events.at(-1).content[0].includes('ESTADO: PENDIENTE'));
-  state.creditFilters.status='paid';selection=[paid];await context.printSelectedCreditInvoices('Franklin');assert(events.at(-1).content[0].includes('RECIBO DE PAGO TOTAL'));assert(events.at(-1).content[0].includes('CONFIRMACIÓN DE PAGO'));
+  state.creditFilters.status='paid';selection=[paid];await context.printSelectedCreditInvoices('Franklin');assert(events.at(-1).content[0].includes('RECIBO DE PAGO TOTAL'));assert(events.at(-1).content[0].includes('CONFORMIDAD DEL CLIENTE'));
   await context.printSelectedCreditPayments();assert(events.at(-1).content[0].includes('CONFORMIDAD DEL CLIENTE'));assert(events.at(-1).content[0].includes('Firma del cliente'));
   await context.printPaymentReceipt(payment.__backendId);assert(events.at(-1).content[0].includes('ABONOS SELECCIONADOS'));
   await context.printPaymentReceipt(fullPayment.__backendId);assert(events.at(-1).content[0].includes('RECIBO DE PAGO TOTAL'));
