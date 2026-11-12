@@ -48,6 +48,7 @@ import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import androidx.core.content.FileProvider;
 
@@ -328,7 +329,7 @@ public class MainActivity extends Activity {
             });
         }
 
-        @JavascriptInterface public String printBase64(String encoded) {
+        @JavascriptInterface public synchronized String printBase64(String encoded) {
             if (!trustedPage()) return "Página no autorizada";
             if (!hasBluetoothPermission()) { runOnUiThread(() -> requestBluetoothPermission()); return "Acepta el permiso Bluetooth"; }
             String mac = getPreferences(MODE_PRIVATE).getString("printer_mac", "");
@@ -343,8 +344,12 @@ public class MainActivity extends Activity {
                 socket = connectClassic(device);
                 if (socket != null) {
                     OutputStream output = socket.getOutputStream();
-                    output.write(bytes);
-                    output.flush();
+                    // Los comprobantes gráficos largos no deben desbordar el búfer de la impresora.
+                    for (int offset = 0; offset < bytes.length; offset += 256) {
+                        output.write(bytes, offset, Math.min(256, bytes.length - offset));
+                        output.flush();
+                        Thread.sleep(12);
+                    }
                     try { Thread.sleep(350); } catch (InterruptedException ignored) {}
                     return "ok";
                 }
@@ -379,6 +384,9 @@ public class MainActivity extends Activity {
 
         private boolean printBle(BluetoothDevice device, byte[] bytes) {
             CountDownLatch ready = new CountDownLatch(1);
+            CountDownLatch mtuReady = new CountDownLatch(1);
+            AtomicInteger packetSize = new AtomicInteger(20);
+            AtomicInteger writeStatus = new AtomicInteger(BluetoothGatt.GATT_SUCCESS);
             AtomicReference<BluetoothGattCharacteristic> writable = new AtomicReference<>();
             AtomicReference<CountDownLatch> writeDone = new AtomicReference<>();
             BluetoothGattCallback callback = new BluetoothGattCallback() {
@@ -420,8 +428,13 @@ public class MainActivity extends Activity {
                     ready.countDown();
                 }
                 @Override public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+                    writeStatus.set(status);
                     CountDownLatch latch = writeDone.get();
                     if (latch != null) latch.countDown();
+                }
+                @Override public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
+                    if (status == BluetoothGatt.GATT_SUCCESS) packetSize.set(Math.max(20, Math.min(180, mtu - 3)));
+                    mtuReady.countDown();
                 }
             };
 
@@ -431,16 +444,19 @@ public class MainActivity extends Activity {
                     ? device.connectGatt(MainActivity.this, false, callback, BluetoothDevice.TRANSPORT_LE)
                     : device.connectGatt(MainActivity.this, false, callback);
                 if (!ready.await(12, TimeUnit.SECONDS) || writable.get() == null) return false;
+                if (gatt.requestMtu(185)) mtuReady.await(2, TimeUnit.SECONDS);
+                final int chunkSize = packetSize.get();
                 BluetoothGattCharacteristic characteristic = writable.get();
-                int writeType = (characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0
-                    ? BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE : BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
+                int writeType = (characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
+                    ? BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT : BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE;
                 characteristic.setWriteType(writeType);
-                for (int offset = 0; offset < bytes.length; offset += 180) {
-                    int length = Math.min(180, bytes.length - offset);
+                for (int offset = 0; offset < bytes.length; offset += chunkSize) {
+                    int length = Math.min(chunkSize, bytes.length - offset);
                     byte[] chunk = new byte[length];
                     System.arraycopy(bytes, offset, chunk, 0, length);
                     CountDownLatch latch = new CountDownLatch(1);
                     writeDone.set(latch);
+                    writeStatus.set(BluetoothGatt.GATT_SUCCESS);
                     boolean started;
                     if (Build.VERSION.SDK_INT >= 33) {
                         started = gatt.writeCharacteristic(characteristic, chunk, writeType) == android.bluetooth.BluetoothStatusCodes.SUCCESS;
@@ -449,7 +465,9 @@ public class MainActivity extends Activity {
                         started = gatt.writeCharacteristic(characteristic);
                     }
                     if (!started) return false;
-                    latch.await(1500, TimeUnit.MILLISECONDS);
+                    boolean acknowledged = latch.await(writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT ? 1500 : 100, TimeUnit.MILLISECONDS);
+                    if (writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT && !acknowledged) return false;
+                    if (acknowledged && writeStatus.get() != BluetoothGatt.GATT_SUCCESS) return false;
                     try { Thread.sleep(35); } catch (InterruptedException ignored) {}
                 }
                 return true;

@@ -200,13 +200,14 @@ const SaleInvoice = (() => {
     return { blocks, width, margin };
   }
 
-  function pages(plan, height) {
+  function pages(plan, height, trim = false) {
     const result = [];
     let page = { height, commands: [] }, y = plan.margin;
     for (let index = 0; index < plan.blocks.length; index++) {
       const block = plan.blocks[index];
       const needed = block.height + (block.keepWithNext ? plan.blocks[index + 1]?.height || 0 : 0);
       if (y + needed > height - plan.margin + .01 && page.commands.length) {
+        if (trim) page.height = Math.min(height, y + plan.margin);
         result.push(page);
         page = { height, commands: [] };
         y = plan.margin;
@@ -214,6 +215,7 @@ const SaleInvoice = (() => {
       page.commands.push(...block.commands.map(command => ({ ...command, offset: y })));
       y += block.height;
     }
+    if (trim) page.height = Math.min(height, y + plan.margin);
     result.push(page);
     return result;
   }
@@ -259,7 +261,7 @@ const SaleInvoice = (() => {
     const plan = layoutBuilder ? layoutBuilder(width, measure) : layout(data(invoice), width, measure);
     const naturalHeight = plan.blocks.reduce((total, block) => total + block.height, plan.margin * 2);
     const height = thermal ? Math.min(400, naturalHeight) : AppState.config.paper_size === 'a4' ? 297 : 279.4;
-    return { ...kit, width, pages: pages(plan, height), thermal };
+    return { ...kit, width, pages: pages(plan, height, thermal && Boolean(layoutBuilder)), thermal };
   }
 
   function renderPDF(prepared) {
@@ -294,7 +296,7 @@ const SaleInvoice = (() => {
       }
     };
     prepared.pages.forEach((page, index) => {
-      doc.addPage([width, page.height], 'portrait');
+      doc.addPage([width, page.height], page.height < width ? 'landscape' : 'portrait');
       if (index === 0) doc.deletePage(1);
       page.commands.forEach(command => draw(command));
     });

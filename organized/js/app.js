@@ -12738,9 +12738,13 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
     async function processMultiplePayment(e, clientName) {
       e.preventDefault();
+      if (processMultiplePayment.inProgress) return;
+      processMultiplePayment.inProgress = true;
+      try {
 
-      const method = document.getElementById('multiPaymentMethod').value;
-      const notes = document.getElementById('multiPaymentNotes').value.trim();
+      const method = document.getElementById('multiPaymentMethod')?.value || '';
+      if (!method) { showToast('Selecciona el método de pago', 'warning'); return; }
+      const notes = document.getElementById('multiPaymentNotes')?.value.trim() || '';
 
       const sales = getRecords('sale').filter(s => s.payment_type === 'credito' && s.client_name === clientName);
       const payments = getRecords('payment');
@@ -12751,8 +12755,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         const checkbox = document.getElementById(`chk_${s.__backendId}`);
         if (checkbox && checkbox.checked) {
           const salePayments = payments.filter(p => p.sale_id === s.__backendId);
-          const paidAmount = salePayments.reduce((sum, p) => sum + p.amount, 0);
-          const remaining = (s.sale_total || 0) - paidAmount;
+          const remaining = getCreditSalePaymentSnapshot(s, salePayments).pendingAmount;
+          if (remaining < 0.005) return;
 
           selectedSales.push({
             sale: s,
@@ -12760,6 +12764,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
           });
         }
       });
+
+      if (!selectedSales.length) {
+        showToast('No hay facturas seleccionadas con saldo pendiente', 'warning');
+        return;
+      }
 
       try {
         let totalPaid = 0;
@@ -12776,6 +12785,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
             notes: notes || 'Pago multiple de facturas',
             date: new Date().toISOString(),
             is_multiple_payment: true,
+            is_full_payment: true,
             __backendId: createRecordId('pay')
           };
 
@@ -12799,9 +12809,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
         showToast(`Pago multiple procesado: ${fmt.currency(totalPaid)} por ${selectedSales.length} facturas`, 'success');
 
-        setTimeout(() => {
+        setTimeout(async () => {
           if (confirm('Deseas imprimir el recibo de pago multiple?')) {
-            printMultiplePaymentReceipt(selectedSales, totalPaid, method, notes);
+            await printMultiplePaymentReceipt(selectedSales, totalPaid, method, notes);
           }
         }, 300);
 
@@ -12811,6 +12821,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       } catch (err) {
         showToast('Error al procesar el pago multiple', 'error');
         console.error(err);
+      }
+      } finally {
+        processMultiplePayment.inProgress = false;
       }
     }
 

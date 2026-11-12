@@ -195,9 +195,12 @@ const CreditReceipt = (() => {
     if(config.company_phone)paragraph('Tel: '+config.company_phone,3.5*scale,true,'phone');
     return {blocks,width,margin};
   }
+  let outputInProgress=false;
   async function output(models,{download=false,mode=getEffectivePrinterType()}={}) {
     if(!models.length)return;
     if(!isThermal(mode))throw new Error('Este diseño requiere impresión térmica');
+    if(outputInProgress){showToast('Ya se está preparando o imprimiendo un comprobante. Espera a que termine.','warning');return;}
+    outputInProgress=true;
     try {
       const builders=models.map(model=>(width,measure)=>layout(model,width,measure));
       if(!download && isBluetoothPrinterSelected()) {
@@ -207,6 +210,7 @@ const CreditReceipt = (() => {
       const doc=await SaleInvoice.thermalDocument.pdfBatch(builders,mode,'credito_'+models[0].kind+'_'+(mode==='thermal_58'?'58mm':'80mm')+'.pdf');
       showToast('Comprobante térmico descargado','success');return doc;
     }catch(error){console.error('No se pudo preparar el comprobante térmico de crédito',error);showToast('No se pudo preparar el comprobante térmico','error');}
+    finally{outputInProgress=false;}
   }
   return {isThermal,invoiceModels,paymentModels,singlePaymentModels,multipleModels,
     printInvoices:(invoices,paid)=>output(invoiceModels(invoices,paid)),

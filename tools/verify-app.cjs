@@ -14,7 +14,7 @@ const pdfFontBold = fs.statSync('organized/assets/fonts/LiberationSans-Bold.ttf'
 const saleInvoice = fs.readFileSync('organized/js/sale-invoice.js', 'utf8');
 
 const checks = [
-  [html.includes('js/sale-invoice.js?v=1.92.0') && app.includes('await SaleInvoice.pdf(invoice)') && app.includes('await SaleInvoice.html(invoice, mode, isTest)') && app.includes('await SaleInvoice.bluetoothBytes(invoice)'), 'Los formatos de factura no usan el diseño de entrega'],
+  [html.includes('js/sale-invoice.js?v=1.93.0') && app.includes('await SaleInvoice.pdf(invoice)') && app.includes('await SaleInvoice.html(invoice, mode, isTest)') && app.includes('await SaleInvoice.bluetoothBytes(invoice)'), 'Los formatos de factura no usan el diseño de entrega'],
   [saleInvoice.includes('CONFIRMACIÓN DE ENTREGA') && saleInvoice.includes('Firma de quien recibe') && saleInvoice.includes('Falta por pagar:'), 'Falta la confirmación de entrega o el saldo de la factura'],
   [app.includes('const RecordSyncV2'), 'Falta la sincronización por registro'],
   [app.includes("rpc('sync_erp_records'"), 'Falta el envío normalizado a Supabase'],
@@ -52,8 +52,8 @@ const checks = [
   [app.includes('multiDirectPaymentChannel\" required') && app.includes('Indica por dónde se recibió el pago'), 'Viajes Directos permite guardar pagos sin indicar por donde fueron'],
   [app.includes("batch_id: batchId") && app.includes("multiple_payment: true"), 'El pago multiple no conserva el grupo de facturas'],
   [app.includes('await AppState.saveUserData();') && app.includes('No se aplicaron cambios.'), 'El pago multiple no espera el guardado o no revierte en error'],
-  [workflow.includes('v1.92'), 'El flujo de APK no apunta a v1.92'],
-  [gradle.includes('versionCode 93') && gradle.includes("versionName '1.92.0'"), 'Versión Android incorrecta'],
+  [workflow.includes('v1.93'), 'El flujo de APK no apunta a v1.93'],
+  [gradle.includes('versionCode 94') && gradle.includes("versionName '1.93.0'"), 'Versión Android incorrecta'],
   [manifest.includes('android:allowBackup="false"'), 'El respaldo Android debe estar desactivado']
 ];
 
@@ -62,4 +62,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Verificaciones v1.92 completadas');
+console.log('Verificaciones v1.93 completadas');
