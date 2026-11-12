@@ -68,7 +68,7 @@ const CreditReceipt = (() => {
     }]};
   function singlePaymentModels(payment) {
     const detail=paymentDetail(payment);
-    if(detail.remaining===0 && detail.sale) {
+    if((payment.is_full_payment || detail.remaining===0) && detail.sale) {
       const models=invoiceModels([detail.invoice || saleInvoice(detail.sale)],true,{
         received:payment.amount,date:payment.date,method:getPaymentMethodLabel(payment),route:getPaymentRouteLabel(payment)
       });
@@ -212,6 +212,7 @@ const CreditReceipt = (() => {
     printInvoices:(invoices,paid)=>output(invoiceModels(invoices,paid)),
     printPayments:payments=>output(paymentModels(payments)),
     printSingle:payment=>output(singlePaymentModels(payment)),
+    printSaved:payment=>output(payment.is_full_payment?singlePaymentModels(payment):paymentModels([payment])),
     printMultiple:(sales,total,method,notes)=>output(multipleModels(sales,total,method,notes)),
     downloadInvoices:(invoices,paid,mode)=>output(invoiceModels(invoices,paid),{download:true,mode}),
     downloadPayments:(payments,mode)=>output(paymentModels(payments),{download:true,mode}),

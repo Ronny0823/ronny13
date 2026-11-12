@@ -5344,9 +5344,9 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         
         showToast(`${paymentLabel} de ${fmt.currency(safeAmount)} registrado correctamente`, 'success');
         
-        setTimeout(() => {
+        setTimeout(async () => {
           if (confirm(`Deseas imprimir el recibo de ${paymentLabel.toLowerCase()}?`)) {
-            printPaymentReceipt(paymentData.__backendId);
+            await printSavedCreditPayment(paymentData.__backendId);
           }
         }, 300);
         
@@ -5474,6 +5474,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         const payments = getRecords('payment').filter(p => p.sale_id === saleId);
         const totalPaid = payments.reduce((sum, p) => sum + toFiniteNumber(p.amount, 0), 0);
         const remaining = (sale.sale_total || 0) - totalPaid;
+        paymentData.is_full_payment = remaining < 0.005;
         
         if (remaining <= 0) {
           sale.payment_status = 'pagada';
@@ -5492,11 +5493,12 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         
         await AppState.saveUserData();
         
-        showToast(`Abono de ${fmt.currency(amount)} registrado correctamente`, 'success');
+        const paymentLabel = paymentData.is_full_payment ? 'Pago total' : 'Abono';
+        showToast(`${paymentLabel} de ${fmt.currency(amount)} registrado correctamente`, 'success');
         
-        setTimeout(() => {
-          if (confirm('Deseas imprimir el recibo de abono?')) {
-            printPaymentReceipt(paymentData.__backendId);
+        setTimeout(async () => {
+          if (confirm(`Deseas imprimir el recibo de ${paymentLabel.toLowerCase()}?`)) {
+            await printSavedCreditPayment(paymentData.__backendId);
           }
         }, 300);
         
@@ -5507,6 +5509,13 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         showToast('Error al registrar el abono', 'error');
         console.error(err);
       }
+    }
+
+    async function printSavedCreditPayment(paymentId) {
+      const payment = getRecords('payment').find(record => record.__backendId === paymentId);
+      if (!payment) return;
+      if (CreditReceipt.isThermal(getEffectivePrinterType())) return CreditReceipt.printSaved(payment);
+      return printPaymentReceipt(paymentId);
     }
 
     async function printPaymentReceipt(paymentId) {
