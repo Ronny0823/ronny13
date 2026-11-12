@@ -4,6 +4,15 @@
 const SaleInvoice = (() => {
   const point = 72 / 25.4;
   const primitives = {
+    fuel: [
+      ['rect', 3, 2, 12, 20, 2, '#000'], ['rect', 5, 5, 8, 5, 1, '#fff'],
+      ['line', 15, 8, 20, 8], ['line', 20, 8, 22, 12], ['line', 22, 12, 22, 19],
+      ['line', 22, 19, 18, 19], ['line', 18, 19, 18, 10], ['line', 18, 3, 22, 7],
+      ['line', 2, 23, 16, 23]
+    ],
+    truck: [['rect', 2, 5, 13, 12, 1, '#000'], ['rect', 15, 9, 7, 8, 1, '#000'], ['rect', 17, 10, 4, 3, 0, '#fff'], ['circle', 6, 19, 3], ['circle', 18, 19, 3]],
+    pin: [['circle', 12, 8, 6], ['circle', 12, 8, 2], ['line', 6, 11, 12, 23], ['line', 18, 11, 12, 23]],
+    drop: [['line', 12, 2, 4, 15], ['line', 12, 2, 20, 15], ['line', 4, 15, 5, 20], ['line', 5, 20, 12, 23], ['line', 12, 23, 19, 20], ['line', 19, 20, 20, 15]],
     calendar: [
       ['rect', 3, 5, 18, 16, 2], ['line', 3, 10, 21, 10],
       ['line', 8, 2, 8, 7], ['line', 16, 2, 16, 7],
@@ -208,7 +217,7 @@ const SaleInvoice = (() => {
     return primitives[command.kind].map(([type, ...v]) => {
       if (type === 'line') return { type, x1: x(v[0]), y1: y(v[1]), x2: x(v[2]), y2: y(v[3]) };
       if (type === 'circle') return { type, x: x(v[0]), y: y(v[1]), r: v[2] * factor };
-      return { type, x: x(v[0]), y: y(v[1]), w: v[2] * factor, h: v[3] * factor, radius: v[4] * factor, fill: '#fff', stroke: true };
+      return { type, x: x(v[0]), y: y(v[1]), w: v[2] * factor, h: v[3] * factor, radius: v[4] * factor, fill: v[5] || '#fff', stroke: true };
     });
   }
 
@@ -228,7 +237,7 @@ const SaleInvoice = (() => {
     return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${pixelWidth || width + 'mm'}" height="${pixelWidth ? Math.ceil(page.height * pixelWidth / width) : page.height + 'mm'}" viewBox="0 0 ${width} ${page.height}" font-family="Arial, Helvetica, Liberation Sans, sans-serif"><rect width="100%" height="100%" fill="white"/>${page.commands.map(draw).join('')}</svg>`;
   }
 
-  async function prepare(invoice, mode) {
+  async function prepare(invoice, mode, layoutBuilder) {
     const kit = await documentKit();
     const thermal = mode === 'thermal_58' || mode === 'thermal_80';
     const width = thermal ? mode === 'thermal_58' ? 58 : 80 : AppState.config.paper_size === 'a4' ? 210 : 215.9;
@@ -237,14 +246,13 @@ const SaleInvoice = (() => {
       kit.doc.setFontSize(size * point);
       return kit.doc.getTextWidth(value);
     };
-    const plan = layout(data(invoice), width, measure);
+    const plan = layoutBuilder ? layoutBuilder(width, measure) : layout(data(invoice), width, measure);
     const naturalHeight = plan.blocks.reduce((total, block) => total + block.height, plan.margin * 2);
     const height = thermal ? Math.min(400, naturalHeight) : AppState.config.paper_size === 'a4' ? 297 : 279.4;
     return { ...kit, width, pages: pages(plan, height), thermal };
   }
 
-  async function pdf(invoice) {
-    const prepared = await prepare(invoice, getEffectivePrinterType());
+  function renderPDF(prepared) {
     const { doc, family, width } = prepared;
     const draw = (c, offset = c.offset || 0) => {
       doc.setDrawColor(0);
@@ -277,16 +285,22 @@ const SaleInvoice = (() => {
       if (index === 0) doc.deletePage(1);
       page.commands.forEach(command => draw(command));
     });
+    return doc;
+  }
+
+  async function pdf(invoice) {
     const mode = getEffectivePrinterType();
+    const prepared = await prepare(invoice, mode);
+    const doc = renderPDF(prepared);
     const suffix = prepared.thermal ? mode === 'thermal_58' ? '58mm' : '80mm' : AppState.config.paper_size === 'a4' ? 'A4' : 'Carta';
     doc.save('factura_' + invoice.invoice_number + '_' + suffix + '.pdf');
     showToast('PDF de factura descargado', 'success');
   }
 
-  async function html(invoice, mode, isTest = false) {
-    const prepared = await prepare(invoice, mode);
+  async function html(invoice, mode, isTest = false, layoutBuilder) {
+    const prepared = await prepare(invoice, mode, layoutBuilder);
     const { width } = prepared;
-    return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Factura ${escapeHtml(invoice.invoice_number)}</title>
+    return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(invoice.document_title || 'Factura ' + invoice.invoice_number)}</title>
       <style>@page { size:${width}mm ${prepared.pages[0].height}mm; margin:0 }
       * { box-sizing:border-box; print-color-adjust:exact; -webkit-print-color-adjust:exact }
       body { margin:0; background:#fff } .invoice-page { width:${width}mm; height:${prepared.pages[0].height}mm; break-after:page }
@@ -294,9 +308,9 @@ const SaleInvoice = (() => {
       </head><body>${isTest ? '<p style="position:fixed;top:0;right:0;margin:0;font-weight:bold">DOCUMENTO DE PRUEBA</p>' : ''}${prepared.pages.map(page => '<div class="invoice-page">' + svgPage(page, width) + '</div>').join('')}</body></html>`;
   }
 
-  async function bluetoothBytes(invoice) {
+  async function bluetoothBytes(invoice, layoutBuilder) {
     const mode = AppState.config.bluetooth_print_mode === 'thermal_58' ? 'thermal_58' : 'thermal_80';
-    const prepared = await prepare(invoice, mode);
+    const prepared = await prepare(invoice, mode, layoutBuilder);
     const dots = mode === 'thermal_58' ? 384 : 576;
     const chunks = [new Uint8Array([27, 64, 27, 97, 1])];
     for (const page of prepared.pages) {
@@ -348,5 +362,15 @@ const SaleInvoice = (() => {
     return BluetoothPrinter.concatBytes(chunks);
   }
 
-  return { pdf, html, bluetoothBytes };
+  return { pdf, html, bluetoothBytes,
+    thermalDocument: {
+      pdf: async (layoutBuilder, mode, filename) => {
+        const doc = renderPDF(await prepare({}, mode, layoutBuilder));
+        doc.save(filename);
+        return doc;
+      },
+      html: (layoutBuilder, mode, title) => html({ document_title: title }, mode, false, layoutBuilder),
+      bluetoothBytes: layoutBuilder => bluetoothBytes({}, layoutBuilder)
+    }
+  };
 })();

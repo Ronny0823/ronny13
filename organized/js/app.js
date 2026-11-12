@@ -17180,7 +17180,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       if (isBluetoothPrinterSelected()) {
         try {
-          await BluetoothPrinter.printText(BluetoothPrinter.buildFuelReceiptText(id));
+          if (FuelReceipt.isThermal(getEffectivePrinterType())) {
+            await BluetoothPrinter.writeBytes(await FuelReceipt.bluetoothBytes(r));
+          } else {
+            await BluetoothPrinter.printText(BluetoothPrinter.buildFuelReceiptText(id));
+          }
           showToast('Recibo de gasol enviado por Bluetooth', 'success');
           return;
         } catch (err) {
@@ -17189,7 +17193,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       }
 
       if (isDownloadPrintMode(printerType)) {
-        generateFuelReceiptPDF(id);
+        await generateFuelReceiptPDF(id);
         return;
       }
 
@@ -17308,11 +17312,23 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       `, { autoClose: true, blockedMessage: 'Permite ventanas emergentes para imprimir el recibo' });
     }
 
-    function generateFuelReceiptPDF(id) {
+    async function generateFuelReceiptPDF(id) {
       const r = AppState.data.find(x => x.__backendId === id);
       if (!r) return;
       if (!window.jspdf) {
         showToast('No se pudo cargar el generador PDF', 'error');
+        return;
+      }
+
+      const selectedMode = getEffectivePrinterType();
+      if (FuelReceipt.isThermal(selectedMode)) {
+        try {
+          await FuelReceipt.pdf(r, selectedMode);
+          showToast('Recibo térmico de gasol descargado', 'success');
+        } catch (error) {
+          console.error('No se pudo preparar el recibo térmico de gasol', error);
+          showToast('No se pudo preparar el recibo térmico de gasol', 'error');
+        }
         return;
       }
 
