@@ -4,6 +4,8 @@
 const SaleInvoice = (() => {
   const point = 72 / 25.4;
   const primitives = {
+    receipt: [['line', 4, 2, 20, 2], ['line', 20, 2, 20, 23], ['line', 20, 23, 16, 20], ['line', 16, 20, 12, 23], ['line', 12, 23, 8, 20], ['line', 8, 20, 4, 23], ['line', 4, 23, 4, 2], ['line', 8, 7, 16, 7], ['line', 8, 11, 16, 11], ['line', 8, 15, 16, 15]],
+    check: [['circle', 12, 12, 10], ['line', 6, 12, 10, 16], ['line', 10, 16, 18, 7]],
     building: [['rect', 3, 6, 18, 17, 0], ['line', 2, 6, 12, 1], ['line', 12, 1, 22, 6], ['rect', 6, 9, 3, 3, 0], ['rect', 15, 9, 3, 3, 0], ['rect', 6, 15, 3, 3, 0], ['rect', 15, 15, 3, 3, 0], ['rect', 10, 18, 4, 5, 0]],
     clipboard: [['rect', 4, 4, 16, 19, 2], ['rect', 8, 1, 8, 5, 1], ['line', 8, 11, 16, 11], ['line', 8, 15, 16, 15], ['line', 8, 19, 16, 19]],
     material: [['line', 2, 22, 12, 4], ['line', 12, 4, 22, 22], ['line', 2, 22, 22, 22], ['circle', 11, 12, 1], ['circle', 8, 18, 1], ['circle', 15, 18, 1]],
@@ -201,8 +203,10 @@ const SaleInvoice = (() => {
   function pages(plan, height) {
     const result = [];
     let page = { height, commands: [] }, y = plan.margin;
-    for (const block of plan.blocks) {
-      if (y + block.height > height - plan.margin + .01 && page.commands.length) {
+    for (let index = 0; index < plan.blocks.length; index++) {
+      const block = plan.blocks[index];
+      const needed = block.height + (block.keepWithNext ? plan.blocks[index + 1]?.height || 0 : 0);
+      if (y + needed > height - plan.margin + .01 && page.commands.length) {
         result.push(page);
         page = { height, commands: [] };
         y = plan.margin;

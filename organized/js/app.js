@@ -5512,6 +5512,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     async function printPaymentReceipt(paymentId) {
       const payment = AppState.data.find(r => r.__backendId === paymentId);
       if (!payment) return;
+      if (CreditReceipt.isThermal(getEffectivePrinterType())) return CreditReceipt.printSingle(payment);
 
       const printerType = isBluetoothPrinterSelected() ? 'standard' : getEffectivePrinterType();
 
@@ -5527,7 +5528,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       // Si es termica o PDF: generar PDF descargable
       if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
-        generatePaymentReceiptPDF(paymentId);
+        await generatePaymentReceiptPDF(paymentId);
         return;
       }
 
@@ -11636,6 +11637,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       const { jsPDF } = window.jspdf;
       const printerType = forceStandardPDF ? 'pdf' : getEffectivePrinterType();
+      if (CreditReceipt.isThermal(printerType)) return CreditReceipt.downloadInvoices(invoices, asPaidReceipt, printerType);
       let format, pageWidth, pageHeight, isThermal, is58mm, formatLabel;
 
       switch (printerType) {
@@ -12068,6 +12070,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       }
 
       const isPaidSelection = AppState.creditFilters.status === 'paid';
+      if (CreditReceipt.isThermal(getEffectivePrinterType())) return CreditReceipt.printInvoices(invoices, isPaidSelection);
       const paidTotal = selectedSales.reduce((sum, item) => sum + toFiniteNumber(item.sale.sale_total, 0), 0);
       const thermalText = isPaidSelection
         ? buildPaidCreditReceiptThermalText(selectedSales, paidTotal, '', '')
@@ -12090,7 +12093,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       const printerType = getEffectivePrinterType();
       if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
-        generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection);
+        await generateConsolidatedCreditInvoicePDF(invoices, isPaidSelection);
         return;
       }
 
@@ -12314,6 +12317,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       const { jsPDF } = window.jspdf;
       const printerType = forceStandardPDF ? 'pdf' : getEffectivePrinterType();
+      if (CreditReceipt.isThermal(printerType)) return CreditReceipt.downloadPayments(paymentsSelected, printerType);
       let format, pageWidth, pageHeight, isThermal, is58mm, formatLabel;
 
       switch (printerType) {
@@ -12613,12 +12617,14 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       await generateClientPaymentReportPDF(selectedPayments);
     }
 
-    function printSelectedCreditPayments() {
+    async function printSelectedCreditPayments() {
       const selectedPayments = getSelectedCreditPayments();
       if (!selectedPayments.length) {
         showToast('No hay abonos seleccionados', 'error');
         return;
       }
+
+      if (CreditReceipt.isThermal(getEffectivePrinterType())) return CreditReceipt.printPayments(selectedPayments);
 
       if (isBluetoothPrinterSelected()) {
         BluetoothPrinter.printText(buildConsolidatedCreditPaymentThermalText(selectedPayments))
@@ -12632,7 +12638,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       const printerType = getEffectivePrinterType();
       if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
-        generateConsolidatedCreditPaymentPDF(selectedPayments);
+        await generateConsolidatedCreditPaymentPDF(selectedPayments);
         return;
       }
 
@@ -12996,6 +13002,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     }
 
     async function printMultiplePaymentReceipt(selectedSales, total, method, notes) {
+      if (CreditReceipt.isThermal(getEffectivePrinterType())) return CreditReceipt.printMultiple(selectedSales, total, method, notes);
       const printerType = isBluetoothPrinterSelected() ? 'standard' : getEffectivePrinterType();
 
       if (isBluetoothPrinterSelected()) {
@@ -13010,7 +13017,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       // Si es termica o PDF: generar PDF descargable
       if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
-        generateMultiplePaymentPDF(selectedSales, total, method, notes);
+        await generateMultiplePaymentPDF(selectedSales, total, method, notes);
         return;
       }
 
@@ -15732,10 +15739,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
     // FUNCIONES DE GENERACION DE PDF PARA TERMICA / PDF
     // ============================================================
 
-    function generatePaymentReceiptPDF(paymentId) {
+    async function generatePaymentReceiptPDF(paymentId) {
       const { jsPDF } = window.jspdf;
       const payment = AppState.data.find(r => r.__backendId === paymentId);
       if (!payment) return;
+      if (CreditReceipt.isThermal(getEffectivePrinterType())) return CreditReceipt.downloadSingle(payment, getEffectivePrinterType());
 
       const sale = AppState.data.find(r => r.__backendId === payment.sale_id);
       const allPayments = getRecords('payment').filter(p => p.sale_id === payment.sale_id);
@@ -15977,9 +15985,10 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       showToast('PDF descargado: ' + (isFullPayment ? 'Pago Total' : 'Abono') + ' (' + (isThermal ? (is58mm ? '58mm' : '80mm') : 'Carta') + ')');
     }
 
-    function generateMultiplePaymentPDF(selectedSales, total, method, notes) {
+    async function generateMultiplePaymentPDF(selectedSales, total, method, notes) {
       const { jsPDF } = window.jspdf;
       const printerType = getEffectivePrinterType();
+      if (CreditReceipt.isThermal(printerType)) return CreditReceipt.downloadMultiple(selectedSales, total, method, notes, printerType);
       let format, unit, pageWidth, pageHeight, isThermal, is58mm;
 
       switch (printerType) {
