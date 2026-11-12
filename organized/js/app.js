@@ -14202,6 +14202,22 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
   const trips = selected.slice().sort((a, b) =>
     new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime()
   );
+  const selectedMode = getEffectivePrinterType();
+  if (TripReceipt.isThermal(selectedMode)) {
+    try {
+      if (isBluetoothPrinterSelected()) {
+        for (const trip of trips) await BluetoothPrinter.writeBytes(await TripReceipt.bluetoothBytes(trip));
+        showToast(`${trips.length} factura(s) enviadas a la impresora Bluetooth`, 'success');
+      } else {
+        await TripReceipt.pdf(trips, selectedMode);
+        showToast('Facturas térmicas de viajes directos descargadas', 'success');
+      }
+    } catch (error) {
+      console.error('No se pudieron imprimir los viajes directos', error);
+      showToast('No se pudieron imprimir las facturas seleccionadas', 'error');
+    }
+    return;
+  }
   const totals = trips.reduce((result, trip) => {
     const total = Math.max(0, Number(trip.trip_amount) || 0);
     const paid = Math.min(total, Math.max(0, Number(trip.amount_paid) || 0));
@@ -15286,7 +15302,11 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       if (isBluetoothPrinterSelected()) {
         try {
-          await BluetoothPrinter.printText(BluetoothPrinter.buildDirectTripInvoiceText(trip));
+          if (TripReceipt.isThermal(getEffectivePrinterType())) {
+            await BluetoothPrinter.writeBytes(await TripReceipt.bluetoothBytes(trip));
+          } else {
+            await BluetoothPrinter.printText(BluetoothPrinter.buildDirectTripInvoiceText(trip));
+          }
           showToast('Viaje directo enviado por Bluetooth', 'success');
           return;
         } catch (err) {
@@ -15296,7 +15316,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       // Si es termica o PDF: generar PDF descargable
       if (printerType === 'pdf' || printerType === 'thermal_80' || printerType === 'thermal_58') {
-        generateDirectTripPDF(tripId);
+        await generateDirectTripPDF(tripId);
         return;
       }
 
@@ -16278,12 +16298,22 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       await sharePdfDocument(doc, fileName);
     }
 
-    function generateDirectTripPDF(tripId) {
+    async function generateDirectTripPDF(tripId) {
       const { jsPDF } = window.jspdf;
       const trip = AppState.data.find(r => r.__backendId === tripId);
       if (!trip) return;
 
       const printerType = getEffectivePrinterType();
+      if (TripReceipt.isThermal(printerType)) {
+        try {
+          await TripReceipt.pdf(trip, printerType);
+          showToast('Factura térmica de viaje directo descargada', 'success');
+        } catch (error) {
+          console.error('No se pudo preparar la factura térmica de viaje directo', error);
+          showToast('No se pudo preparar la factura térmica de viaje directo', 'error');
+        }
+        return;
+      }
       let format, unit, pageWidth, pageHeight, isThermal, is58mm;
 
       switch (printerType) {
@@ -16303,6 +16333,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       const doc = new jsPDF({ orientation: 'portrait', unit: unit, format: format });
       const margin = isThermal ? 3 : 20;
+      const contentWidth = pageWidth - margin * 2;
       let yPos = margin + 2;
 
       const remaining = (trip.trip_amount || 0) - (trip.amount_paid || 0);

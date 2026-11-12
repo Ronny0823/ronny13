@@ -4,6 +4,10 @@
 const SaleInvoice = (() => {
   const point = 72 / 25.4;
   const primitives = {
+    building: [['rect', 3, 6, 18, 17, 0], ['line', 2, 6, 12, 1], ['line', 12, 1, 22, 6], ['rect', 6, 9, 3, 3, 0], ['rect', 15, 9, 3, 3, 0], ['rect', 6, 15, 3, 3, 0], ['rect', 15, 15, 3, 3, 0], ['rect', 10, 18, 4, 5, 0]],
+    clipboard: [['rect', 4, 4, 16, 19, 2], ['rect', 8, 1, 8, 5, 1], ['line', 8, 11, 16, 11], ['line', 8, 15, 16, 15], ['line', 8, 19, 16, 19]],
+    material: [['line', 2, 22, 12, 4], ['line', 12, 4, 22, 22], ['line', 2, 22, 22, 22], ['circle', 11, 12, 1], ['circle', 8, 18, 1], ['circle', 15, 18, 1]],
+    coins: [['line', 9, 5, 9, 18], ['line', 21, 5, 21, 18], ['ellipse', 15, 18, 6, 2.5], ['ellipse', 15, 14, 6, 2.5], ['ellipse', 15, 10, 6, 2.5], ['ellipse', 15, 5, 6, 2.5], ['rect', 1, 18, 10, 4, 0, '#fff'], ['ellipse', 6, 22, 5, 2], ['ellipse', 6, 18, 5, 2]],
     fuel: [
       ['rect', 3, 2, 12, 20, 2, '#000'], ['rect', 5, 5, 8, 5, 1, '#fff'],
       ['line', 15, 8, 20, 8], ['line', 20, 8, 22, 12], ['line', 22, 12, 22, 19],
@@ -198,7 +202,7 @@ const SaleInvoice = (() => {
     const result = [];
     let page = { height, commands: [] }, y = plan.margin;
     for (const block of plan.blocks) {
-      if (y + block.height > height - plan.margin && page.commands.length) {
+      if (y + block.height > height - plan.margin + .01 && page.commands.length) {
         result.push(page);
         page = { height, commands: [] };
         y = plan.margin;
@@ -217,6 +221,7 @@ const SaleInvoice = (() => {
     return primitives[command.kind].map(([type, ...v]) => {
       if (type === 'line') return { type, x1: x(v[0]), y1: y(v[1]), x2: x(v[2]), y2: y(v[3]) };
       if (type === 'circle') return { type, x: x(v[0]), y: y(v[1]), r: v[2] * factor };
+      if (type === 'ellipse') return { type, x: x(v[0]), y: y(v[1]), rx: v[2] * factor, ry: v[3] * factor };
       return { type, x: x(v[0]), y: y(v[1]), w: v[2] * factor, h: v[3] * factor, radius: v[4] * factor, fill: v[5] || '#fff', stroke: true };
     });
   }
@@ -229,6 +234,7 @@ const SaleInvoice = (() => {
         case 'rect': return `<rect x="${c.x}" y="${c.y + y}" width="${c.w}" height="${c.h}" rx="${c.radius}" fill="${c.fill}" stroke="${c.stroke ? '#000' : 'none'}" stroke-width=".4"/>`;
         case 'line': return `<line x1="${c.x1}" y1="${c.y1 + y}" x2="${c.x2}" y2="${c.y2 + y}" stroke="#000" stroke-width=".3" ${c.dashed ? 'stroke-dasharray="1.2 .6"' : ''}/>`;
         case 'circle': return `<circle cx="${c.x}" cy="${c.y + y}" r="${c.r}" fill="none" stroke="#000" stroke-width=".35"/>`;
+        case 'ellipse': return `<ellipse cx="${c.x}" cy="${c.y + y}" rx="${c.rx}" ry="${c.ry}" fill="white" stroke="#000" stroke-width=".35"/>`;
         case 'icon': return iconCommands(c).map(part => draw({ ...part, offset: y })).join('');
         case 'image': return `<image href="${escapeAttr(c.value)}" xlink:href="${escapeAttr(c.value)}" x="${c.x}" y="${c.y + y}" width="${c.w}" height="${c.h}" preserveAspectRatio="xMidYMid meet"/>`;
         default: return '';
@@ -272,6 +278,9 @@ const SaleInvoice = (() => {
         doc.setLineDashPattern([], 0);
       } else if (c.type === 'circle') {
         doc.circle(c.x, c.y + offset, c.r, 'S');
+      } else if (c.type === 'ellipse') {
+        doc.setFillColor('#fff');
+        doc.ellipse(c.x, c.y + offset, c.rx, c.ry, 'FD');
       } else if (c.type === 'image') {
         try {
           const info = doc.getImageProperties(c.value), factor = Math.min(c.w / info.width, c.h / info.height);
@@ -364,6 +373,17 @@ const SaleInvoice = (() => {
 
   return { pdf, html, bluetoothBytes,
     thermalDocument: {
+      pdfBatch: async (layoutBuilders, mode, filename) => {
+        if (!layoutBuilders.length) return;
+        const prepared = await prepare({}, mode, layoutBuilders[0]);
+        for (const builder of layoutBuilders.slice(1)) {
+          const next = await prepare({}, mode, builder);
+          prepared.pages.push(...next.pages);
+        }
+        const doc = renderPDF(prepared);
+        doc.save(filename);
+        return doc;
+      },
       pdf: async (layoutBuilder, mode, filename) => {
         const doc = renderPDF(await prepare({}, mode, layoutBuilder));
         doc.save(filename);
