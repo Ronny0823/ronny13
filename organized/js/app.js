@@ -14871,6 +14871,33 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       showToast('Viajes directos exportados en Excel');
     }
 
+    async function generateDirectTripInvoiceNumber() {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const reserved = await generateInvoiceNum();
+        const numeric = /^FAC-(\d+)$/.exec(reserved);
+        const number = numeric ? 'VD-' + numeric[1].padStart(6, '0')
+          : reserved.replace(/^FAC-/, 'VD-') + '-' + createRecordId('seq').slice(-6).toUpperCase();
+        if (!getRecords('direct_trip').some(trip => String(trip.invoice_number || '').trim().toUpperCase() === number)) return number;
+      }
+      throw new Error('No se pudo generar un número de viaje directo disponible');
+    }
+
+    function prepareDirectTripInvoiceNumber(input) {
+      if (!input) return;
+      const request = generateDirectTripInvoiceNumber();
+      input.directTripNumberRequest = request;
+      request.then(number => {
+        if (document.getElementById('tripInvoiceNumber') === input &&
+            input.dataset.manualNumber !== 'true' && !input.value.trim()) input.value = number;
+      }).catch(error => {
+        console.warn('No se pudo generar el número de viaje directo', error);
+        if (document.getElementById('tripInvoiceNumber') === input && !input.value.trim()) {
+          input.placeholder = 'Escribe el número de factura';
+          showToast('Puedes escribir el número de factura manualmente', 'warning');
+        }
+      });
+    }
+
     // Modal para nuevo/editar viaje directo
     function showDirectTripModal(editId) {
       const existing = editId ? AppState.data.find(r => r.__backendId === editId) : null;
@@ -14893,11 +14920,14 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono input-focus">
               </div>
               <div>
-                <label class="block text-sm font-medium text-slate-400 mb-2">Numero de Factura</label>
-                <input type="text" id="tripInvoiceNumber" required
-                  value="${existing ? existing.invoice_number : ''}"
-                  placeholder="Ej: FAC-VIAJE-001"
+                <label for="tripInvoiceNumber" class="block text-sm font-medium text-slate-400 mb-2">Número de factura</label>
+                <input type="text" id="tripInvoiceNumber" required data-manual-number="false"
+                  value="${escapeAttr(existing?.invoice_number || '')}"
+                  placeholder="${existing ? 'Escribe el número de factura' : 'Generando número...'}"
+                  oninput="this.dataset.manualNumber = 'true'"
+                  aria-describedby="tripInvoiceNumberHelp"
                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 font-mono uppercase placeholder-slate-600 input-focus">
+                <p id="tripInvoiceNumberHelp" class="mt-1.5 text-xs text-slate-400">Se genera automáticamente. Puedes cambiarlo aquí o al editar el viaje.</p>
               </div>
             </div>
 
@@ -15041,6 +15071,7 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
       // Inicializar fecha actual si es nuevo
       if (!existing) {
+        prepareDirectTripInvoiceNumber(document.getElementById('tripInvoiceNumber'));
         setTimeout(() => {
           const now = new Date();
           now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -15070,6 +15101,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
 
     async function saveDirectTrip(e, editId) {
       e.preventDefault();
+      const form = e.currentTarget || e.target;
+      if (form?.dataset?.saving === 'true') return;
 
       const existing = editId && AppState.data.find(record =>
         record.type === 'direct_trip' && record.__backendId === editId
@@ -15118,7 +15151,25 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
         notes: document.getElementById('tripNotes').value.trim()
       };
 
+      if (form?.dataset) form.dataset.saving = 'true';
       try {
+        const invoiceInput = document.getElementById('tripInvoiceNumber');
+        if (!data.invoice_number) {
+          const generated = await (invoiceInput.directTripNumberRequest || generateDirectTripInvoiceNumber());
+          data.invoice_number = invoiceInput.value.trim().toUpperCase() || generated;
+        }
+        const duplicate = () => getRecords('direct_trip').some(trip => trip.__backendId !== existing?.__backendId &&
+          String(trip.invoice_number || '').trim().toUpperCase() === data.invoice_number);
+        if (duplicate() && !existing && invoiceInput.dataset.manualNumber !== 'true') {
+          data.invoice_number = await generateDirectTripInvoiceNumber();
+        }
+        const numberChanged = !existing || String(existing.invoice_number || '').trim().toUpperCase() !== data.invoice_number;
+        if (numberChanged && duplicate()) {
+          showToast('Ese número de factura ya está registrado en otro viaje directo', 'error');
+          invoiceInput.focus();
+          return;
+        }
+        invoiceInput.value = data.invoice_number;
         if (existing) {
           Object.assign(existing, data);
           await AppState.saveUserData();
@@ -15134,6 +15185,8 @@ try{return await this.flushing}catch(error){console.warn('Sincronizacion por reg
       } catch (err) {
         showToast('Error al guardar el viaje directo', 'error');
         console.error(err);
+      } finally {
+        if (form?.dataset) delete form.dataset.saving;
       }
     }
 
